@@ -57,11 +57,15 @@ export default function AttendancePage() {
     const cycle = (date: string, studentId: string, current: StatusKey | undefined) =>
         setStatus(date, studentId, KEYS[(current ? KEYS.indexOf(current) + 1 : 0) % KEYS.length]);
 
+    // Attendance is only taken on the batch's scheduled days; say so on the button instead of failing on click
+    const hasSessionToday = register?.sessions.includes(today) ?? false;
+    const nextSession = register?.sessions.find(d => d > today);
+    const markHint = hasSessionToday ? undefined
+        : start > new Date() || end < new Date() ? 'Go to the current week to mark today'
+        : `${batchName} has no class today${nextSession ? ` — next session ${new Date(`${nextSession}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}` : ''}`;
+
     const markToday = () => {
-        if (!register?.sessions.includes(today)) {
-            setMessage(`${batchName} has no scheduled session today.`);
-            return;
-        }
+        if (!register || !hasSessionToday) return;
         register.students.forEach(s => { if (!statusAt(s.studentId, today, s.records)) setStatus(today, s.studentId, 'P'); });
         setMessage('Unmarked students set to Present for today. Save to record the register.');
     };
@@ -95,7 +99,9 @@ export default function AttendancePage() {
 
     return (
         <>
-            <Topbar title="Attendance Register" subtitle="Track session-by-session attendance across all batches" action={canMark ? { label: 'Mark Today', onClick: markToday } : undefined} />
+            <Topbar title="Attendance Register" subtitle="Track session-by-session attendance across all batches" action={canMark ? {
+                label: hasSessionToday || !register ? 'Mark Today' : 'No Class Today', onClick: markToday, disabled: !hasSessionToday, hint: markHint,
+            } : undefined} />
             <div className="page-body">
 
                 {/* Summary cards */}

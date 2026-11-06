@@ -9,7 +9,7 @@ import {
     Shield, ShieldCheck, Package, UserCog, FileCheck
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { can, clearSession, homePath, saveSession, selectBranch, useSession, type SessionState } from '@/lib/session';
+import { can, clearSession, homePath, saveSession, useSession, type SessionState } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 
 const navGroups = [
@@ -127,8 +127,8 @@ export default function Sidebar() {
                 )}
             </div>
 
-            {/* Academy & branch context */}
-            {!collapsed && session && (
+            {/* Academy & branch context (the branch view is chosen on the Branches page) */}
+            {!collapsed && session && (academies.length > 1 || session.user.isPlatformAdmin || branchScoped) && (
                 <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--cs-border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {(academies.length > 1 || session.user.isPlatformAdmin) && (
                         <select className="cs-input" style={{ fontSize: '12px', padding: '6px 8px' }} aria-label="Academy"
@@ -140,22 +140,16 @@ export default function Sidebar() {
                             {session.user.isPlatformAdmin && <option value="">← Platform console</option>}
                         </select>
                     )}
-                    {branchScoped ? (
+                    {branchScoped && (
                         <div style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Building2 size={13} /> {workspace?.branches.find(b => b.branchId === session.session.branchId)?.name ?? 'Your branch'}
                         </div>
-                    ) : (workspace?.branches.length ?? 0) > 1 && (
-                        <select className="cs-input" style={{ fontSize: '12px', padding: '6px 8px' }} aria-label="Branch view"
-                            value={session.selectedBranchId ?? ''} onChange={e => selectBranch(e.target.value || null)}>
-                            <option value="">All branches (consolidated)</option>
-                            {workspace?.branches.map(b => <option key={b.branchId} value={b.branchId}>{b.name}</option>)}
-                        </select>
                     )}
                 </div>
             )}
 
             {/* Nav */}
-            <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 10px' }}>
+            <nav className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 10px' }}>
                 {navGroups.map(group => {
                     const items = group.items.filter(item => can(session, item.permission));
                     if (items.length === 0) return null;

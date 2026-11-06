@@ -134,6 +134,15 @@ body {
   background: var(--cs-text-muted);
 }
 
+/* Scrollable without a visible scrollbar (wheel, touch and keyboard still work) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 
 /* ═══════════════════════════════════════════════════
    Selection
@@ -341,6 +350,14 @@ body {
   background: var(--cs-primary-hover);
   box-shadow: var(--cs-shadow-btn-primary);
   transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+  background: var(--cs-primary);
 }
 
 .btn-primary:focus-visible {
@@ -747,6 +764,24 @@ body {
    Modals
    ═══════════════════════════════════════════════════ */
 
+/* While any dialog is open, freeze the page behind it (window and the dashboard's scrolling <main>) */
+html:has(.modal-overlay, .scroll-lock),
+html:has(.modal-overlay, .scroll-lock) body,
+html:has(.modal-overlay, .scroll-lock) main {
+  overflow: hidden;
+}
+
+/* SweetAlert2 dialogs (see lib/dialogs.ts) */
+.cs-swal-popup {
+  font-family: inherit;
+  border-radius: var(--cs-radius-lg);
+  color: var(--cs-text-primary);
+}
+
+.cs-swal-actions {
+  gap: 10px;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -765,6 +800,8 @@ body {
   padding: 28px;
   max-width: 520px;
   width: 90%;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   box-shadow: var(--cs-shadow-float);
   animation: fadeIn 0.3s ease;
 }

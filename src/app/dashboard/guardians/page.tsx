@@ -7,6 +7,7 @@ import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
 import { Phone, Mail, Eye, KeyRound, Copy, Send } from 'lucide-react';
 import { api, useApi, formatDate, initials } from '@/lib/api';
+import { confirmDialog } from '@/lib/dialogs';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 
@@ -45,7 +46,7 @@ export default function GuardiansPage() {
 
     const issueLogin = async (g: Guardian) => {
         const verb = g.hasPortalAccess ? 'Reset the password' : 'Create a portal login';
-        if (!confirm(`${verb} for ${g.firstName} ${g.lastName}?`)) return;
+        if (!(await confirmDialog(`${verb} for ${g.firstName} ${g.lastName}?`, undefined, verb))) return;
         try {
             const res = await api<{ credentials: { email: string; password: string } }>('/guardians/portal-access', {
                 method: 'POST', body: JSON.stringify({ guardianId: g.guardianId }),
