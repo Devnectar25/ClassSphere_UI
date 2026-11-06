@@ -6,6 +6,7 @@ import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import { BookOpen, Clock, Users, Tag, Calendar, Plus, X } from 'lucide-react';
 import { api, useApi, formatMoney } from '@/lib/api';
+import { promptDialog, errorDialog } from '@/lib/dialogs';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 import { COURSE_CATALOGUE } from '@/lib/academy';
@@ -60,13 +61,13 @@ export default function CoursesPage() {
     };
 
     const addSubjectToCourse = async (course: Course) => {
-        const subject = prompt(`New subject for ${course.title}`);
-        if (!subject?.trim()) return;
+        const subject = await promptDialog(`New subject for ${course.title}`, 'e.g., Music Theory', 'Add Subject');
+        if (!subject) return;
         try {
             await api('/courses', { method: 'PUT', body: JSON.stringify({ courseId: course.courseId, subject }) });
             reload();
         } catch (err) {
-            alert((err as Error).message);
+            await errorDialog((err as Error).message);
         }
     };
 

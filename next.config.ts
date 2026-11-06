@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  devIndicators: false,
   experimental: {
     // Signed-in areas render client-side after the session check; validate only segments that opt in
     instantInsights: { validationLevel: "manual-warning" },

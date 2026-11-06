@@ -6,6 +6,7 @@ import BadgeList from '@/components/BadgeList';
 import React, { useState } from 'react';
 import { Search, CreditCard, CheckCircle, Clock, XCircle, AlertCircle } from 'lucide-react';
 import { api, useApi, formatMoney, formatDate, initials } from '@/lib/api';
+import { confirmDialog } from '@/lib/dialogs';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 
@@ -68,7 +69,7 @@ export default function InvoicesPage() {
     const money = (v: number) => formatMoney(v, currency);
 
     const generateCycle = async () => {
-        if (!confirm('Generate this month\'s tuition invoices for all actively enrolled students?')) return;
+        if (!(await confirmDialog('Generate this month\'s invoices?', 'Tuition invoices will be created for all actively enrolled students.', 'Generate'))) return;
         setBusy(true);
         try {
             const res = await api<{ invoicesGenerated: number; totalBilled: number }>('/invoices', {
