@@ -7,7 +7,7 @@ import { ROLE_LABELS, useSession } from '@/lib/session';
 interface TopbarProps {
     title: string;
     subtitle?: string;
-    action?: { label: string; onClick: () => void };
+    action?: { label: string; onClick: () => void; disabled?: boolean; hint?: string };
 }
 
 export default function Topbar({ title, subtitle, action }: TopbarProps) {
@@ -64,7 +64,7 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
 
                 {/* Action button */}
                 {action && (
-                    <button className="btn-primary" onClick={action.onClick} style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-primary" onClick={action.onClick} disabled={action.disabled} title={action.hint} style={{ whiteSpace: 'nowrap' }}>
                         <Plus size={16} />
                         {action.label}
                     </button>

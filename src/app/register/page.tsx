@@ -1,17 +1,66 @@
 'use client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Shield, CheckCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
-import { useApi, formatMoney, type Plan } from '@/lib/api';
+import { Shield, CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { api, useApi, formatMoney, type Plan } from '@/lib/api';
+import { homePath, saveSession, type SessionState } from '@/lib/session';
 
-const steps = ['Account', 'Verify', 'Plan', 'Setup'];
+const steps = ['Account', 'Plan', 'Ready'];
+
+// Values are the backend's academy types
+const CATEGORIES = [
+    ['Tuition', 'Tuition / Coaching'], ['Music', 'Music'], ['Dance', 'Dance'], ['Sports', 'Sports / Martial Arts / Yoga'],
+    ['Arts', 'Arts'], ['Test Prep', 'Test Prep'], ['Language', 'Language'], ['Other', 'Coding / Hobby / Other'],
+];
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterPage() {
+    const router = useRouter();
     const [step, setStep] = useState(0);
     const [showPassword, setShowPassword] = useState(false);
     const { data: plans } = useApi<Plan[]>('/plans');
     const [planTier, setPlanTier] = useState<string | null>(null);
     const selectedPlan = planTier ?? plans?.find(p => p.isPopular)?.planTier;
+    const [form, setForm] = useState({ academyName: '', firstName: '', lastName: '', email: '', phone: '', academyType: 'Tuition', password: '' });
+    const [acceptTerms, setAcceptTerms] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [session, setSession] = useState<SessionState | null>(null);
+    const field = (key: keyof typeof form) => ({
+        value: form[key], onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [key]: e.target.value }),
+    });
+
+    const continueToPlan = (e: React.FormEvent) => {
+        e.preventDefault();
+        const missing = !form.academyName.trim() || !form.firstName.trim() || !form.lastName.trim() || !form.email.trim() || !form.phone.trim();
+        const problem = missing ? 'Please fill in all required fields.'
+            : !EMAIL.test(form.email.trim()) ? 'Enter a valid email address.'
+            : form.phone.replace(/\D/g, '').length < 8 ? 'Enter a valid mobile number.'
+            : form.password.length < 8 ? 'Password must be at least 8 characters.'
+            : !acceptTerms ? 'Please accept the Terms of Service and Privacy Policy.'
+            : null;
+        setError(problem);
+        if (!problem) setStep(1);
+    };
+
+    const createAcademy = async () => {
+        setBusy(true);
+        setError(null);
+        try {
+            const created = await api<SessionState>('/auth/register', {
+                method: 'POST', body: JSON.stringify({ ...form, planTier: selectedPlan, acceptTerms }),
+            });
+            saveSession({ ...created, selectedBranchId: null });
+            setSession(created);
+            setStep(2);
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setBusy(false);
+        }
+    };
 
     return (
         <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
@@ -51,79 +100,57 @@ export default function RegisterPage() {
                     <>
                         <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '6px', color: '#0F172A', letterSpacing: '-0.015em' }}>Create your academy</h1>
                         <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '28px' }}>Start your 14-day free trial — no credit card needed</p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <form onSubmit={continueToPlan} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div>
                                 <label className="cs-label">Academy / Class Name *</label>
-                                <input className="cs-input" placeholder="e.g. Ravi's Math Academy" />
+                                <input className="cs-input" placeholder="e.g. Ravi's Math Academy" autoComplete="organization" {...field('academyName')} />
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                 <div>
                                     <label className="cs-label">Your First Name *</label>
-                                    <input className="cs-input" placeholder="First name" />
+                                    <input className="cs-input" placeholder="First name" autoComplete="given-name" {...field('firstName')} />
                                 </div>
                                 <div>
                                     <label className="cs-label">Last Name *</label>
-                                    <input className="cs-input" placeholder="Last name" />
+                                    <input className="cs-input" placeholder="Last name" autoComplete="family-name" {...field('lastName')} />
                                 </div>
                             </div>
                             <div>
                                 <label className="cs-label">Email Address *</label>
-                                <input className="cs-input" type="email" placeholder="you@academy.com" />
+                                <input className="cs-input" type="email" placeholder="you@academy.com" autoComplete="email" {...field('email')} />
                             </div>
                             <div>
                                 <label className="cs-label">Mobile Number *</label>
-                                <input className="cs-input" placeholder="+91 98400 00000" />
+                                <input className="cs-input" type="tel" placeholder="+91 98400 00000" autoComplete="tel" {...field('phone')} />
                             </div>
                             <div>
                                 <label className="cs-label">Class Category *</label>
-                                <select className="cs-input" style={{ cursor: 'pointer' }}>
-                                    <option>Tuition / Coaching</option>
-                                    <option>Sports Academy</option>
-                                    <option>Dance / Music</option>
-                                    <option>Martial Arts / Yoga</option>
-                                    <option>Coding / Hobby</option>
-                                    <option>Other</option>
+                                <select className="cs-input" style={{ cursor: 'pointer' }} {...field('academyType')}>
+                                    {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="cs-label">Password *</label>
                                 <div style={{ position: 'relative' }}>
-                                    <input className="cs-input" type={showPassword ? 'text' : 'password'} placeholder="Min 8 characters" style={{ paddingRight: '44px' }} />
-                                    <button onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
+                                    <input className="cs-input" type={showPassword ? 'text' : 'password'} placeholder="Min 8 characters" autoComplete="new-password" style={{ paddingRight: '44px' }} {...field('password')} />
+                                    <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
                                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#475569' }}>
-                                <input type="checkbox" style={{ marginTop: 2, accentColor: '#4F46E5' }} />
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#475569', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={acceptTerms} onChange={e => setAcceptTerms(e.target.checked)} style={{ marginTop: 2, accentColor: '#4F46E5' }} />
                                 <span>I agree to ClassSphere&apos;s <a href="#" style={{ color: '#4F46E5', fontWeight: 500 }}>Terms of Service</a> and <a href="#" style={{ color: '#4F46E5', fontWeight: 500 }}>Privacy Policy</a></span>
-                            </div>
-                            <button className="btn-primary" style={{ justifyContent: 'center', padding: '12px', height: '44px', fontSize: '15px' }} onClick={() => setStep(1)}>
-                                Create Account <ArrowRight size={16} />
+                            </label>
+                            {error && <div role="alert" style={{ color: '#EF4444', fontSize: '13px' }}>{error}</div>}
+                            <button type="submit" className="btn-primary" style={{ justifyContent: 'center', padding: '12px', height: '44px', fontSize: '15px' }}>
+                                Continue <ArrowRight size={16} />
                             </button>
-                        </div>
+                        </form>
                     </>
                 )}
 
                 {step === 1 && (
-                    <>
-                        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '6px', color: '#0F172A', letterSpacing: '-0.015em' }}>Verify your number</h1>
-                        <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '28px' }}>We sent a 6-digit OTP to +91 98400 00000</p>
-                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '28px' }}>
-                            {Array.from({ length: 6 }).map((_, i) => (
-                                <input key={i} className="cs-input" maxLength={1} style={{ width: '48px', height: '52px', textAlign: 'center', fontSize: '20px', fontWeight: 700, padding: '0' }} />
-                            ))}
-                        </div>
-                        <button className="btn-primary" style={{ justifyContent: 'center', width: '100%', padding: '12px', height: '44px', fontSize: '15px' }} onClick={() => setStep(2)}>
-                            Verify & Continue <ArrowRight size={16} />
-                        </button>
-                        <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: '13px', marginTop: '16px' }}>
-                            Didn&apos;t receive? <a href="#" style={{ color: '#4F46E5', fontWeight: 600 }}>Resend OTP</a>
-                        </p>
-                    </>
-                )}
-
-                {step === 2 && (
                     <>
                         <h1 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '6px', color: '#0F172A', letterSpacing: '-0.015em' }}>Choose your plan</h1>
                         <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '24px' }}>Start with a free 14-day trial on any plan</p>
@@ -145,25 +172,31 @@ export default function RegisterPage() {
                                 );
                             })}
                         </div>
-                        <button className="btn-primary" style={{ justifyContent: 'center', width: '100%', padding: '12px', height: '44px', fontSize: '15px' }} onClick={() => setStep(3)}>
-                            Start Free Trial <ArrowRight size={16} />
-                        </button>
+                        {error && <div role="alert" style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button type="button" className="btn-secondary" style={{ height: '44px' }} disabled={busy} onClick={() => { setError(null); setStep(0); }}>
+                                <ArrowLeft size={16} /> Back
+                            </button>
+                            <button className="btn-primary" style={{ justifyContent: 'center', flex: 1, padding: '12px', height: '44px', fontSize: '15px' }} disabled={busy || !selectedPlan} onClick={createAcademy}>
+                                {busy ? 'Creating your academy…' : <>Create Academy <ArrowRight size={16} /></>}
+                            </button>
+                        </div>
                     </>
                 )}
 
-                {step === 3 && (
+                {step === 2 && (
                     <>
                         <div style={{ textAlign: 'center', padding: '20px 0' }}>
                             <div style={{ fontSize: '56px', marginBottom: '16px' }}>🎉</div>
                             <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '10px', color: '#0F172A', letterSpacing: '-0.015em' }}>Welcome to ClassSphere!</h1>
                             <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px' }}>
-                                Your academy is ready. Let&apos;s set up your first branch, course, and batch to get started.
+                                {form.academyName.trim()} is ready, with a Main Campus branch. Next, add your courses, batches and students.
+                                You can sign in any time with {form.email.trim().toLowerCase()}.
                             </p>
-                            <Link href="/login" style={{ textDecoration: 'none' }}>
-                                <button className="btn-primary" style={{ justifyContent: 'center', padding: '12px 32px', height: '44px', fontSize: '15px' }}>
-                                    Go to Dashboard <ArrowRight size={16} />
-                                </button>
-                            </Link>
+                            <button className="btn-primary" style={{ justifyContent: 'center', padding: '12px 32px', height: '44px', fontSize: '15px' }}
+                                onClick={() => router.replace(session ? homePath(session) : '/login')}>
+                                Go to Dashboard <ArrowRight size={16} />
+                            </button>
                         </div>
                     </>
                 )}

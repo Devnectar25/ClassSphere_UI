@@ -606,7 +606,7 @@ function Stat({ label, value, sub, tone = 'text-slate-900', onClick }: { label: 
 
 function PortalModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
     return (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="scroll-lock fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
             <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-xl" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold">{title}</h3>

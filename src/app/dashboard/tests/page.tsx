@@ -5,6 +5,7 @@ import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import { ArrowLeft, Printer, Send, Save, ClipboardCheck } from 'lucide-react';
 import { api, useApi, formatDate } from '@/lib/api';
+import { confirmDialog } from '@/lib/dialogs';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 import { TEST_TYPES, gradeClass } from '@/lib/academy';
@@ -216,7 +217,7 @@ function MarksSheet({ testId, canEdit, onBack }: { testId: string; canEdit: bool
     };
 
     const publish = async () => {
-        if (!confirm('Publish these results to the parent portal?')) return;
+        if (!(await confirmDialog('Publish these results?', 'Parents will be able to see them in the parent portal.', 'Publish'))) return;
         try {
             await api('/tests/publish', { method: 'POST', body: JSON.stringify({ testId }) });
             setMessage('Results published — parents can now see them in the portal.');
