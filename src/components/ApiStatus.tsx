@@ -14,9 +14,9 @@ export default function ApiStatus() {
 
     const healthy = status === 'Healthy';
     return (
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs">
-            <span className={`w-2 h-2 rounded-full ${healthy ? 'bg-emerald-400 animate-pulse' : status ? 'bg-red-400' : 'bg-slate-500'}`} />
-            <span className="text-slate-300 font-mono">API &amp; DB: {status ?? 'checking…'}</span>
+        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-xs shadow-2xs">
+            <span className={`w-2 h-2 rounded-full ${healthy ? 'bg-emerald-500 animate-pulse' : status ? 'bg-rose-500' : 'bg-slate-400'}`} />
+            <span className="text-slate-700 font-mono text-[11px] font-medium">API &amp; DB: {status ?? 'checking…'}</span>
         </div>
     );
 }
