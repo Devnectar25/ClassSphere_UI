@@ -1,9 +1,11 @@
 'use client';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
-import { Trophy, Star, Award, Medal, Camera, Eye, Lock, Globe, Users } from 'lucide-react';
+import Modal from '@/components/Modal';
+import { Trophy, Star, Award, Medal, Camera, Eye, Lock, Globe, Users, Plus } from 'lucide-react';
 import React, { useState } from 'react';
-import { useApi, formatDate, initials } from '@/lib/api';
+import { api, useApi, formatDate, initials } from '@/lib/api';
+import { can, useSession } from '@/lib/session';
 
 interface Achievement {
     achievementId: string;
@@ -17,6 +19,16 @@ interface Achievement {
     grade: string | null;
     remarks: string | null;
     hasPhoto: boolean;
+}
+
+interface StudentSearch {
+    total: number;
+    students: Array<{
+        studentId: string;
+        firstName: string;
+        lastName: string;
+        enrollmentNumber: string;
+    }>;
 }
 
 const visibilityConfig: Record<string, { label: string; icon: React.ElementType; cls: string }> = {
@@ -41,10 +53,29 @@ const categoryColor: Record<string, string> = {
     Certification: '#10B981',
 };
 
-export default function AchievementsPage() {
-    const { data: achievements, error } = useApi<Achievement[]>('/achievements');
-    const [filter, setFilter] = useState('All');
+const emptyForm = {
+    studentId: '',
+    title: '',
+    category: 'Competition',
+    level: 'National',
+    visibility: 'public',
+    awardDate: new Date().toISOString().split('T')[0],
+    issuer: '',
+    grade: '',
+    remarks: '',
+};
 
+export default function AchievementsPage() {
+    const session = useSession();
+    const { data: achievements, error, reload } = useApi<Achievement[]>('/achievements');
+    const { data: studentData } = useApi<StudentSearch>('/students?limit=200');
+    const [filter, setFilter] = useState('All');
+    const [showModal, setShowModal] = useState(false);
+    const [form, setForm] = useState(emptyForm);
+    const [formError, setFormError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+
+    const students = studentData?.students ?? [];
     const count = (levels: string[]) => achievements?.filter(a => levels.includes(a.level)).length ?? 0;
     const stats = [
         { label: 'Total Achievements', value: achievements?.length ?? 0, icon: Trophy, color: '#F59E0B' },
@@ -54,6 +85,29 @@ export default function AchievementsPage() {
     ];
     const categories = ['All', ...new Set(achievements?.map(a => a.category))];
     const visible = achievements?.filter(a => filter === 'All' || a.category === filter) ?? [];
+
+    const handleCreateAchievement = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!form.studentId) {
+            setFormError('Please select a student.');
+            return;
+        }
+        setSaving(true);
+        setFormError(null);
+        try {
+            await api('/achievements', {
+                method: 'POST',
+                body: JSON.stringify(form),
+            });
+            setShowModal(false);
+            setForm(emptyForm);
+            reload();
+        } catch (err) {
+            setFormError((err as Error).message);
+        } finally {
+            setSaving(false);
+        }
+    };
 
     return (
         <>
@@ -75,22 +129,34 @@ export default function AchievementsPage() {
                     ))}
                 </div>
 
-                {/* Filter bar */}
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Filter:</span>
-                    {categories.map(f => (
+                {/* Filter & Action bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Filter:</span>
+                        {categories.map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setFilter(f)}
+                                style={{
+                                    padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                                    cursor: 'pointer', border: '1px solid var(--cs-border)',
+                                    background: f === filter ? 'rgba(108,99,255,0.15)' : 'transparent',
+                                    color: f === filter ? '#8B85FF' : 'var(--cs-text-muted)',
+                                    transition: 'all 0.2s'
+                                }}
+                            >{f}</button>
+                        ))}
+                    </div>
+
+                    {can(session, 'students.write') && (
                         <button
-                            key={f}
-                            onClick={() => setFilter(f)}
-                            style={{
-                                padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                                cursor: 'pointer', border: '1px solid var(--cs-border)',
-                                background: f === filter ? 'rgba(108,99,255,0.15)' : 'transparent',
-                                color: f === filter ? '#8B85FF' : 'var(--cs-text-muted)',
-                                transition: 'all 0.2s'
-                            }}
-                        >{f}</button>
-                    ))}
+                            className="btn-primary"
+                            onClick={() => { setForm(emptyForm); setFormError(null); setShowModal(true); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
+                        >
+                            <Plus size={16} /> New Achievement
+                        </button>
+                    )}
                 </div>
 
                 {/* Achievement cards */}
@@ -148,6 +214,141 @@ export default function AchievementsPage() {
                     </div>
                 )}
             </div>
+
+            {/* Modal: New Achievement */}
+            {showModal && (
+                <Modal title="New Student Achievement" onClose={() => setShowModal(false)}>
+                    <form onSubmit={handleCreateAchievement} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <div>
+                            <label className="cs-label">Student *</label>
+                            <select
+                                className="cs-input"
+                                required
+                                value={form.studentId}
+                                onChange={e => setForm({ ...form, studentId: e.target.value })}
+                            >
+                                <option value="">— Select Student —</option>
+                                {students.map(s => (
+                                    <option key={s.studentId} value={s.studentId}>
+                                        {s.firstName} {s.lastName} ({s.enrollmentNumber})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="cs-label">Achievement Title *</label>
+                            <input
+                                className="cs-input"
+                                required
+                                placeholder="e.g. Regional Theory Olympiad — Finalist"
+                                value={form.title}
+                                onChange={e => setForm({ ...form, title: e.target.value })}
+                            />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div>
+                                <label className="cs-label">Category *</label>
+                                <select
+                                    className="cs-input"
+                                    value={form.category}
+                                    onChange={e => setForm({ ...form, category: e.target.value })}
+                                >
+                                    <option value="Competition">Competition</option>
+                                    <option value="Distinction">Distinction</option>
+                                    <option value="Certification">Certification</option>
+                                    <option value="Honors">Honors</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="cs-label">Level *</label>
+                                <select
+                                    className="cs-input"
+                                    value={form.level}
+                                    onChange={e => setForm({ ...form, level: e.target.value })}
+                                >
+                                    <option value="Institute">Institute</option>
+                                    <option value="City">City</option>
+                                    <option value="District">District</option>
+                                    <option value="State">State</option>
+                                    <option value="National">National</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div>
+                                <label className="cs-label">Award Date *</label>
+                                <input
+                                    className="cs-input"
+                                    type="date"
+                                    required
+                                    value={form.awardDate}
+                                    onChange={e => setForm({ ...form, awardDate: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="cs-label">Visibility *</label>
+                                <select
+                                    className="cs-input"
+                                    value={form.visibility}
+                                    onChange={e => setForm({ ...form, visibility: e.target.value })}
+                                >
+                                    <option value="public">Public (Showcase)</option>
+                                    <option value="batch">Batch Only</option>
+                                    <option value="guardian">Guardian & Student</option>
+                                    <option value="private">Private</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div>
+                                <label className="cs-label">Awarding Body / Issuer *</label>
+                                <input
+                                    className="cs-input"
+                                    required
+                                    placeholder="e.g. Apex Conservatory Faculty"
+                                    value={form.issuer}
+                                    onChange={e => setForm({ ...form, issuer: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="cs-label">Grade / Distinction (optional)</label>
+                                <input
+                                    className="cs-input"
+                                    placeholder="e.g. Grade VII, 1st Place"
+                                    value={form.grade}
+                                    onChange={e => setForm({ ...form, grade: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="cs-label">Remarks / Description (optional)</label>
+                            <textarea
+                                className="cs-input"
+                                rows={3}
+                                placeholder="Add notes, citations or achievement details..."
+                                value={form.remarks}
+                                onChange={e => setForm({ ...form, remarks: e.target.value })}
+                            />
+                        </div>
+
+                        {formError && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{formError}</div>}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+                            <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
+                                Cancel
+                            </button>
+                            <button className="btn-primary" type="submit" disabled={saving}>
+                                {saving ? 'Saving…' : 'Save Achievement'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
         </>
     );
 }

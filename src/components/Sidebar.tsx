@@ -42,7 +42,6 @@ const navGroups = [
         items: [
             { href: '/dashboard/notices', icon: Bell, label: 'Notices & Events', permission: 'academics.read' },
             { href: '/dashboard/achievements', icon: Trophy, label: 'Achievements', permission: 'academics.read' },
-            { href: '/portal', icon: Shield, label: 'Parent Portal', permission: 'portal.read' },
         ]
     },
     {
