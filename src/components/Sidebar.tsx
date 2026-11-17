@@ -6,7 +6,7 @@ import {
     LayoutDashboard, Users, GraduationCap, BookOpen, Calendar,
     CreditCard, Receipt, ClipboardList, Bell, Trophy, BarChart3,
     Settings, LogOut, ChevronLeft, ChevronRight, Building2,
-    Shield, ShieldCheck, Package, UserCog, FileCheck
+    Shield, ShieldCheck, UserCog, FileCheck
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { can, clearSession, homePath, saveSession, useSession, type SessionState } from '@/lib/session';
@@ -35,7 +35,6 @@ const navGroups = [
         items: [
             { href: '/dashboard/fees', icon: CreditCard, label: 'Fees & Plans', permission: 'billing.read' },
             { href: '/dashboard/invoices', icon: Receipt, label: 'Invoices & Dues', permission: 'billing.read' },
-            { href: '/dashboard/payments', icon: Package, label: 'Payments & Receipts', permission: 'billing.read' },
         ]
     },
     {
