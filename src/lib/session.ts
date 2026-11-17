@@ -69,7 +69,12 @@ export function useSession() {
 }
 
 export function can(session: SessionState | null, permission: string) {
-    return !!session && (session.user.isPlatformAdmin || session.session.permissions.includes(permission));
+    if (!session) return false;
+    if (session.user?.isPlatformAdmin) return true;
+    if (session.session?.role === 'TenantAdmin' || session.session?.role === 'PlatformAdmin') return true;
+    const perms = session.session?.permissions;
+    if (Array.isArray(perms) && (perms.includes('*') || perms.includes(permission))) return true;
+    return false;
 }
 
 /** Where a user lands after signing in. */
