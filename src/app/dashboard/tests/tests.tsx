@@ -3,9 +3,8 @@ import { useState } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { ArrowLeft, Printer, Send, Save, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, Printer, Send, Save, ClipboardCheck, Search, Plus } from 'lucide-react';
 import { api, useApi, formatDate } from '@/lib/api';
-import { confirmDialog } from '@/lib/dialogs';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 import { TEST_TYPES, gradeClass } from '@/lib/academy';
@@ -44,49 +43,205 @@ export default function TestsPage() {
     const { data: tests, error, reload } = useApi<TestSummary[]>('/tests');
     const [openTest, setOpenTest] = useState<string | null>(null);
     const [scheduling, setScheduling] = useState(false);
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState<string>('all');
 
     if (openTest) return <MarksSheet testId={openTest} canEdit={canEdit} onBack={() => { setOpenTest(null); reload(); }} />;
 
+    const filteredTests = tests?.filter(t => {
+        if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+        if (search.trim()) {
+            const q = search.toLowerCase();
+            const matchesTitle = t.title.toLowerCase().includes(q);
+            const matchesBatch = t.batchName.toLowerCase().includes(q);
+            const matchesCourse = t.courseTitle.toLowerCase().includes(q);
+            const matchesType = t.testType.toLowerCase().includes(q);
+            const matchesSubject = t.subjects.some(s => s.name.toLowerCase().includes(q));
+            if (!matchesTitle && !matchesBatch && !matchesCourse && !matchesType && !matchesSubject) return false;
+        }
+        return true;
+    });
+
     return (
         <>
-            <Topbar title="Tests & Results" subtitle="Schedule tests by subject, record marks and publish report cards to parents"
-                action={canEdit ? { label: 'Schedule Test', onClick: () => setScheduling(true) } : undefined} />
+            <Topbar title="Tests & Results" subtitle="Schedule tests by subject, record marks and publish report cards to parents" />
             <div className="page-body">
+                {/* Controls Toolbar */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    flexWrap: 'wrap',
+                    marginBottom: '16px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: '1', minWidth: '300px' }}>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)',
+                            borderRadius: '10px', padding: '0 12px', height: '34px', boxSizing: 'border-box',
+                            width: '280px', flexShrink: 0
+                        }}>
+                            <Search size={14} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
+                            <input
+                                placeholder="Search tests, batches, subjects..."
+                                style={{
+                                    background: 'none', border: 'none', outline: 'none',
+                                    padding: 0, height: '100%', fontSize: '13px', width: '100%',
+                                    color: 'var(--cs-text-primary)'
+                                }}
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                        </div>
+
+                        {/* Status filter pills */}
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {['all', 'scheduled', 'completed', 'published'].map(s => (
+                                <button
+                                    key={s}
+                                    onClick={() => setStatusFilter(s)}
+                                    style={{
+                                        padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                                        cursor: 'pointer', border: '1px solid',
+                                        background: statusFilter === s ? 'rgba(108,99,255,0.15)' : 'transparent',
+                                        borderColor: statusFilter === s ? 'rgba(108,99,255,0.4)' : 'var(--cs-border)',
+                                        color: statusFilter === s ? '#8B85FF' : 'var(--cs-text-muted)',
+                                        transition: 'all 0.2s',
+                                        textTransform: 'capitalize'
+                                    }}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Schedule Test button below header */}
+                    {canEdit && (
+                        <button
+                            className="btn-primary"
+                            onClick={() => setScheduling(true)}
+                            style={{
+                                height: '34px',
+                                padding: '0 16px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                borderRadius: '8px'
+                            }}
+                        >
+                            <Plus size={15} /> Schedule Test
+                        </button>
+                    )}
+                </div>
+
                 {!tests ? <PageState error={error} /> : (
-                    <div className="cs-card">
-                        <table className="cs-table">
+                    <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                        <table className="cs-table" style={{ width: '100%', tableLayout: 'fixed' }}>
                             <thead>
-                                <tr>
-                                    <th>Test</th>
-                                    <th>Batch</th>
-                                    <th>Subjects</th>
-                                    <th>Date</th>
-                                    <th>Status</th>
-                                    <th>Graded</th>
-                                    <th></th>
+                                <tr style={{ background: 'var(--cs-surface-2)' }}>
+                                    <th style={{ width: '21%', padding: '7px 8px 7px 16px' }}>Test</th>
+                                    <th style={{ width: '21%', padding: '7px 8px' }}>Batch & Course</th>
+                                    <th style={{ width: '20%', padding: '7px 8px' }}>Subjects</th>
+                                    <th style={{ width: '11%', padding: '7px 8px' }}>Date</th>
+                                    <th style={{ width: '9%', padding: '7px 8px' }}>Status</th>
+                                    <th style={{ width: '5%', padding: '7px 6px' }}>Graded</th>
+                                    <th style={{ width: '13%', padding: '7px 16px 7px 6px', textAlign: 'right' }}>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {tests.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--cs-text-muted)' }}>No tests scheduled yet.</td></tr>}
-                                {tests.map(t => (
-                                    <tr key={t.testId}>
-                                        <td>
-                                            <div style={{ fontWeight: 600, fontSize: '13px' }}>{t.title}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{t.testType}</div>
+                                {filteredTests?.length === 0 && (
+                                    <tr>
+                                        <td colSpan={7} style={{ textAlign: 'center', padding: '28px 14px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
+                                            {tests.length === 0 ? 'No tests scheduled yet.' : 'No tests match your filter.'}
                                         </td>
-                                        <td>
-                                            <div style={{ fontSize: '13px' }}>{t.batchName}</div>
-                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{t.courseTitle}</div>
+                                    </tr>
+                                )}
+                                {filteredTests?.map(t => (
+                                    <tr key={t.testId} style={{ transition: 'background 0.15s' }}>
+                                        <td style={{ padding: '7px 8px 7px 16px', verticalAlign: 'middle' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{
+                                                    width: '24px', height: '24px', borderRadius: '6px',
+                                                    background: 'rgba(108,99,255,0.12)', color: 'var(--cs-primary)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                }}>
+                                                    <ClipboardCheck size={12} />
+                                                </div>
+                                                <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '12px', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.title}>
+                                                        {t.title}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', lineHeight: 1.2, marginTop: '1px' }}>
+                                                        {t.testType}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </td>
-                                        <td style={{ fontSize: '12px', color: 'var(--cs-text-secondary)' }}>
-                                            {t.subjects.map(s => `${s.name} (${s.maxMarks})`).join(', ')}
+                                        <td style={{ padding: '7px 8px', verticalAlign: 'middle' }}>
+                                            <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cs-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }} title={t.batchName}>
+                                                    {t.batchName}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, marginTop: '1px' }} title={t.courseTitle}>
+                                                    {t.courseTitle}
+                                                </div>
+                                            </div>
                                         </td>
-                                        <td className="cell-nowrap" style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{formatDate(t.testDate)}</td>
-                                        <td><span className={`badge ${STATUS[t.status]}`}>{t.status}</span></td>
-                                        <td className="cell-nowrap" style={{ fontSize: '13px' }}>{t.graded}/{t.classSize}</td>
-                                        <td>
-                                            <button className="btn-secondary cell-nowrap" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => setOpenTest(t.testId)}>
-                                                <ClipboardCheck size={13} /> {canEdit && t.status !== 'published' ? 'Enter marks' : 'Results'}
+                                        <td style={{ padding: '7px 8px', verticalAlign: 'middle' }}>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+                                                {t.subjects.map((s, idx) => (
+                                                    <span key={idx} style={{
+                                                        fontSize: '11px',
+                                                        padding: '1px 5px',
+                                                        borderRadius: '4px',
+                                                        background: 'var(--cs-surface-2)',
+                                                        border: '1px solid var(--cs-border)',
+                                                        color: 'var(--cs-text-secondary)',
+                                                        whiteSpace: 'nowrap',
+                                                        lineHeight: '15px'
+                                                    }}>
+                                                        {s.name} <strong style={{ color: 'var(--cs-text-primary)', fontWeight: 600 }}>({s.maxMarks})</strong>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '7px 8px', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                                            <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>
+                                                {formatDate(t.testDate)}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '7px 8px', verticalAlign: 'middle' }}>
+                                            <span className={`badge ${STATUS[t.status]}`} style={{ fontSize: '10px', padding: '1px 6px', textTransform: 'capitalize' }}>
+                                                {t.status}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '7px 6px', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600 }}>
+                                                <span style={{ color: t.graded === t.classSize && t.classSize > 0 ? '#10B981' : 'var(--cs-text-primary)' }}>{t.graded}</span>
+                                                <span style={{ color: 'var(--cs-text-muted)', fontWeight: 400 }}>/{t.classSize}</span>
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '7px 16px 7px 6px', textAlign: 'right', verticalAlign: 'middle' }}>
+                                            <button
+                                                className={t.status === 'published' ? 'btn-ghost' : 'btn-secondary'}
+                                                style={{
+                                                    padding: '3px 8px',
+                                                    fontSize: '11px',
+                                                    height: '26px',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    borderRadius: '6px',
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                                onClick={() => setOpenTest(t.testId)}
+                                            >
+                                                <ClipboardCheck size={12} />
+                                                <span>{canEdit && t.status !== 'published' ? 'Enter marks' : 'Results'}</span>
                                             </button>
                                         </td>
                                     </tr>
@@ -217,7 +372,7 @@ function MarksSheet({ testId, canEdit, onBack }: { testId: string; canEdit: bool
     };
 
     const publish = async () => {
-        if (!(await confirmDialog('Publish these results?', 'Parents will be able to see them in the parent portal.', 'Publish'))) return;
+        if (!confirm('Publish these results to the parent portal?')) return;
         try {
             await api('/tests/publish', { method: 'POST', body: JSON.stringify({ testId }) });
             setMessage('Results published — parents can now see them in the portal.');

@@ -29,6 +29,7 @@ export interface Workspace {
             email?: string;
             phone?: string;
             city?: string;
+            address?: string;
             academicSession?: string;
             notificationTriggers?: Array<{ key: string; label: string; description: string; channels: string[]; enabled: boolean }>;
         };

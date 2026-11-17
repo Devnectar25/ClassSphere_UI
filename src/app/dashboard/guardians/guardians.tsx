@@ -1,13 +1,11 @@
 'use client';
-import Link from 'next/link';
 import { useState } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
-import { Phone, Mail, Eye, KeyRound, Copy, Send } from 'lucide-react';
+import { Phone, Mail, KeyRound, Copy, Send, Search, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, useApi, formatDate, initials } from '@/lib/api';
-import { confirmDialog } from '@/lib/dialogs';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 
@@ -28,6 +26,8 @@ interface Guardian {
 
 interface Credentials { name: string; email: string; password: string }
 
+const PAGE_SIZE = 7;
+
 const emptyParent = { firstName: '', lastName: '', relationship: 'Mother', phone: '', email: '', studentIds: [] as string[], createLogin: true };
 
 export default function GuardiansPage() {
@@ -35,6 +35,8 @@ export default function GuardiansPage() {
     const canManage = can(session, 'guardians.write');
     const { data: guardians, error, reload } = useApi<Guardian[]>('/guardians');
     const [adding, setAdding] = useState(false);
+    const [search, setSearch] = useState('');
+    const [offset, setOffset] = useState(0);
     const [credentials, setCredentials] = useState<Credentials | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
@@ -46,7 +48,7 @@ export default function GuardiansPage() {
 
     const issueLogin = async (g: Guardian) => {
         const verb = g.hasPortalAccess ? 'Reset the password' : 'Create a portal login';
-        if (!(await confirmDialog(`${verb} for ${g.firstName} ${g.lastName}?`, undefined, verb))) return;
+        if (!confirm(`${verb} for ${g.firstName} ${g.lastName}?`)) return;
         try {
             const res = await api<{ credentials: { email: string; password: string } }>('/guardians/portal-access', {
                 method: 'POST', body: JSON.stringify({ guardianId: g.guardianId }),
@@ -58,13 +60,41 @@ export default function GuardiansPage() {
         }
     };
 
+    const filteredGuardians = guardians?.filter(g => {
+        if (!search) return true;
+        const q = search.toLowerCase();
+        const name = `${g.firstName} ${g.lastName}`.toLowerCase();
+        const email = (g.email || '').toLowerCase();
+        const phone = (g.phone || '').toLowerCase();
+        const children = g.students.map(s => s.name).join(' ').toLowerCase();
+        return name.includes(q) || email.includes(q) || phone.includes(q) || children.includes(q);
+    }) ?? [];
+
+    const total = filteredGuardians.length;
+    const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+    const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+    const paginatedGuardians = filteredGuardians.slice(offset, offset + PAGE_SIZE);
+
+    const getVisiblePages = (curr: number, totalPagesCount: number): (number | string)[] => {
+        if (totalPagesCount <= 7) return Array.from({ length: totalPagesCount }, (_, i) => i + 1);
+        const pages: (number | string)[] = [1];
+        if (curr > 3) pages.push('...');
+        const start = Math.max(2, curr - 1);
+        const end = Math.min(totalPagesCount - 1, curr + 1);
+        for (let i = start; i <= end; i++) pages.push(i);
+        if (curr < totalPagesCount - 2) pages.push('...');
+        pages.push(totalPagesCount);
+        return pages;
+    };
+
     return (
         <>
-            <Topbar title="Parents & Guardians" subtitle="Parent contacts, linked children and parent-portal logins"
-                action={canManage ? { label: 'Add Parent', onClick: () => setAdding(true) } : undefined} />
-            <div className="page-body">
+            <Topbar title="Parents & Guardians" subtitle="Parent contacts, linked children and parent-portal logins" />
+            <div className="page-body" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                 {message && <div className="cs-card" style={{ padding: '10px 14px', fontSize: '13px', color: 'var(--cs-danger)' }}>{message}</div>}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+
+                {/* Quick stats */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', width: '100%' }}>
                     {stats.map(s => (
                         <div key={s.label} className="cs-card" style={{ padding: '16px' }}>
                             <div style={{ fontSize: '24px', fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -72,70 +102,211 @@ export default function GuardiansPage() {
                         </div>
                     ))}
                 </div>
+
                 {!guardians ? <PageState error={error} /> : (
-                    <div className="cs-card">
-                        <table className="cs-table">
-                            <thead>
-                                <tr>
-                                    <th>Parent</th>
-                                    <th>Contact</th>
-                                    <th>Children</th>
-                                    <th>Payer</th>
-                                    <th>Portal Login</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {guardians.map(g => {
-                                    const name = `${g.firstName} ${g.lastName}`;
-                                    return (
-                                        <tr key={g.guardianId}>
-                                            <td>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                    <div className="avatar-placeholder" style={{ width: 32, height: 32, fontSize: '11px' }}>{initials(name)}</div>
-                                                    <div>
-                                                        <div style={{ fontWeight: 600, fontSize: '13px' }}>{name}</div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{g.relationship}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}><Phone size={10} style={{ marginRight: 4 }} />{g.phone}</div>
-                                                <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', wordBreak: 'break-all' }}><Mail size={10} style={{ marginRight: 4 }} />{g.email}</div>
-                                            </td>
-                                            <td><BadgeList value={g.students.map(s => s.name).join(', ') || null} /></td>
-                                            <td>
-                                                <span className={`badge ${g.payerStatus === 'Active payer' ? 'badge-success' : g.payerStatus === 'Overdue' ? 'badge-danger' : 'badge-warning'}`}>{g.payerStatus}</span>
-                                            </td>
-                                            <td>
-                                                {g.hasPortalAccess ? (
-                                                    <>
-                                                        <div style={{ fontSize: '12px', wordBreak: 'break-all' }}>{g.portalEmail}</div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>
-                                                            {g.portalLastLogin ? `Last sign-in ${formatDate(g.portalLastLogin)}` : 'Not signed in yet'}
-                                                        </div>
-                                                    </>
-                                                ) : <span className="badge badge-secondary">No login</span>}
-                                            </td>
-                                            <td>
-                                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                    {canManage && (
-                                                        <button className="btn-secondary cell-nowrap" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => issueLogin(g)}>
-                                                            <KeyRound size={12} /> {g.hasPortalAccess ? 'Reset password' : 'Create login'}
-                                                        </button>
-                                                    )}
-                                                    {can(session, 'portal.read') && (
-                                                        <Link href={`/portal?guardianId=${g.guardianId}`} className="btn-ghost" title="Preview parent portal" style={{ padding: '4px 8px' }}>
-                                                            <Eye size={13} />
-                                                        </Link>
-                                                    )}
-                                                </div>
+                    <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                        {/* Toolbar below the cards */}
+                        <div style={{
+                            padding: '16px 24px',
+                            borderBottom: '1px solid var(--cs-border)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '16px',
+                            flexWrap: 'wrap'
+                        }}>
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)',
+                                borderRadius: '10px', padding: '0 12px', height: '34px', boxSizing: 'border-box',
+                                width: '300px'
+                            }}>
+                                <Search size={14} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
+                                <input
+                                    placeholder="Search by parent, child, or email..."
+                                    style={{
+                                        background: 'none', border: 'none', outline: 'none',
+                                        padding: 0, height: '100%', fontSize: '13px', width: '100%',
+                                        color: 'var(--cs-text-primary)'
+                                    }}
+                                    value={search}
+                                    onChange={e => { setSearch(e.target.value); setOffset(0); }}
+                                />
+                            </div>
+
+                            {canManage && (
+                                <button
+                                    className="btn-primary"
+                                    onClick={() => setAdding(true)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        whiteSpace: 'nowrap',
+                                        padding: '7px 16px',
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                        marginLeft: 'auto'
+                                    }}
+                                >
+                                    <Plus size={15} />
+                                    Add Parent
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Table */}
+                        <div style={{ overflowX: 'auto', width: '100%' }}>
+                            <table className="cs-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ width: '22%', paddingLeft: '24px' }}>Parent</th>
+                                        <th style={{ width: '22%' }}>Contact</th>
+                                        <th style={{ width: '20%' }}>Children</th>
+                                        <th style={{ width: '12%' }}>Payer</th>
+                                        <th style={{ width: '12%' }}>Portal Login</th>
+                                        <th style={{ width: '12%', textAlign: 'right', paddingRight: '24px' }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredGuardians.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--cs-text-muted)' }}>
+                                                {search ? 'No parents match your search.' : 'No parents registered yet.'}
                                             </td>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                    ) : paginatedGuardians.map(g => {
+                                        const name = `${g.firstName} ${g.lastName}`;
+                                        return (
+                                            <tr key={g.guardianId}>
+                                                <td style={{ paddingLeft: '24px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <div className="avatar-placeholder" style={{ width: 32, height: 32, fontSize: '11px', flexShrink: 0 }}>{initials(name)}</div>
+                                                        <div style={{ overflow: 'hidden' }}>
+                                                            <div style={{ fontWeight: 600, fontSize: '13px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{name}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{g.relationship}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        <Phone size={10} style={{ marginRight: 4, display: 'inline' }} />{g.phone}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        <Mail size={10} style={{ marginRight: 4, display: 'inline' }} />{g.email}
+                                                    </div>
+                                                </td>
+                                                <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    <BadgeList value={g.students.map(s => s.name).join(', ') || null} />
+                                                </td>
+                                                <td>
+                                                    <span className={`badge ${g.payerStatus === 'Active payer' ? 'badge-success' : g.payerStatus === 'Overdue' ? 'badge-danger' : 'badge-warning'}`}>
+                                                        {g.payerStatus}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    {g.hasPortalAccess ? (
+                                                        <div style={{ overflow: 'hidden' }}>
+                                                            <div style={{ fontSize: '12px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{g.portalEmail}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap' }}>
+                                                                {g.portalLastLogin ? `Last sign-in ${formatDate(g.portalLastLogin)}` : 'Not signed in yet'}
+                                                            </div>
+                                                        </div>
+                                                    ) : <span className="badge badge-secondary">No login</span>}
+                                                </td>
+                                                <td style={{ textAlign: 'right', paddingRight: '24px' }}>
+                                                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                                        {canManage && (
+                                                            <button className="btn-secondary cell-nowrap" style={{ padding: '4px 10px', fontSize: '12px', cursor: 'pointer' }} onClick={() => issueLogin(g)}>
+                                                                <KeyRound size={12} /> {g.hasPortalAccess ? 'Reset' : 'Login'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination */}
+                        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                            <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>
+                                Showing {total === 0 ? 0 : offset + 1}–{Math.min(offset + paginatedGuardians.length, total)} of {total} parents (7 per page)
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                    className="btn-ghost"
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '13px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        border: '1px solid var(--cs-border)',
+                                        borderRadius: '8px',
+                                        cursor: offset === 0 ? 'not-allowed' : 'pointer',
+                                        opacity: offset === 0 ? 0.4 : 1
+                                    }}
+                                    disabled={offset === 0}
+                                    onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                                >
+                                    <ChevronLeft size={16} /> Previous
+                                </button>
+
+                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    {getVisiblePages(currentPage, totalPages).map((p, idx) => {
+                                        if (p === '...') {
+                                            return <span key={`ellipsis-${idx}`} style={{ padding: '0 6px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>...</span>;
+                                        }
+                                        const pageNum = Number(p);
+                                        const isCurrent = pageNum === currentPage;
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => setOffset((pageNum - 1) * PAGE_SIZE)}
+                                                style={{
+                                                    minWidth: '32px',
+                                                    height: '32px',
+                                                    padding: '0 8px',
+                                                    borderRadius: '8px',
+                                                    fontSize: '13px',
+                                                    fontWeight: isCurrent ? 700 : 500,
+                                                    cursor: 'pointer',
+                                                    border: '1px solid',
+                                                    background: isCurrent ? 'var(--cs-primary, #6C63FF)' : 'transparent',
+                                                    borderColor: isCurrent ? 'var(--cs-primary, #6C63FF)' : 'var(--cs-border)',
+                                                    color: isCurrent ? '#ffffff' : 'var(--cs-text-secondary)',
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <button
+                                    className="btn-ghost"
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '13px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        border: '1px solid var(--cs-border)',
+                                        borderRadius: '8px',
+                                        cursor: offset + PAGE_SIZE >= total ? 'not-allowed' : 'pointer',
+                                        opacity: offset + PAGE_SIZE >= total ? 0.4 : 1
+                                    }}
+                                    disabled={offset + PAGE_SIZE >= total}
+                                    onClick={() => setOffset(offset + PAGE_SIZE)}
+                                >
+                                    Next <ChevronRight size={16} />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -203,7 +374,7 @@ function AddParent({ onClose, onCreated }: { onClose: () => void; onCreated: (cr
                     Create parent-portal login now
                 </label>
                 {error && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{error}</div>}
-                <button className="btn-primary" type="submit" disabled={form.studentIds.length === 0} style={{ alignSelf: 'flex-end' }}>Add Parent</button>
+                <button className="btn-primary" type="submit" disabled={form.studentIds.length === 0} style={{ alignSelf: 'flex-end', cursor: 'pointer' }}>Add Parent</button>
             </form>
         </Modal>
     );

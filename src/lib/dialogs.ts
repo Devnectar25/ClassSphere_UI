@@ -23,7 +23,7 @@ export async function confirmDialog(title: string, text?: string, confirmText = 
 export async function promptDialog(title: string, placeholder?: string, confirmText = 'Save') {
     const result = await AppSwal.fire({
         title, input: 'text', inputPlaceholder: placeholder, showCancelButton: true, confirmButtonText: confirmText,
-        inputValidator: value => (value.trim() ? null : 'Please enter a value.'),
+        inputValidator: (value: any) => (String(value || '').trim() ? null : 'Please enter a value.'),
     });
     return result.isConfirmed ? String(result.value).trim() : null;
 }
