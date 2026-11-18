@@ -38,6 +38,12 @@ logs/
 *.sqlite
 *.sqlite3
 *.db
+~$*
+*.swp
+*.swo
+*~
+*.orig
+.turbo/
 
 # debug
 npm-debug.log*

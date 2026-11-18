@@ -4,7 +4,7 @@ import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
 import React, { useState } from 'react';
-import { Search, CreditCard, CheckCircle, Clock, XCircle, AlertCircle, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, CreditCard, CheckCircle, Clock, XCircle, AlertCircle, Download, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, useApi, formatMoney, formatDate, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -73,6 +73,7 @@ export default function InvoicesPage() {
     const [search, setSearch] = useState('');
     const [activeTab, setActiveTab] = useState('all');
     const [offset, setOffset] = useState(0);
+    const [downloadingId, setDownloadingId] = useState<string | null>(null);
     const [collecting, setCollecting] = useState<Invoice | null>(null);
     const [payment, setPayment] = useState({ amount: '', paymentMethod: 'Cash' });
     const [notice, setNotice] = useState<string | null>(null);
@@ -82,9 +83,15 @@ export default function InvoicesPage() {
 
     
     const downloadInvoice = async (inv: Invoice) => {
+        const invId = inv.invoiceId || inv.invoiceNumber;
+        setDownloadingId(invId);
         try {
-            const { jsPDF } = await import('jspdf');
-            const doc = new jsPDF({
+            const jspdfModule = await import('jspdf');
+            const jsPDFConstructor = jspdfModule.jsPDF || (jspdfModule as any).default?.jsPDF || jspdfModule.default;
+            if (!jsPDFConstructor) {
+                throw new Error('PDF generator library (jsPDF) could not be loaded.');
+            }
+            const doc = new jsPDFConstructor({
                 orientation: 'portrait',
                 unit: 'mm',
                 format: 'a4'
@@ -94,11 +101,15 @@ export default function InvoicesPage() {
             const margin = 16;
             const contentWidth = pageWidth - (margin * 2); // 178mm
 
-            const orgName = workspace?.organization.name || 'ClassSphere Conservatory of Music';
-            const orgType = workspace?.organization.academyType || 'Music & Performing Arts Academy';
-            const orgEmail = workspace?.organization.settings?.email || 'billing@classsphere.edu';
-            const orgPhone = workspace?.organization.settings?.phone || '+91 98765 43210';
-            const orgAddress = workspace?.organization.settings?.address || '104 Harmony Tower, Residency Road, Bangalore - 560025';
+            const orgName = workspace?.organization?.name || 'devnectar';
+            const orgType = workspace?.organization?.academyType || 'Tuition Academy';
+            const orgEmail = workspace?.organization?.settings?.email || 'dev@nectar.com';
+            const orgPhone = workspace?.organization?.settings?.phone || '+91 98765 43210';
+            const orgAddress = workspace?.organization?.settings?.address || 'Main Campus';
+
+            const studentName = inv.studentName || 'Student';
+            const invoiceNumber = inv.invoiceNumber || 'INV-0000';
+            const feeDesignation = inv.designation || 'Tuition Fee';
 
             const paidAmt = Number(inv.paidAmount !== undefined ? inv.paidAmount : Math.max(0, inv.totalAmount - (inv.balanceAmount || 0)));
             const balanceAmt = Number(inv.balanceAmount || 0);
@@ -172,7 +183,7 @@ export default function InvoicesPage() {
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(10.5);
             doc.setTextColor(...darkText);
-            doc.text(inv.invoiceNumber, pageWidth - margin, y + 9.5, { align: 'right' });
+            doc.text(invoiceNumber, pageWidth - margin, y + 9.5, { align: 'right' });
 
             // Status Pill
             const pillW = isPartiallyPaid ? 30 : isPaid ? 26 : 22;
@@ -209,7 +220,7 @@ export default function InvoicesPage() {
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(10.5);
             doc.setTextColor(...darkText);
-            doc.text(inv.studentName, margin + 6, y + 12);
+            doc.text(studentName, margin + 6, y + 12);
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(8);
@@ -218,7 +229,7 @@ export default function InvoicesPage() {
             const batchLines = doc.splitTextToSize(batchLine, cardWidth - 12);
             doc.text(batchLines[0], margin + 6, y + 17.5);
 
-            const feeLine = `Fee Structure: ${inv.designation}`;
+            const feeLine = `Fee Structure: ${feeDesignation}`;
             const feeLines = doc.splitTextToSize(feeLine, cardWidth - 12);
             doc.text(feeLines[0], margin + 6, y + 22.5);
             if (feeLines[1]) {
@@ -333,7 +344,7 @@ export default function InvoicesPage() {
 
             doc.text('Invoice Number: ', rightCardX + 6, y + 12);
             doc.setFont('helvetica', 'bold');
-            doc.text(inv.invoiceNumber, rightCardX + 32, y + 12);
+            doc.text(invoiceNumber, rightCardX + 32, y + 12);
 
             doc.setFont('helvetica', 'normal');
             doc.text('Due Date: ', rightCardX + 6, y + 17.5);
@@ -373,7 +384,7 @@ export default function InvoicesPage() {
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(9);
             doc.setTextColor(...darkText);
-            doc.text(inv.designation, margin + 6, y + 5.5);
+            doc.text(feeDesignation, margin + 6, y + 5.5);
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(7.5);
@@ -528,7 +539,7 @@ export default function InvoicesPage() {
                 ? `This document certifies that full fee settlement of ${totalFormatted} across all scheduled terms has been completed and verified.`
                 : isPartiallyPaid
                 ? `This document certifies payment of ${paidFormatted} received to date across terms. Balance of ${balanceFormatted} remains due for subsequent terms.`
-                : `This document certifies fee billing of ${totalFormatted} (Balance Due: ${balanceFormatted}) for student ${inv.studentName}.`;
+                : `This document certifies fee billing of ${totalFormatted} (Balance Due: ${balanceFormatted}) for student ${studentName}.`;
 
             const maxTextWidth = contentWidth - 44; // leaves 44mm for stamp on the right
             const descLines = doc.splitTextToSize(certDesc, maxTextWidth);
@@ -558,12 +569,46 @@ export default function InvoicesPage() {
             doc.text(`Thank you for being part of ${orgName}. This is a computer-generated tax invoice and requires no physical signature.`, pageWidth / 2, y + 6, { align: 'center' });
             doc.text(`For accounts & payment inquiries, contact ${orgEmail} • ${orgPhone}`, pageWidth / 2, y + 10.5, { align: 'center' });
 
-            // Direct file download: immediately downloads PDF file without print / save-as dialog
-            doc.save(`Invoice-${inv.invoiceNumber}.pdf`);
-            setNotice(`Invoice ${inv.invoiceNumber} with payment terms downloaded successfully.`);
+            // Robust multi-method download execution
+            const fileName = `Invoice-${invoiceNumber}.pdf`;
+            let downloaded = false;
+
+            if (typeof window !== 'undefined' && window.URL && window.URL.createObjectURL) {
+                try {
+                    const blob = doc.output('blob');
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.style.display = 'none';
+                    link.href = blobUrl;
+                    link.setAttribute('download', fileName);
+                    document.body.appendChild(link);
+                    link.click();
+                    setTimeout(() => {
+                        try {
+                            document.body.removeChild(link);
+                            window.URL.revokeObjectURL(blobUrl);
+                        } catch {}
+                    }, 1500);
+                    downloaded = true;
+                } catch (blobErr) {
+                    console.warn('Direct blob anchor download failed, falling back to doc.save:', blobErr);
+                }
+            }
+
+            if (!downloaded) {
+                doc.save(fileName);
+            }
+
+            setNotice(`Invoice ${invoiceNumber} downloaded successfully.`);
         } catch (err) {
             console.error('Invoice download error:', err);
-            setNotice(`Failed to download invoice: ${(err as Error).message}`);
+            const msg = (err as Error).message || 'Failed to generate and download invoice';
+            setNotice(`Failed to download invoice: ${msg}`);
+            if (typeof window !== 'undefined') {
+                window.alert(`Could not download invoice: ${msg}`);
+            }
+        } finally {
+            setDownloadingId(null);
         }
     };
 
@@ -725,17 +770,18 @@ export default function InvoicesPage() {
                                     </thead>
                                     <tbody>
                                         {paginatedInvoices.map(inv => {
-                                            const sc = statusConfig[inv.status];
-                                            const feeParts = inv.designation.includes('—')
-                                                ? inv.designation.split('—').map(p => p.trim())
-                                                : inv.designation.includes('-')
-                                                ? inv.designation.split('-').map(p => p.trim())
-                                                : [inv.designation];
+                                            const sc = statusConfig[inv.status] || statusConfig.pending;
+                                            const desig = inv.designation || 'Tuition Fee';
+                                            const feeParts = desig.includes('—')
+                                                ? desig.split('—').map(p => p.trim())
+                                                : desig.includes('-')
+                                                ? desig.split('-').map(p => p.trim())
+                                                : [desig];
 
                                             return (
                                                 <tr
                                                     key={inv.invoiceId}
-                                                    onClick={(e) => { e.stopPropagation(); downloadInvoice(inv); }}
+                                                    onClick={(e) => { e.stopPropagation(); if (!downloadingId) downloadInvoice(inv); }}
                                                     style={{ cursor: 'pointer' }}
                                                     title={`Click any field to view / generate invoice for ${inv.studentName}`}
                                                 >
@@ -842,27 +888,44 @@ export default function InvoicesPage() {
                                                                 >
                                                                     <CreditCard size={11} /> Collect
                                                                 </button>
-                                                            ) : (
-                                                                <button
-                                                                    type="button"
-                                                                    className="btn-primary cell-nowrap"
-                                                                    style={{
-                                                                        padding: '4px 12px',
-                                                                        height: '28px',
-                                                                        minWidth: '82px',
-                                                                        fontSize: '11.5px',
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        gap: '4px',
-                                                                        borderRadius: '6px'
-                                                                    }}
-                                                                    onClick={(e) => { e.stopPropagation(); downloadInvoice(inv); }}
-                                                                    title={`Download Invoice ${inv.invoiceNumber}`}
-                                                                >
-                                                                    <Download size={11} /> Invoice
-                                                                </button>
-                                                            )}
+                                                            ) : (() => {
+                                                                const isDownloading = downloadingId === (inv.invoiceId || inv.invoiceNumber);
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="btn-primary cell-nowrap"
+                                                                        disabled={isDownloading}
+                                                                        style={{
+                                                                            padding: '4px 12px',
+                                                                            height: '28px',
+                                                                            minWidth: '82px',
+                                                                            fontSize: '11.5px',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            gap: '4px',
+                                                                            borderRadius: '6px',
+                                                                            opacity: isDownloading ? 0.75 : 1,
+                                                                            cursor: isDownloading ? 'wait' : 'pointer'
+                                                                        }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (!isDownloading) downloadInvoice(inv);
+                                                                        }}
+                                                                        title={`Download Invoice ${inv.invoiceNumber}`}
+                                                                    >
+                                                                        {isDownloading ? (
+                                                                            <>
+                                                                                <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Saving...
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Download size={11} /> Invoice
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </td>
                                                 </tr>
