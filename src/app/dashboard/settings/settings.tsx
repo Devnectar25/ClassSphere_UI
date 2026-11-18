@@ -19,7 +19,9 @@ export default function SettingsPage() {
     return (
         <>
             <Topbar title="Settings" subtitle="Configure your academy profile, branding, and integrations" />
-            {workspace ? <SettingsForm workspace={workspace} onSaved={reload} /> : <div style={{ padding: '20px' }}><PageState error={null} /></div>}
+            <div className="page-body">
+                {workspace ? <SettingsForm workspace={workspace} onSaved={reload} /> : <PageState error={null} />}
+            </div>
         </>
     );
 }
@@ -79,20 +81,31 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
     ];
 
     return (
-        <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: '16px', alignItems: 'start' }}>
-            {/* Sidebar */}
-            <div className="cs-card" style={{ padding: '12px' }}>
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => { setActiveTab(tab.id); setStatus(null); }}
-                        className={`sidebar-link${activeTab === tab.id ? ' active' : ''}`}
-                        style={{ width: '100%' }}
-                    >
-                        <tab.icon size={16} />
-                        {tab.label}
-                    </button>
-                ))}
+        <>
+            {/* Horizontal Tabs */}
+            <div className="tab-list" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
+                {tabs.map(tab => {
+                    const isActive = activeTab === tab.id;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => { setActiveTab(tab.id); setStatus(null); }}
+                            className={`tab-trigger${isActive ? ' active' : ''}`}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '10px 20px',
+                                fontSize: '13px',
+                                fontWeight: isActive ? 700 : 500,
+                                color: isActive ? 'var(--cs-primary)' : undefined,
+                            }}
+                        >
+                            <tab.icon size={16} color={isActive ? 'var(--cs-primary)' : undefined} />
+                            {tab.label}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Content */}
@@ -197,7 +210,7 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
                     <div className="section-subtitle">Coming soon — configure {activeTab === 'payments' ? 'Razorpay/PayU integration, fee convenience charge settings' : 'MFA, session policy, login history, and audit retention'}</div>
                 </div>
             )}
-        </div>
+        </>
     );
 }
 

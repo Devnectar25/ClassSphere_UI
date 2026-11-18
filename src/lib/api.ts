@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { clearSession, getSession, useSession } from '@/lib/session';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api/v1';
 
 /** Subscription plan from the public catalogue (GET /plans). */
 export interface Plan {

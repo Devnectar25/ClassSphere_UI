@@ -35,6 +35,9 @@ logs/
 .cache/
 *.tmp
 *.bak
+*.sqlite
+*.sqlite3
+*.db
 
 # debug
 npm-debug.log*

@@ -53,7 +53,7 @@ function to24h(timeStr: string | undefined): string {
     if (/^\d{2}:\d{2}$/.test(timeStr)) return timeStr;
     const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
     if (!match) return '10:00';
-    let [ , h, m, ampm ] = match;
+    const [ , h, m, ampm ] = match;
     let hour = parseInt(h, 10);
     if (ampm) {
         const p = ampm.toUpperCase();
@@ -121,6 +121,7 @@ function BatchesContent() {
 
     useEffect(() => {
         if (courseIdParam) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setSelectedCourse(courseIdParam);
         } else if (courseTitleParam) {
             const match = batches?.find(b => b.courseTitle.toLowerCase() === courseTitleParam.toLowerCase());
@@ -196,7 +197,7 @@ function BatchesContent() {
         }));
     };
 
-    const updateScheduleRow = (idx: number, field: string, val: any) => {
+    const updateScheduleRow = (idx: number, field: string, val: string | number) => {
         setBatchForm(f => ({
             ...f,
             schedules: f.schedules.map((s, i) => i === idx ? { ...s, [field]: val } : s)
