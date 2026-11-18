@@ -241,7 +241,9 @@ export default function LandingPage() {
                 ))}
               </div>
               <Link href="/register" style={{ textDecoration: 'none', display: 'block' }}>
-                <button className={p.isPopular ? 'btn-primary' : 'btn-secondary'} style={{ width: '100%', justifyContent: 'center', fontSize: '14px', padding: '12px', height: '44px' }}>
+                <button
+                  className={`pricing-btn ${p.isPopular ? 'pricing-btn-primary' : 'pricing-btn-secondary'}`}
+                >
                   Start Free Trial <ChevronRight size={16} />
                 </button>
               </Link>

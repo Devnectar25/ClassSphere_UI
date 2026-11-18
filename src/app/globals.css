@@ -387,6 +387,60 @@ body {
   border-color: var(--cs-border-strong);
 }
 
+/* ─── Pricing Plan CTA Buttons ─── */
+.pricing-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  padding: 12px 20px;
+  border-radius: var(--cs-radius);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  outline: none;
+}
+
+.pricing-btn svg {
+  transition: transform 0.2s ease;
+}
+
+.pricing-btn:hover svg {
+  transform: translateX(4px);
+}
+
+.pricing-btn-secondary {
+  background: var(--cs-surface);
+  color: var(--cs-text-primary);
+  border: 1px solid var(--cs-border);
+}
+
+.pricing-btn-secondary:hover {
+  background: var(--cs-primary);
+  color: #FFFFFF;
+  border-color: var(--cs-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px rgba(79, 70, 229, 0.35);
+}
+
+.pricing-btn-primary {
+  background: var(--cs-primary);
+  color: #FFFFFF;
+  border: 1px solid var(--cs-primary);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+.pricing-btn-primary:hover {
+  background: var(--cs-primary-hover);
+  border-color: var(--cs-primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -4px rgba(79, 70, 229, 0.45);
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--cs-text-secondary);

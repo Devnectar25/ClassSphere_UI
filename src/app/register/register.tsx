@@ -1,8 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { Shield, CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Shield, CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff, ChevronDown, Search } from 'lucide-react';
 import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
 
@@ -16,7 +16,91 @@ const CATEGORIES = [
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
-const PHONE_CHARS_REGEX = /^[+]?[\d\s\-()]+$/;
+
+export interface CountryOption {
+    code: string;
+    name: string;
+    dialCode: string;
+    flag: string;
+    digits: number;
+    placeholder: string;
+    regex?: RegExp;
+}
+
+export const COUNTRIES: CountryOption[] = [
+    { code: 'IN', name: 'India', dialCode: '+91', flag: '🇮🇳', digits: 10, placeholder: '9840012345', regex: /^[6-9]\d{9}$/ },
+    { code: 'US', name: 'United States', dialCode: '+1', flag: '🇺🇸', digits: 10, placeholder: '5550192800' },
+    { code: 'GB', name: 'United Kingdom', dialCode: '+44', flag: '🇬🇧', digits: 10, placeholder: '7911123456' },
+    { code: 'CA', name: 'Canada', dialCode: '+1', flag: '🇨🇦', digits: 10, placeholder: '4165550192' },
+    { code: 'AU', name: 'Australia', dialCode: '+61', flag: '🇦🇺', digits: 9, placeholder: '412345678' },
+    { code: 'AE', name: 'United Arab Emirates', dialCode: '+971', flag: '🇦🇪', digits: 9, placeholder: '501234567' },
+    { code: 'SA', name: 'Saudi Arabia', dialCode: '+966', flag: '🇸🇦', digits: 9, placeholder: '512345678' },
+    { code: 'SG', name: 'Singapore', dialCode: '+65', flag: '🇸🇬', digits: 8, placeholder: '81234567' },
+    { code: 'QA', name: 'Qatar', dialCode: '+974', flag: '🇶🇦', digits: 8, placeholder: '33123456' },
+    { code: 'KW', name: 'Kuwait', dialCode: '+965', flag: '🇰🇼', digits: 8, placeholder: '91234567' },
+    { code: 'OM', name: 'Oman', dialCode: '+968', flag: '🇴🇲', digits: 8, placeholder: '91234567' },
+    { code: 'BH', name: 'Bahrain', dialCode: '+973', flag: '🇧🇭', digits: 8, placeholder: '36123456' },
+    { code: 'MY', name: 'Malaysia', dialCode: '+60', flag: '🇲🇾', digits: 10, placeholder: '123456789' },
+    { code: 'ID', name: 'Indonesia', dialCode: '+62', flag: '🇮🇩', digits: 10, placeholder: '8123456789' },
+    { code: 'PH', name: 'Philippines', dialCode: '+63', flag: '🇵🇭', digits: 10, placeholder: '9171234567' },
+    { code: 'NZ', name: 'New Zealand', dialCode: '+64', flag: '🇳🇿', digits: 9, placeholder: '211234567' },
+    { code: 'ZA', name: 'South Africa', dialCode: '+27', flag: '🇿🇦', digits: 9, placeholder: '711234567' },
+    { code: 'DE', name: 'Germany', dialCode: '+49', flag: '🇩🇪', digits: 10, placeholder: '15123456789' },
+    { code: 'FR', name: 'France', dialCode: '+33', flag: '🇫🇷', digits: 9, placeholder: '612345678' },
+    { code: 'NP', name: 'Nepal', dialCode: '+977', flag: '🇳🇵', digits: 10, placeholder: '9841234567' },
+    { code: 'BD', name: 'Bangladesh', dialCode: '+880', flag: '🇧🇩', digits: 10, placeholder: '1712345678' },
+    { code: 'LK', name: 'Sri Lanka', dialCode: '+94', flag: '🇱🇰', digits: 9, placeholder: '712345678' },
+    { code: 'PK', name: 'Pakistan', dialCode: '+92', flag: '🇵🇰', digits: 10, placeholder: '3001234567' },
+];
+
+function FlagImage({ code, name }: { code: string; name: string }) {
+    const [failed, setFailed] = useState(false);
+    const src = code === 'IN' ? '/flags/in.svg' : `https://flagcdn.com/w40/${code.toLowerCase()}.png`;
+
+    if (failed) {
+        return (
+            <span
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 20,
+                    height: 14,
+                    borderRadius: 2,
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    background: '#E2E8F0',
+                    color: '#475569',
+                    flexShrink: 0,
+                    lineHeight: 1,
+                }}
+            >
+                {code}
+            </span>
+        );
+    }
+    return (
+        <img
+            src={src}
+            srcSet={code === 'IN' ? undefined : `https://flagcdn.com/w80/${code.toLowerCase()}.png 2x`}
+            width={20}
+            height={14}
+            alt={name}
+            loading="eager"
+            onError={() => setFailed(true)}
+            style={{
+                display: 'inline-block',
+                width: 20,
+                height: 14,
+                objectFit: 'cover',
+                borderRadius: '2px',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.12)',
+                flexShrink: 0,
+                verticalAlign: 'middle',
+            }}
+        />
+    );
+}
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -41,6 +125,38 @@ export default function RegisterPage() {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [session, setSession] = useState<SessionState | null>(null);
+    const [selectedCountry, setSelectedCountry] = useState<CountryOption>(COUNTRIES[0]);
+    const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+    const [countrySearch, setCountrySearch] = useState('');
+    const [isPhoneFocused, setIsPhoneFocused] = useState(false);
+    const countryDropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) {
+                setIsCountryDropdownOpen(false);
+                setCountrySearch('');
+            }
+        };
+        if (isCountryDropdownOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isCountryDropdownOpen]);
+
+    const validatePhoneField = (value: string, country: CountryOption = selectedCountry): string => {
+        const digits = value.replace(/\D/g, '');
+        if (!digits) return 'Mobile number is required.';
+        if (digits.length !== country.digits) {
+            return `Mobile number must be exactly ${country.digits} digits (${digits.length}/${country.digits}).`;
+        }
+        if (country.code === 'IN' && !/^[6-9]/.test(digits)) {
+            return 'Indian mobile number must start with 6, 7, 8, or 9.';
+        }
+        return '';
+    };
 
     const validateField = (name: string, value: string): string => {
         const val = value.trim();
@@ -64,15 +180,8 @@ export default function RegisterPage() {
                 if (!val) return 'Email address is required.';
                 if (!EMAIL_REGEX.test(val)) return 'Please enter a valid email address (e.g. name@domain.com).';
                 return '';
-            case 'phone': {
-                if (!val) return 'Mobile number is required.';
-                if (/[a-zA-Z]/.test(val)) return 'Mobile number cannot contain letters.';
-                const digits = val.replace(/\D/g, '');
-                if (digits.length < 10) return 'Mobile number must be at least 10 digits.';
-                if (digits.length > 15) return 'Mobile number cannot exceed 15 digits.';
-                if (!PHONE_CHARS_REGEX.test(val)) return 'Enter a valid mobile phone format.';
-                return '';
-            }
+            case 'phone':
+                return validatePhoneField(val, selectedCountry);
             case 'password':
                 if (!value) return 'Password is required.';
                 if (value.length < 8) return 'Password must be at least 8 characters.';
@@ -95,15 +204,34 @@ export default function RegisterPage() {
     };
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const raw = e.target.value;
-        // Clean non-phone characters as the user types
-        const cleaned = raw.replace(/[^0-9+\s\-()]/g, '');
+        // Strictly allow only numbers (0-9) and limit to max digits for selected country
+        const cleaned = e.target.value.replace(/\D/g, '').slice(0, selectedCountry.digits);
         setForm(f => ({ ...f, phone: cleaned }));
         if (touched.phone) {
-            setFieldErrors(errs => ({ ...errs, phone: validateField('phone', cleaned) }));
+            setFieldErrors(errs => ({ ...errs, phone: validatePhoneField(cleaned, selectedCountry) }));
         }
         if (error) setError(null);
     };
+
+    const handleSelectCountry = (country: CountryOption) => {
+        setSelectedCountry(country);
+        setIsCountryDropdownOpen(false);
+        setCountrySearch('');
+        const newDigits = form.phone.slice(0, country.digits);
+        setForm(f => ({ ...f, phone: newDigits }));
+        if (touched.phone) {
+            setFieldErrors(errs => ({ ...errs, phone: validatePhoneField(newDigits, country) }));
+        }
+        if (error) setError(null);
+    };
+
+    const filteredCountries = COUNTRIES.filter(c => {
+        const q = countrySearch.toLowerCase().trim();
+        if (!q) return true;
+        return c.name.toLowerCase().includes(q) ||
+               c.dialCode.includes(q) ||
+               c.code.toLowerCase().includes(q);
+    });
 
     const handleBlur = (key: keyof typeof form) => () => {
         setTouched(t => ({ ...t, [key]: true }));
@@ -160,8 +288,15 @@ export default function RegisterPage() {
         setBusy(true);
         setError(null);
         try {
+            const fullPhone = `${selectedCountry.dialCode} ${form.phone}`.trim();
             const created = await api<SessionState>('/auth/register', {
-                method: 'POST', body: JSON.stringify({ ...form, planTier: selectedPlan, acceptTerms }),
+                method: 'POST', body: JSON.stringify({
+                    ...form,
+                    phone: fullPhone,
+                    countryCode: selectedCountry.dialCode,
+                    planTier: selectedPlan,
+                    acceptTerms,
+                }),
             });
             saveSession({ ...created, selectedBranchId: null });
             setSession(created);
@@ -285,23 +420,185 @@ export default function RegisterPage() {
                             </div>
                             <div>
                                 <label className="cs-label">Mobile Number *</label>
-                                <input
-                                    className="cs-input"
-                                    type="tel"
-                                    placeholder="+91 98400 00000"
-                                    autoComplete="tel"
-                                    value={form.phone}
-                                    onChange={handlePhoneChange}
-                                    onBlur={handleBlur('phone')}
-                                    style={getInputStyle('phone')}
-                                />
+                                <div
+                                    ref={countryDropdownRef}
+                                    style={{
+                                        position: 'relative',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        border: `1px solid ${touched.phone && fieldErrors.phone ? '#EF4444' : (isPhoneFocused || isCountryDropdownOpen) ? '#4F46E5' : '#CBD5E1'}`,
+                                        borderRadius: '8px',
+                                        background: touched.phone && fieldErrors.phone ? '#FEF2F2' : '#FFFFFF',
+                                        boxShadow: (isPhoneFocused || isCountryDropdownOpen) && !(touched.phone && fieldErrors.phone)
+                                            ? '0 0 0 3px rgba(79, 70, 229, 0.15)'
+                                            : 'none',
+                                        transition: 'all 0.2s ease',
+                                        height: '40px',
+                                    }}
+                                >
+                                    {/* Country Selector Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsCountryDropdownOpen(prev => !prev);
+                                            setCountrySearch('');
+                                        }}
+                                        aria-expanded={isCountryDropdownOpen}
+                                        aria-label="Select Country Code"
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '0 10px',
+                                            height: '100%',
+                                            background: '#F8FAFC',
+                                            border: 'none',
+                                            borderRight: `1px solid ${touched.phone && fieldErrors.phone ? '#FECACA' : '#E2E8F0'}`,
+                                            borderTopLeftRadius: '7px',
+                                            borderBottomLeftRadius: '7px',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            color: '#0F172A',
+                                            userSelect: 'none',
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        <FlagImage code={selectedCountry.code} name={selectedCountry.name} />
+                                        <span style={{ fontSize: '13px' }}>{selectedCountry.dialCode}</span>
+                                        <ChevronDown size={14} style={{ color: '#64748B', transform: isCountryDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                    </button>
+
+                                    {/* Mobile Number Input */}
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        maxLength={selectedCountry.digits}
+                                        placeholder={`e.g. ${selectedCountry.placeholder}`}
+                                        autoComplete="tel"
+                                        value={form.phone}
+                                        onChange={handlePhoneChange}
+                                        onFocus={() => setIsPhoneFocused(true)}
+                                        onBlur={() => {
+                                            setIsPhoneFocused(false);
+                                            handleBlur('phone')();
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            border: 'none',
+                                            outline: 'none',
+                                            background: 'transparent',
+                                            padding: '0 12px',
+                                            fontSize: '14px',
+                                            color: '#0F172A',
+                                            height: '100%',
+                                        }}
+                                    />
+
+                                    {/* Country Dropdown Panel */}
+                                    {isCountryDropdownOpen && (
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                top: 'calc(100% + 6px)',
+                                                left: 0,
+                                                width: '100%',
+                                                maxWidth: '340px',
+                                                maxHeight: '260px',
+                                                background: '#FFFFFF',
+                                                border: '1px solid #E2E8F0',
+                                                borderRadius: '10px',
+                                                boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.06)',
+                                                zIndex: 50,
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                overflow: 'hidden',
+                                            }}
+                                        >
+                                            {/* Search box inside dropdown */}
+                                            <div style={{ padding: '8px 12px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px', background: '#F8FAFC' }}>
+                                                <Search size={14} style={{ color: '#94A3B8', flexShrink: 0 }} />
+                                                <input
+                                                    autoFocus
+                                                    type="text"
+                                                    placeholder="Search country or code..."
+                                                    value={countrySearch}
+                                                    onChange={e => setCountrySearch(e.target.value)}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Escape') {
+                                                            setIsCountryDropdownOpen(false);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        border: 'none',
+                                                        outline: 'none',
+                                                        background: 'transparent',
+                                                        fontSize: '12px',
+                                                        width: '100%',
+                                                        color: '#0F172A',
+                                                    }}
+                                                />
+                                            </div>
+
+                                            {/* Country items */}
+                                            <div style={{ overflowY: 'auto', flex: 1, padding: '4px' }}>
+                                                {filteredCountries.length === 0 ? (
+                                                    <div style={{ padding: '12px', textAlign: 'center', fontSize: '12px', color: '#94A3B8' }}>
+                                                        No countries found
+                                                    </div>
+                                                ) : (
+                                                    filteredCountries.map(c => {
+                                                        const isSelected = c.code === selectedCountry.code;
+                                                        return (
+                                                            <button
+                                                                key={c.code}
+                                                                type="button"
+                                                                onClick={() => handleSelectCountry(c)}
+                                                                style={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'space-between',
+                                                                    width: '100%',
+                                                                    padding: '8px 10px',
+                                                                    borderRadius: '6px',
+                                                                    border: 'none',
+                                                                    background: isSelected ? '#EEF2FF' : 'transparent',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '13px',
+                                                                    textAlign: 'left',
+                                                                    color: isSelected ? '#4F46E5' : '#0F172A',
+                                                                    fontWeight: isSelected ? 600 : 400,
+                                                                }}
+                                                                onMouseEnter={e => {
+                                                                    if (!isSelected) (e.currentTarget as HTMLElement).style.background = '#F8FAFC';
+                                                                }}
+                                                                onMouseLeave={e => {
+                                                                    if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                                                                }}
+                                                            >
+                                                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                    <FlagImage code={c.code} name={c.name} />
+                                                                    <span>{c.name}</span>
+                                                                </span>
+                                                                <span style={{ fontSize: '12px', color: isSelected ? '#4F46E5' : '#64748B', fontWeight: 500 }}>
+                                                                    {c.dialCode}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                                 {touched.phone && fieldErrors.phone ? (
                                     <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
                                         {fieldErrors.phone}
                                     </p>
                                 ) : (
                                     <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
-                                        10 to 15 digits (e.g. 9840012345 or +91 98400 12345)
+                                        Enter a {selectedCountry.digits}-digit mobile number (e.g. {selectedCountry.placeholder})
                                     </p>
                                 )}
                             </div>
