@@ -1013,3 +1013,612 @@ html:has(.modal-overlay, .scroll-lock) main {
   box-shadow: 0px 12px 32px rgba(15, 23, 42, 0.08);
   border-radius: var(--cs-radius-md);
 }
+
+
+/* ═══════════════════════════════════════════════════
+   Hero Quick Role Login Pills — Animations
+   ═══════════════════════════════════════════════════ */
+
+@keyframes heroPillEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes heroPillFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes heroPillSheen {
+  0% {
+    transform: translateX(-140%) skewX(-20deg);
+  }
+  30%, 100% {
+    transform: translateX(260%) skewX(-20deg);
+  }
+}
+
+.hero-role-pill {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #E2E8F0;
+  color: #334155;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  animation:
+    heroPillEnter 0.5s cubic-bezier(0.22, 1, 0.36, 1) var(--pill-delay, 0ms) both,
+    heroPillFloat 3.6s ease-in-out calc(var(--pill-delay, 0ms) + 0.6s) infinite;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    background-color 0.22s ease,
+    color 0.22s ease;
+}
+
+.hero-role-pill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  pointer-events: none;
+  animation: heroPillSheen 4.5s ease-in-out var(--pill-sheen-delay, 0.8s) infinite;
+}
+
+.hero-role-pill .hero-role-icon {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hero-role-pill .hero-role-chevron {
+  color: #94A3B8;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), color 0.22s ease;
+}
+
+.hero-role-pill:hover {
+  animation-play-state: paused;
+  transform: translateY(-3px) scale(1.03);
+  border-color: var(--pill-accent, #4F46E5);
+  color: var(--pill-accent, #4F46E5);
+  background: #FFFFFF;
+  box-shadow: 0 8px 18px -6px var(--pill-glow, rgba(79, 70, 229, 0.32));
+}
+
+.hero-role-pill:hover .hero-role-icon {
+  transform: scale(1.15) rotate(-4deg);
+}
+
+.hero-role-pill:hover .hero-role-chevron {
+  transform: translateX(3px);
+  color: var(--pill-accent, #4F46E5);
+}
+
+.hero-role-pill:active {
+  transform: translateY(0) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-role-pill,
+  .hero-role-pill::after {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Learning Categories Cards (Landing Page)
+   ═══════════════════════════════════════════════════ */
+
+.category-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.category-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.12);
+  border-color: rgba(79, 70, 229, 0.35);
+}
+
+.category-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.category-card:hover .category-card-img {
+  transform: scale(1.06);
+}
+
+.category-card-btn {
+  width: 100%;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: all 0.22s ease;
+}
+
+.category-card-btn:hover {
+  background: #4F46E5;
+  border-color: #4F46E5;
+  color: #FFFFFF;
+  box-shadow: 0 6px 16px -4px rgba(79, 70, 229, 0.35);
+}
+
+.category-card-btn.featured {
+  background: #0F172A;
+  border-color: #0F172A;
+  color: #FFFFFF;
+}
+
+.category-card-btn.featured:hover {
+  background: #4F46E5;
+  border-color: #4F46E5;
+}
+
+/* ═══════════════════════════════════════════════════
+   Hero Split Grid (Responsive 2-Column Alignment)
+   ═══════════════════════════════════════════════════ */
+
+.hero-split-grid {
+  position: relative;
+  max-width: 1440px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 40px;
+}
+
+.hero-visual-frame {
+  width: 100%;
+  max-width: 770px;
+  height: clamp(420px, calc(38vw + 40px), 580px);
+}
+
+@media (max-width: 900px) {
+  .hero-visual-frame {
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero-split-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Animated 6-Card Learning Categories Strip
+   ═══════════════════════════════════════════════════ */
+
+@keyframes stripLevitate {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes stripCardFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes stripSheenSweep {
+  0% { transform: translateX(-100%) rotate(25deg); }
+  22%, 100% { transform: translateX(220%) rotate(25deg); }
+}
+
+.strip-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #E2E8F0;
+  padding: 28px;
+  box-shadow: 0 24px 50px -12px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: stripLevitate 6s ease-in-out infinite;
+}
+
+.strip-sheen-layer {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  pointer-events: none;
+  z-index: 2;
+  animation: stripSheenSweep 7.5s ease-in-out infinite;
+}
+
+.category-strip-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+  position: relative;
+  z-index: 5;
+}
+
+@media (max-width: 1024px) {
+  .category-strip-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .category-strip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .strip-panel {
+    padding: 18px;
+  }
+}
+
+.strip-card {
+  position: relative;
+  height: 240px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(219, 234, 254, 0.85);
+  background: #0F172A;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 12px;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 6px 16px -4px rgba(15, 23, 42, 0.14);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.strip-card.stagger-float-1 { animation: stripCardFloat 4.2s ease-in-out infinite 0s; }
+.strip-card.stagger-float-2 { animation: stripCardFloat 4.6s ease-in-out infinite 0.5s; }
+.strip-card.stagger-float-3 { animation: stripCardFloat 4.4s ease-in-out infinite 1s; }
+.strip-card.stagger-float-4 { animation: stripCardFloat 4.8s ease-in-out infinite 1.5s; }
+.strip-card.stagger-float-5 { animation: stripCardFloat 4.3s ease-in-out infinite 2s; }
+.strip-card.stagger-float-6 { animation: stripCardFloat 4.7s ease-in-out infinite 2.5s; }
+
+.strip-card:hover {
+  animation-play-state: paused;
+  transform: translateY(-8px) scale(1.04);
+  border-color: #2563EB;
+  box-shadow: 0 18px 34px -6px rgba(37, 99, 235, 0.28), 0 0 0 1.5px rgba(37, 99, 235, 0.38);
+}
+
+.strip-card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), filter 0.3s ease;
+}
+
+.strip-card:hover .strip-card-img {
+  transform: scale(1.08);
+  filter: brightness(1.06);
+}
+
+.strip-card-label {
+  position: relative;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  padding: 10px 8px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.strip-card:hover .strip-card-label {
+  background: #FFFFFF;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip-panel,
+  .strip-sheen-layer,
+  .strip-card {
+    animation: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Role Portal Card Action Buttons
+   ═══════════════════════════════════════════════════ */
+
+.portal-btn-primary,
+.portal-btn-secondary {
+  width: 100%;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, filter 0.2s ease;
+}
+
+.portal-btn-primary {
+  background: var(--portal-accent, #4F46E5);
+  border: 1.5px solid var(--portal-accent, #4F46E5);
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px -4px var(--portal-glow, rgba(79, 70, 229, 0.4));
+}
+
+.portal-btn-primary:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+  box-shadow: 0 8px 18px -5px var(--portal-glow, rgba(79, 70, 229, 0.5));
+}
+
+.portal-btn-secondary {
+  background: var(--portal-soft, rgba(79, 70, 229, 0.08));
+  border: 1.5px solid var(--portal-border, rgba(79, 70, 229, 0.28));
+  color: var(--portal-accent, #4F46E5);
+}
+
+.portal-btn-secondary:hover {
+  transform: translateY(-2px);
+  background: var(--portal-accent, #4F46E5);
+  border-color: var(--portal-accent, #4F46E5);
+  color: #FFFFFF;
+  box-shadow: 0 6px 14px -4px var(--portal-glow, rgba(79, 70, 229, 0.35));
+}
+
+.portal-btn-primary:active,
+.portal-btn-secondary:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ═══════════════════════════════════════════════════
+   Auth Split Card (Forgot Password / Account Recovery)
+   ═══════════════════════════════════════════════════ */
+
+.auth-split-card {
+  width: 100%;
+  max-width: 860px;
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  border-radius: 22px;
+  overflow: hidden;
+  background: #FFFFFF;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 24px 54px -16px rgba(15, 23, 42, 0.14), 0 8px 20px -8px rgba(79, 70, 229, 0.1);
+}
+
+@media (max-width: 760px) {
+  .auth-split-card {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Registration — two-panel layout
+   ═══════════════════════════════════════════════════ */
+
+.reg-page {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(79, 70, 229, 0.10), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.10), transparent 45%),
+    #F1F5F9;
+}
+
+.reg-shell {
+  width: 100%;
+  max-width: 940px;
+  /* Card height is tied to the window so it never spills off-screen */
+  height: min(830px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  background: #FFFFFF;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 30px 60px -20px rgba(15, 23, 42, 0.25), 0 10px 24px -12px rgba(15, 23, 42, 0.12);
+}
+
+.reg-aside {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: clamp(24px, 4vh, 36px) 44px clamp(20px, 3.5vh, 30px);
+  background:
+    radial-gradient(rgba(79, 70, 229, 0.10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(160deg, #C7D2FE 0%, #E0E7FF 30%, #EEF2FF 60%, #E0F2FE 100%);
+}
+.reg-aside::-webkit-scrollbar { display: none; }
+
+/* Left-panel text scales with screen height so it fits inside the card */
+.reg-aside-title { font-size: clamp(28px, min(3.6vw, 5.4vh), 46px); margin-bottom: clamp(14px, 2.6vh, 22px); }
+.reg-aside-intro { font-size: clamp(14px, 2vh, 16px); max-width: 420px; margin-bottom: clamp(38px, calc(3vh + 20px), 46px); }
+.reg-aside-point { padding: clamp(11px, 2vh, 16px) 0; }
+
+@media (max-height: 640px) {
+  .reg-aside-foot { display: none !important; }
+}
+
+.reg-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Static header: logo + numbered steps */
+.reg-head {
+  flex-shrink: 0;
+  padding: 32px 52px 22px;
+  border-bottom: 1px solid #F1F5F9;
+  background: #FFFFFF;
+}
+
+/* Scrollable middle: heading + fields */
+.reg-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 52px 28px;
+  scrollbar-width: none;        /* Firefox: hide the bar, keep scrolling */
+}
+.reg-body::-webkit-scrollbar { display: none; }  /* Chrome / Edge / Safari */
+
+/* Static footer */
+.reg-foot {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 16px 52px;
+  border-top: 1px solid #F1F5F9;
+  background: #FFFFFF;
+  text-align: center;
+  font-size: 14px;
+  color: #64748B;
+}
+
+.reg-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #F1F5F9;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.reg-close:hover { background: #E2E8F0; color: #0F172A; }
+
+.reg-mobile-logo { display: none; align-items: center; gap: 8px; margin-bottom: 20px; }
+
+.reg-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.reg-subtitle { color: #64748B; font-size: 15px; margin-bottom: 24px; }
+.reg-req { color: #EF4444; margin-left: 2px; }
+
+.reg-main .cs-input {
+  height: 48px;
+  border-radius: 12px;
+  background: #F8FAFC;
+}
+.reg-main .cs-input:focus { background: #FFFFFF; }
+
+.reg-cta {
+  justify-content: center;
+  height: 52px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 10px 22px -8px rgba(79, 70, 229, 0.5);
+}
+
+@media (max-width: 900px) {
+  .reg-shell { grid-template-columns: 1fr; max-width: 530px; }
+  .reg-aside { display: none; }
+  .reg-head { padding: 24px 20px 18px; }
+  .reg-body { padding: 20px 24px 24px; }
+  .reg-foot { padding: 14px 24px; }
+}
+
+@media (max-width: 420px) {
+  .reg-page { padding: 16px; }
+  .reg-shell { height: calc(100dvh - 32px); }
+}
+
+/* Registration — category select */
+.reg-main select.cs-input.reg-native-select,
+.reg-main select.cs-input.reg-native-select:focus {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 44px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%230F172A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+/* Sign-in — right panel (shares .reg-page/.reg-shell/.reg-main with registration) */
+.auth-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 40px 52px 32px;
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
+}
+/* Form width, centring and padding are set inline in login.tsx */
+.auth-body::-webkit-scrollbar { display: none; }
+.auth-body { scrollbar-width: none; }
+.reg-main .auth-compact .cs-input { height: 42px; }
+/* Registration fields — compact */
+.reg-main .reg-body .cs-input { height: 42px; }
+.reg-main .reg-body .cs-label { margin-bottom: 5px; }
