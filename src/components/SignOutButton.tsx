@@ -11,7 +11,7 @@ export default function SignOutButton({ className = '' }: { className?: string }
         <button
             onClick={() => { clearSession(); router.replace('/login'); }}
             className={`flex items-center gap-1.5 cursor-pointer ${className}`}
-            title={session?.user.email}
+            title={session?.user.email ?? undefined}
         >
             <span>{session?.user.fullName}</span>
             <LogOut size={14} />

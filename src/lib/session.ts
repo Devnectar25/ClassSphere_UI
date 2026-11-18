@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 /** Signed-in session returned by POST /auth/login and /auth/switch, plus the selected branch view. */
 export interface SessionState {
     token: string;
-    user: { userId: string; fullName: string; email: string; isPlatformAdmin: boolean };
+    user: { userId: string; fullName: string; email: string | null; isPlatformAdmin: boolean };
     session: {
         tenantId: string | null;
         tenantName: string | null;
