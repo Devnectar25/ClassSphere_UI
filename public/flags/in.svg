@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 150" width="20" height="14">
+  <rect width="225" height="150" fill="#FF9933"/>
+  <rect width="225" height="100" y="50" fill="#FFFFFF"/>
+  <rect width="225" height="50" y="100" fill="#138808"/>
+  <g transform="translate(112.5, 75)">
+    <circle r="18" fill="none" stroke="#000080" stroke-width="2"/>
+    <circle r="3.5" fill="#000080"/>
+    <g stroke="#000080" stroke-width="1.2">
+      <line x1="0" y1="-18" x2="0" y2="18"/>
+      <line x1="-18" y1="0" x2="18" y2="0"/>
+      <line x1="-12.7" y1="-12.7" x2="12.7" y2="12.7"/>
+      <line x1="-12.7" y1="12.7" x2="12.7" y2="-12.7"/>
+      <line x1="-6.8" y1="-16.6" x2="6.8" y2="16.6"/>
+      <line x1="-16.6" y1="-6.8" x2="16.6" y2="6.8"/>
+      <line x1="-16.6" y1="6.8" x2="16.6" y2="-6.8"/>
+      <line x1="-6.8" y1="16.6" x2="6.8" y2="-16.6"/>
+      <line x1="-3.5" y1="-17.6" x2="3.5" y2="17.6"/>
+      <line x1="-17.6" y1="-3.5" x2="17.6" y2="3.5"/>
+      <line x1="-17.6" y1="3.5" x2="17.6" y2="-3.5"/>
+      <line x1="-3.5" y1="17.6" x2="3.5" y2="-17.6"/>
+    </g>
+  </g>
+</svg>

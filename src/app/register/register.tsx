@@ -1,10 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { Shield, CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+    CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff, BadgeCheck, Circle, Building2, Phone, Mail, X,
+} from 'lucide-react';
 import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
+import AuthBrandPanel from '@/components/AuthBrandPanel';
 
 const steps = ['Account', 'Plan', 'Ready'];
 
@@ -14,9 +17,43 @@ const CATEGORIES = [
     ['Arts', 'Arts'], ['Test Prep', 'Test Prep'], ['Language', 'Language'], ['Other', 'Coding / Hobby / Other'],
 ];
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
-const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
-const PHONE_CHARS_REGEX = /^[+]?[\d\s\-()]+$/;
+// Email: local part of letters/digits/._%+-, a domain of dot-separated labels and a 2+ letter TLD
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+// Person names: letters, separated by single spaces, apostrophes, hyphens or dots (e.g. "Mary-Jane", "D'Souza", "R.")
+const NAME_REGEX = /^[a-zA-Z]+(?:[ '.-][a-zA-Z]*)*$/;
+// Academy names: letters, spaces and common punctuation (no digits)
+const ACADEMY_NAME_REGEX = /^[a-zA-Z][a-zA-Z &'.,()\-/]*$/;
+const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName'];
+const CATEGORY_VALUES = CATEGORIES.map(([value]) => value);
+const iconLeft: React.CSSProperties = { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' };
+const MAX = { academyName: 100, firstName: 50, lastName: 50, email: 254, phone: 10, password: 64 };
+
+/** Password rules, shown as a live checklist under the field. */
+const PASSWORD_RULES: { label: string; test: (v: string) => boolean }[] = [
+    { label: '8–64 characters', test: v => v.length >= 8 && v.length <= MAX.password },
+    { label: 'An uppercase letter', test: v => /[A-Z]/.test(v) },
+    { label: 'A lowercase letter', test: v => /[a-z]/.test(v) },
+    { label: 'A number', test: v => /[0-9]/.test(v) },
+    { label: 'A special character (!@#$…)', test: v => /[^a-zA-Z0-9\s]/.test(v) },
+    { label: 'No spaces', test: v => v.length > 0 && !/\s/.test(v) },
+];
+
+/** Validates a 10-digit Indian mobile number starting with 6–9. */
+function phoneError(value: string): string {
+    const val = value.trim();
+    if (!val) return 'Mobile number is required.';
+    if (!/^\d+$/.test(val)) return 'Only digits are allowed.';
+    if (val.length !== 10) return 'Enter a valid 10-digit mobile number.';
+    if (!/^[6-9]/.test(val)) return 'Indian mobile numbers start with 6, 7, 8 or 9.';
+    if (/^(\d)\1{9}$/.test(val)) return 'Enter a real mobile number.';
+    return '';
+}
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_RESEND_SECONDS = 30;
+const PHONE_TAKEN = 'An account already exists with this mobile number. Please sign in instead.';
+const EMAIL_TAKEN = 'An account already exists with this email address. Please sign in instead.';
+const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+const otpExpiry = () => Date.now() + OTP_TTL_MS;
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -33,7 +70,10 @@ export default function RegisterPage() {
         phone: '',
         academyType: 'Tuition',
         password: '',
+        confirmPassword: '',
     });
+    const [passwordFocused, setPasswordFocused] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [touched, setTouched] = useState<Record<string, boolean>>({});
     const [acceptTerms, setAcceptTerms] = useState(false);
@@ -42,43 +82,126 @@ export default function RegisterPage() {
     const [busy, setBusy] = useState(false);
     const [session, setSession] = useState<SessionState | null>(null);
 
+    // Demo OTP: the code is generated in the browser and shown on screen — no SMS is sent.
+    const [otp, setOtp] = useState<{ code: string; phone: string; expiresAt: number } | null>(null);
+    const [otpInput, setOtpInput] = useState('');
+    const [otpError, setOtpError] = useState<string | null>(null);
+    const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
+    const [resendIn, setResendIn] = useState(0);
+    const phoneDigits = form.phone.replace(/\D/g, '');
+    const phoneVerified = verifiedPhone !== null && verifiedPhone === phoneDigits;
+
+    useEffect(() => {
+        if (resendIn <= 0) return;
+        const t = setTimeout(() => setResendIn(s => s - 1), 1000);
+        return () => clearTimeout(t);
+    }, [resendIn]);
+
+    // Mobile numbers / emails the server reported as already registered (one account per mobile number)
+    const [takenPhones, setTakenPhones] = useState<string[]>([]);
+    const [takenEmails, setTakenEmails] = useState<string[]>([]);
+    const [checkingPhone, setCheckingPhone] = useState(false);
+
+    /** Asks the API whether the mobile number / email already has an account. Network errors count as "free" — create re-checks. */
+    const checkAvailability = async (check: { phone?: string; email?: string }) => {
+        try {
+            const res = await api<{ phoneTaken: boolean; emailTaken: boolean }>('/auth/availability', {
+                method: 'POST', body: JSON.stringify(check),
+            });
+            if (res.phoneTaken && check.phone) setTakenPhones(list => [...list, check.phone!.replace(/\D/g, '')]);
+            if (res.emailTaken && check.email) setTakenEmails(list => [...list, check.email!.trim().toLowerCase()]);
+            return res;
+        } catch {
+            return { phoneTaken: false, emailTaken: false };
+        }
+    };
+
+    const sendOtp = async () => {
+        setTouched(t => ({ ...t, phone: true }));
+        const phoneError = validateField('phone', form.phone);
+        setFieldErrors(errs => ({ ...errs, phone: phoneError }));
+        if (phoneError) return;
+        // Never send an OTP to a number that already has an account
+        setCheckingPhone(true);
+        const { phoneTaken } = await checkAvailability({ phone: phoneDigits });
+        setCheckingPhone(false);
+        if (phoneTaken) {
+            setFieldErrors(errs => ({ ...errs, phone: PHONE_TAKEN }));
+            return;
+        }
+        setOtp({ code: generateOtp(), phone: phoneDigits, expiresAt: otpExpiry() });
+        setOtpInput('');
+        setOtpError(null);
+        setResendIn(OTP_RESEND_SECONDS);
+    };
+
+    const verifyOtp = () => {
+        if (!otp) return;
+        if (otp.phone !== phoneDigits) { setOtpError('The mobile number changed. Please send a new OTP.'); return; }
+        if (Date.now() > otp.expiresAt) { setOtpError('This OTP has expired. Please resend.'); return; }
+        if (otpInput.trim() !== otp.code) { setOtpError('Incorrect OTP. Please try again.'); return; }
+        setVerifiedPhone(phoneDigits);
+        setOtp(null);
+        setOtpInput('');
+        setOtpError(null);
+        setFieldErrors(errs => ({ ...errs, phoneOtp: '' }));
+        if (error) setError(null);
+    };
+
     const validateField = (name: string, value: string): string => {
         const val = value.trim();
         switch (name) {
             case 'academyName':
                 if (!val) return 'Academy / Class name is required.';
-                if (val.length < 2) return 'Academy name must be at least 2 characters.';
-                if (val.length > 100) return 'Academy name cannot exceed 100 characters.';
+                if (val.length < 3) return 'Academy name must be at least 3 characters.';
+                if (val.length > MAX.academyName) return `Academy name cannot exceed ${MAX.academyName} characters.`;
+                if (/\d/.test(val)) return 'Academy name cannot contain numbers.';
+                if (!ACADEMY_NAME_REGEX.test(val)) return "Use letters, spaces and & ' . , ( ) - / only, starting with a letter.";
+                if (/\s{2,}/.test(val)) return 'Academy name cannot contain consecutive spaces.';
                 return '';
             case 'firstName':
-                if (!val) return 'First name is required.';
-                if (val.length < 2) return 'First name must be at least 2 characters.';
-                if (!NAME_REGEX.test(val)) return 'First name can only contain letters.';
-                return '';
-            case 'lastName':
-                if (!val) return 'Last name is required.';
-                if (val.length < 2) return 'Last name must be at least 2 characters.';
-                if (!NAME_REGEX.test(val)) return 'Last name can only contain letters.';
-                return '';
-            case 'email':
-                if (!val) return 'Email address is required.';
-                if (!EMAIL_REGEX.test(val)) return 'Please enter a valid email address (e.g. name@domain.com).';
-                return '';
-            case 'phone': {
-                if (!val) return 'Mobile number is required.';
-                if (/[a-zA-Z]/.test(val)) return 'Mobile number cannot contain letters.';
-                const digits = val.replace(/\D/g, '');
-                if (digits.length < 10) return 'Mobile number must be at least 10 digits.';
-                if (digits.length > 15) return 'Mobile number cannot exceed 15 digits.';
-                if (!PHONE_CHARS_REGEX.test(val)) return 'Enter a valid mobile phone format.';
+            case 'lastName': {
+                const label = name === 'firstName' ? 'First name' : 'Last name';
+                const min = name === 'firstName' ? 2 : 1; // last names may be an initial
+                if (!val) return `${label} is required.`;
+                if (val.length < min) return `${label} must be at least ${min} characters.`;
+                if (val.length > MAX[name]) return `${label} cannot exceed ${MAX[name]} characters.`;
+                if (/\d/.test(val)) return `${label} cannot contain numbers.`;
+                if (!NAME_REGEX.test(val)) return `${label} can only contain letters, spaces, apostrophes, hyphens and dots.`;
                 return '';
             }
-            case 'password':
+            case 'email': {
+                if (!val) return ''; // optional
+                if (/\s/.test(val)) return 'Email address cannot contain spaces.';
+                if (val.length > MAX.email) return `Email address cannot exceed ${MAX.email} characters.`;
+                const [local = ''] = val.split('@');
+                if (local.length > 64) return 'The part before @ cannot exceed 64 characters.';
+                if (/\.\./.test(val) || local.startsWith('.') || local.endsWith('.')) return 'Email address has misplaced dots.';
+                if (!EMAIL_REGEX.test(val)) return 'Please enter a valid email address (e.g. name@domain.com).';
+                if (takenEmails.includes(val.toLowerCase())) return EMAIL_TAKEN;
+                return '';
+            }
+            case 'phone': {
+                const formatError = phoneError(value);
+                if (formatError) return formatError;
+                return takenPhones.includes(value.replace(/\D/g, '')) ? PHONE_TAKEN : '';
+            }
+            case 'academyType':
+                return CATEGORY_VALUES.includes(value) ? '' : 'Please choose a class category.';
+            case 'password': {
                 if (!value) return 'Password is required.';
-                if (value.length < 8) return 'Password must be at least 8 characters.';
-                if (!/[a-zA-Z]/.test(value) || !/[0-9]/.test(value)) {
-                    return 'Password must contain at least one letter and one number.';
-                }
+                const failed = PASSWORD_RULES.find(r => !r.test(value));
+                if (failed) return `Password needs: ${failed.label.toLowerCase()}.`;
+                const lower = value.toLowerCase();
+                const personal = [form.firstName, form.lastName, form.email.split('@')[0]]
+                    .map(s => s.trim().toLowerCase()).filter(s => s.length >= 3);
+                if (personal.some(p => lower.includes(p))) return 'Password should not contain your name or email.';
+                if (phoneDigits.length >= 6 && value.includes(phoneDigits.slice(-6))) return 'Password should not contain your mobile number.';
+                return '';
+            }
+            case 'confirmPassword':
+                if (!value) return 'Please confirm your password.';
+                if (value !== form.password) return 'Passwords do not match.';
                 return '';
             default:
                 return '';
@@ -86,18 +209,26 @@ export default function RegisterPage() {
     };
 
     const handleFieldChange = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const val = e.target.value;
+        let val = e.target.value;
+        // Name fields never accept digits — typed or pasted numbers are dropped
+        if (NO_DIGIT_FIELDS.includes(key)) val = val.replace(/[0-9]/g, '');
         setForm(f => ({ ...f, [key]: val }));
         if (touched[key]) {
             setFieldErrors(errs => ({ ...errs, [key]: validateField(key, val) }));
+        }
+        // Changing the password re-checks the confirmation against the new value
+        if (key === 'password' && (touched.confirmPassword || form.confirmPassword)) {
+            const confirmError = !form.confirmPassword ? 'Please confirm your password.'
+                : form.confirmPassword !== val ? 'Passwords do not match.' : '';
+            setFieldErrors(errs => ({ ...errs, confirmPassword: confirmError }));
         }
         if (error) setError(null);
     };
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const raw = e.target.value;
-        // Clean non-phone characters as the user types
-        const cleaned = raw.replace(/[^0-9+\s\-()]/g, '');
+        if (phoneVerified) return;
+        // Allow digits only and never allow more than 10 digits
+        const cleaned = e.target.value.replace(/\D/g, '').slice(0, MAX.phone);
         setForm(f => ({ ...f, phone: cleaned }));
         if (touched.phone) {
             setFieldErrors(errs => ({ ...errs, phone: validateField('phone', cleaned) }));
@@ -106,31 +237,47 @@ export default function RegisterPage() {
     };
 
     const handleBlur = (key: keyof typeof form) => () => {
+        if (key === 'phone' && phoneVerified) return;
+        // Tidy the value on leaving the field: trim and collapse repeated spaces; emails are lower-cased
+        let val = form[key];
+        if (key === 'academyName' || key === 'firstName' || key === 'lastName') val = val.trim().replace(/\s+/g, ' ');
+        else if (key === 'email') val = val.trim().toLowerCase();
+        else if (key === 'phone') val = val.trim();
+        if (val !== form[key]) setForm(f => ({ ...f, [key]: val }));
         setTouched(t => ({ ...t, [key]: true }));
-        setFieldErrors(errs => ({ ...errs, [key]: validateField(key, form[key]) }));
+        const fieldError = validateField(key, val);
+        setFieldErrors(errs => ({ ...errs, [key]: fieldError }));
+
+        // A well-formed mobile number / email is checked against existing accounts straight away
+        if (!fieldError && val && (key === 'phone' || key === 'email')) {
+            void checkAvailability(key === 'phone' ? { phone: val } : { email: val }).then(res => {
+                const taken = key === 'phone' ? res.phoneTaken : res.emailTaken;
+                if (taken) setFieldErrors(errs => ({ ...errs, [key]: key === 'phone' ? PHONE_TAKEN : EMAIL_TAKEN }));
+            });
+        }
     };
 
-    const continueToPlan = (e: React.FormEvent) => {
+    const continueToPlan = async (e: React.FormEvent) => {
         e.preventDefault();
-        const allTouched = {
-            academyName: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            password: true,
-        };
-        setTouched(allTouched);
+        const fields = ['academyName', 'firstName', 'lastName', 'email', 'phone', 'academyType', 'password', 'confirmPassword'] as const;
+        setTouched(Object.fromEntries(fields.map(f => [f, true])));
         setTermsTouched(true);
 
-        const errorsObj: Record<string, string> = {
-            academyName: validateField('academyName', form.academyName),
-            firstName: validateField('firstName', form.firstName),
-            lastName: validateField('lastName', form.lastName),
-            email: validateField('email', form.email),
-            phone: validateField('phone', form.phone),
-            password: validateField('password', form.password),
-        };
+        const errorsObj: Record<string, string> = Object.fromEntries(fields.map(f => [f, validateField(f, form[f])]));
+
+        // Re-check uniqueness with the server (another sign-up may have used the number meanwhile)
+        if (!errorsObj.phone || (form.email.trim() && !errorsObj.email)) {
+            const res = await checkAvailability({
+                phone: errorsObj.phone ? undefined : phoneDigits,
+                email: form.email.trim() && !errorsObj.email ? form.email.trim() : undefined,
+            });
+            if (res.phoneTaken && !errorsObj.phone) errorsObj.phone = PHONE_TAKEN;
+            if (res.emailTaken && !errorsObj.email) errorsObj.email = EMAIL_TAKEN;
+        }
+
+        if (!errorsObj.phone && !phoneVerified) {
+            errorsObj.phoneOtp = 'Please verify your mobile number with the OTP.';
+        }
 
         if (!acceptTerms) {
             errorsObj.acceptTerms = 'Please agree to the Terms of Service and Privacy Policy to continue.';
@@ -160,69 +307,97 @@ export default function RegisterPage() {
         setBusy(true);
         setError(null);
         try {
+            // The confirmation is checked client-side only
+            const payload: Partial<typeof form> = { ...form };
+            delete payload.confirmPassword;
             const created = await api<SessionState>('/auth/register', {
-                method: 'POST', body: JSON.stringify({ ...form, planTier: selectedPlan, acceptTerms }),
+                method: 'POST', body: JSON.stringify({ ...payload, planTier: selectedPlan, acceptTerms }),
             });
             saveSession({ ...created, selectedBranchId: null });
             setSession(created);
             setStep(2);
         } catch (err) {
-            setError((err as Error).message);
+            const message = (err as Error).message;
+            // Duplicate caught by the server at create time: send the user back to the field to fix
+            if (/mobile number already exists/i.test(message) || /email already exists/i.test(message)) {
+                const isPhone = /mobile/i.test(message);
+                if (isPhone) { setTakenPhones(l => [...l, phoneDigits]); setVerifiedPhone(null); }
+                else setTakenEmails(l => [...l, form.email.trim().toLowerCase()]);
+                setTouched(t => ({ ...t, [isPhone ? 'phone' : 'email']: true }));
+                setFieldErrors(errs => ({ ...errs, [isPhone ? 'phone' : 'email']: isPhone ? PHONE_TAKEN : EMAIL_TAKEN }));
+                setError(isPhone ? PHONE_TAKEN : EMAIL_TAKEN);
+                setStep(0);
+            } else {
+                setError(message);
+            }
         } finally {
             setBusy(false);
         }
     };
 
     return (
-        <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
-            {/* Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '40px' }}>
-                <div style={{ width: 36, height: 36, borderRadius: '8px', background: 'linear-gradient(135deg, #4F46E5, #06B6D4)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(79,70,229,0.25)' }}>
-                    <Shield size={18} color="white" />
-                </div>
-                <span style={{ fontWeight: 800, fontSize: '20px', color: '#0F172A' }}>
-                    Class<span className="gradient-text">Sphere</span>
-                </span>
-            </div>
+        <div className="reg-page">
+            <div className="reg-shell">
+                <AuthBrandPanel />
 
-            {/* Progress steps */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '32px' }}>
-                {steps.map((s, i) => (
-                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{
-                            width: 32, height: 32, borderRadius: '50%',
-                            background: i < step ? '#10B981' : i === step ? '#4F46E5' : '#F1F5F9',
-                            border: `2px solid ${i < step ? '#10B981' : i === step ? '#4F46E5' : '#E2E8F0'}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '13px', fontWeight: 700, color: i <= step ? 'white' : '#94A3B8',
-                            transition: 'all 0.3s'
-                        }}>
-                            {i < step ? <CheckCircle size={16} /> : i + 1}
+                {/* ─── Right: Form panel ─── */}
+                <div className="reg-main">
+                    <Link href="/" aria-label="Close and go to home page" className="reg-close">
+                        <X size={18} />
+                    </Link>
+
+                    {/* ─── Static header: logo + steps ─── */}
+                    <div className="reg-head">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transform: 'translateX(-20px)' }}>
+                            {steps.map((s, i) => (
+                                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{
+                                        width: 32, height: 32, borderRadius: '50%',
+                                        background: i < step ? '#10B981' : i === step ? '#4F46E5' : '#F1F5F9',
+                                        border: `2px solid ${i < step ? '#10B981' : i === step ? '#4F46E5' : '#E2E8F0'}`,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontSize: '13px', fontWeight: 700, color: i <= step ? 'white' : '#94A3B8',
+                                        transition: 'all 0.3s'
+                                    }}>
+                                        {i < step ? <CheckCircle size={16} /> : i + 1}
+                                    </div>
+                                    <span style={{ fontSize: '12px', fontWeight: 600, color: i === step ? '#0F172A' : '#94A3B8' }}>{s}</span>
+                                    {i < steps.length - 1 && <div style={{ width: 32, height: 1, background: i < step ? '#10B981' : '#E2E8F0' }} />}
+                                </div>
+                            ))}
                         </div>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: i === step ? '#0F172A' : '#94A3B8' }}>{s}</span>
-                        {i < steps.length - 1 && <div style={{ width: 32, height: 1, background: i < step ? '#10B981' : '#E2E8F0' }} />}
-                    </div>
-                ))}
-            </div>
 
-            {/* Card */}
-            <div style={{ width: '100%', maxWidth: '480px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '36px', boxShadow: '0px 1px 3px rgba(15, 23, 42, 0.04), 0px 8px 16px -4px rgba(15, 23, 42, 0.03)' }}>
+                        {step < 2 && (
+                            <div style={{ marginTop: '24px' }}>
+                                <h1 className="reg-title">{step === 0 ? 'Create your academy' : 'Choose your plan'}</h1>
+                                <p className="reg-subtitle" style={{ marginBottom: 0 }}>
+                                    {step === 0 ? 'Start your 14-day free trial — no credit card needed' : 'Start with a free 14-day trial on any plan.'}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ─── Scrollable middle ─── */}
+                    <div className="reg-body no-scrollbar" style={{ scrollbarWidth: 'none' }}>
+
                 {step === 0 && (
                     <>
-                        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '6px', color: '#0F172A', letterSpacing: '-0.015em' }}>Create your academy</h1>
-                        <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '28px' }}>Start your 14-day free trial — no credit card needed</p>
                         <form onSubmit={continueToPlan} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div>
-                                <label className="cs-label">Academy / Class Name *</label>
-                                <input
-                                    className="cs-input"
-                                    placeholder="e.g. Ravi's Math Academy"
-                                    autoComplete="organization"
-                                    value={form.academyName}
-                                    onChange={handleFieldChange('academyName')}
-                                    onBlur={handleBlur('academyName')}
-                                    style={getInputStyle('academyName')}
-                                />
+                                <label className="cs-label">Academy / Class Name <span className="reg-req">*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <Building2 size={17} style={iconLeft} />
+                                    <input
+                                        className="cs-input reg-input"
+                                        placeholder="e.g. Ravi's Math Academy"
+                                        autoComplete="organization"
+                                        maxLength={MAX.academyName}
+                                        value={form.academyName}
+                                        onChange={handleFieldChange('academyName')}
+                                        onBlur={handleBlur('academyName')}
+                                        style={{ paddingLeft: '42px', ...getInputStyle('academyName') }}
+                                    />
+                                </div>
                                 {touched.academyName && fieldErrors.academyName && (
                                     <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
                                         {fieldErrors.academyName}
@@ -231,11 +406,12 @@ export default function RegisterPage() {
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                 <div>
-                                    <label className="cs-label">Your First Name *</label>
+                                    <label className="cs-label">Your First Name <span className="reg-req">*</span></label>
                                     <input
                                         className="cs-input"
                                         placeholder="First name"
                                         autoComplete="given-name"
+                                        maxLength={MAX.firstName}
                                         value={form.firstName}
                                         onChange={handleFieldChange('firstName')}
                                         onBlur={handleBlur('firstName')}
@@ -248,11 +424,12 @@ export default function RegisterPage() {
                                     )}
                                 </div>
                                 <div>
-                                    <label className="cs-label">Last Name *</label>
+                                    <label className="cs-label">Last Name <span className="reg-req">*</span></label>
                                     <input
                                         className="cs-input"
                                         placeholder="Last name"
                                         autoComplete="family-name"
+                                        maxLength={MAX.lastName}
                                         value={form.lastName}
                                         onChange={handleFieldChange('lastName')}
                                         onBlur={handleBlur('lastName')}
@@ -266,68 +443,156 @@ export default function RegisterPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="cs-label">Email Address *</label>
-                                <input
-                                    className="cs-input"
-                                    type="email"
-                                    placeholder="you@academy.com"
-                                    autoComplete="email"
-                                    value={form.email}
-                                    onChange={handleFieldChange('email')}
-                                    onBlur={handleBlur('email')}
-                                    style={getInputStyle('email')}
-                                />
-                                {touched.email && fieldErrors.email && (
+                                <label className="cs-label">Email Address <span style={{ color: '#94A3B8', fontWeight: 400 }}>(optional)</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <Mail size={17} style={iconLeft} />
+                                    <input
+                                        className="cs-input reg-input"
+                                        type="email"
+                                        placeholder="you@academy.com"
+                                        autoComplete="email"
+                                        maxLength={MAX.email}
+                                        value={form.email}
+                                        onChange={handleFieldChange('email')}
+                                        onBlur={handleBlur('email')}
+                                        style={{ paddingLeft: '42px', ...getInputStyle('email') }}
+                                    />
+                                </div>
+                                {touched.email && fieldErrors.email ? (
                                     <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
                                         {fieldErrors.email}
-                                    </p>
-                                )}
-                            </div>
-                            <div>
-                                <label className="cs-label">Mobile Number *</label>
-                                <input
-                                    className="cs-input"
-                                    type="tel"
-                                    placeholder="+91 98400 00000"
-                                    autoComplete="tel"
-                                    value={form.phone}
-                                    onChange={handlePhoneChange}
-                                    onBlur={handleBlur('phone')}
-                                    style={getInputStyle('phone')}
-                                />
-                                {touched.phone && fieldErrors.phone ? (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.phone}
+                                        {fieldErrors.email === EMAIL_TAKEN && (
+                                            <> <Link href="/login" style={{ color: '#4F46E5', fontWeight: 600 }}>Sign in</Link></>
+                                        )}
                                     </p>
                                 ) : (
                                     <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
-                                        10 to 15 digits (e.g. 9840012345 or +91 98400 12345)
+                                        Leave blank to sign in with your mobile number
                                     </p>
                                 )}
                             </div>
                             <div>
-                                <label className="cs-label">Class Category *</label>
+                                <label className="cs-label">Mobile Number <span className="reg-req">*</span></label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                                    <Phone size={17} style={iconLeft} />
+                                    <input
+                                        className="cs-input reg-input"
+                                        type="tel"
+                                        placeholder="9840012345"
+                                        autoComplete="tel"
+                                        inputMode="numeric"
+                                        maxLength={MAX.phone}
+                                        value={form.phone}
+                                        disabled={phoneVerified}
+                                        readOnly={phoneVerified}
+                                        onChange={handlePhoneChange}
+                                        onBlur={handleBlur('phone')}
+                                        style={{
+                                            width: '100%',
+                                            paddingLeft: '42px',
+                                            ...getInputStyle('phone'),
+                                            ...(phoneVerified ? {
+                                                borderColor: '#10B981',
+                                                background: '#F0FDF4',
+                                                color: '#475569',
+                                                cursor: 'not-allowed',
+                                            } : {}),
+                                        }}
+                                    />
+                                    </div>
+                                    {phoneVerified ? (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 12px', borderRadius: '8px', background: '#ECFDF5', color: '#047857', fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                            <BadgeCheck size={16} /> Verified
+                                        </span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="btn-secondary"
+                                            onClick={sendOtp}
+                                            disabled={resendIn > 0 || checkingPhone}
+                                            style={{ whiteSpace: 'nowrap', justifyContent: 'center', minWidth: '110px' }}
+                                        >
+                                            {checkingPhone ? 'Checking…' : resendIn > 0 ? `Resend in ${resendIn}s` : otp ? 'Resend OTP' : 'Send OTP'}
+                                        </button>
+                                    )}
+                                </div>
+                                {touched.phone && fieldErrors.phone ? (
+                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                        {fieldErrors.phone}
+                                        {fieldErrors.phone === PHONE_TAKEN && (
+                                            <> <Link href="/login" style={{ color: '#4F46E5', fontWeight: 600 }}>Sign in</Link></>
+                                        )}
+                                    </p>
+                                ) : !phoneVerified && fieldErrors.phoneOtp ? (
+                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                        {fieldErrors.phoneOtp}
+                                    </p>
+                                ) : (
+                                    <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
+                                        {phoneVerified ? 'Mobile number verified and locked' : 'Enter a 10-digit mobile number (e.g. 9840012345)'}
+                                    </p>
+                                )}
+                                {otp && !phoneVerified && (
+                                    <div style={{ marginTop: '10px', padding: '12px', border: '1px solid #C7D2FE', background: '#EEF2FF', borderRadius: '8px' }}>
+                                        <p style={{ fontSize: '12px', color: '#4338CA', marginBottom: '8px' }}>
+                                            <strong>Demo mode:</strong> no SMS is sent. Your OTP is{' '}
+                                            <span style={{ fontFamily: 'monospace', fontSize: '14px', fontWeight: 700, letterSpacing: '0.15em' }}>{otp.code}</span>
+                                        </p>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <input
+                                                className="cs-input"
+                                                inputMode="numeric"
+                                                autoComplete="one-time-code"
+                                                maxLength={6}
+                                                placeholder="Enter 6-digit OTP"
+                                                value={otpInput}
+                                                onChange={e => { setOtpInput(e.target.value.replace(/\D/g, '')); setOtpError(null); }}
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); verifyOtp(); } }}
+                                                style={{ flex: 1, minWidth: 0, letterSpacing: '0.2em', background: '#FFFFFF' }}
+                                            />
+                                            <button type="button" className="btn-primary" onClick={verifyOtp} disabled={otpInput.length !== 6}
+                                                style={{ justifyContent: 'center', minWidth: '90px' }}>
+                                                Verify
+                                            </button>
+                                        </div>
+                                        {otpError && (
+                                            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px', fontWeight: 500 }}>{otpError}</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="cs-label" id="reg-category-label">Class Category <span className="reg-req">*</span></label>
                                 <select
-                                    className="cs-input"
-                                    style={{ cursor: 'pointer' }}
+                                    id="reg-category"
+                                    className="cs-input reg-native-select"
+                                    aria-labelledby="reg-category-label"
                                     value={form.academyType}
                                     onChange={handleFieldChange('academyType')}
                                 >
                                     {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                 </select>
+                                {touched.academyType && fieldErrors.academyType && (
+                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                        {fieldErrors.academyType}
+                                    </p>
+                                )}
                             </div>
                             <div>
-                                <label className="cs-label">Password *</label>
+                                <label className="cs-label">Password <span className="reg-req">*</span></label>
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         className="cs-input"
                                         type={showPassword ? 'text' : 'password'}
-                                        placeholder="Min 8 characters (letters & numbers)"
+                                        placeholder="Create a strong password"
                                         autoComplete="new-password"
+                                        maxLength={MAX.password}
                                         style={{ paddingRight: '44px', ...getInputStyle('password') }}
                                         value={form.password}
                                         onChange={handleFieldChange('password')}
-                                        onBlur={handleBlur('password')}
+                                        onFocus={() => setPasswordFocused(true)}
+                                        onBlur={() => { setPasswordFocused(false); handleBlur('password')(); }}
                                     />
                                     <button
                                         type="button"
@@ -338,15 +603,92 @@ export default function RegisterPage() {
                                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
-                                {touched.password && fieldErrors.password ? (
+                                {(() => {
+                                    // Dynamic hints: only while typing, only the rules still unmet, plus a strength bar
+                                    const pw = form.password;
+                                    const passed = PASSWORD_RULES.filter(r => r.test(pw)).length;
+                                    const pending = PASSWORD_RULES.filter(r => !r.test(pw));
+                                    const showHints = pw.length > 0 && (passwordFocused || !touched.password);
+                                    if (!showHints) {
+                                        return touched.password && fieldErrors.password ? (
+                                            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                                {fieldErrors.password}
+                                            </p>
+                                        ) : null;
+                                    }
+                                    const ratio = passed / PASSWORD_RULES.length;
+                                    const [strength, color] = ratio === 1 ? ['Strong', '#10B981'] : ratio >= 0.67 ? ['Medium', '#F59E0B'] : ['Weak', '#EF4444'];
+                                    return (
+                                        <div style={{ marginTop: '6px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ flex: 1, height: 4, borderRadius: 2, background: '#E2E8F0', overflow: 'hidden' }}>
+                                                    <div style={{ width: `${ratio * 100}%`, height: '100%', background: color, transition: 'width 0.2s, background 0.2s' }} />
+                                                </div>
+                                                <span style={{ fontSize: '11px', fontWeight: 600, color }}>{strength}</span>
+                                            </div>
+                                            {pending.length > 0 ? (
+                                                <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                    {pending.map(rule => (
+                                                        <li key={rule.label} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#64748B' }}>
+                                                            <Circle size={10} /> {rule.label}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : fieldErrors.password && touched.password ? (
+                                                <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px', fontWeight: 500 }}>{fieldErrors.password}</p>
+                                            ) : (
+                                                <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '11px', marginTop: '4px', fontWeight: 500 }}>
+                                                    <CheckCircle size={12} /> Great, your password is strong
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                            <div>
+                                <label className="cs-label">Confirm Password <span className="reg-req">*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        className="cs-input"
+                                        type={showConfirm ? 'text' : 'password'}
+                                        placeholder="Re-enter your password"
+                                        autoComplete="new-password"
+                                        maxLength={MAX.password}
+                                        style={{
+                                            paddingRight: '44px', ...getInputStyle('confirmPassword'),
+                                            ...(form.confirmPassword && form.confirmPassword === form.password ? { borderColor: '#10B981' } : {}),
+                                        }}
+                                        value={form.confirmPassword}
+                                        onChange={e => {
+                                            // Live match check once the user has typed as many characters as the password
+                                            handleFieldChange('confirmPassword')(e);
+                                            const v = e.target.value;
+                                            if (touched.confirmPassword || v.length >= form.password.length) {
+                                                setTouched(t => ({ ...t, confirmPassword: true }));
+                                                setFieldErrors(errs => ({ ...errs, confirmPassword: validateField('confirmPassword', v) }));
+                                            }
+                                        }}
+                                        onPaste={e => e.preventDefault()}
+                                        onBlur={handleBlur('confirmPassword')}
+                                    />
+                                    <button
+                                        type="button"
+                                        aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                                        onClick={() => setShowConfirm(!showConfirm)}
+                                        style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                                    >
+                                        {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                {touched.confirmPassword && fieldErrors.confirmPassword ? (
                                     <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.password}
+                                        {fieldErrors.confirmPassword}
                                     </p>
-                                ) : (
-                                    <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
-                                        Must be at least 8 characters with letters and numbers
+                                ) : form.confirmPassword && form.confirmPassword === form.password ? (
+                                    <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                        <CheckCircle size={12} /> Passwords match
                                     </p>
-                                )}
+                                ) : null}
                             </div>
                             <div>
                                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#475569', cursor: 'pointer' }}>
@@ -377,8 +719,8 @@ export default function RegisterPage() {
                                     <span>{error}</span>
                                 </div>
                             )}
-                            <button type="submit" className="btn-primary" style={{ justifyContent: 'center', padding: '12px', height: '44px', fontSize: '15px' }}>
-                                Continue <ArrowRight size={16} />
+                            <button type="submit" className="btn-primary reg-cta">
+                                Continue <ArrowRight size={17} />
                             </button>
                         </form>
                     </>
@@ -386,8 +728,6 @@ export default function RegisterPage() {
 
                 {step === 1 && (
                     <>
-                        <h1 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '6px', color: '#0F172A', letterSpacing: '-0.015em' }}>Choose your plan</h1>
-                        <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '24px' }}>Start with a free 14-day trial on any plan</p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
                             {plans?.map(p => {
                                 const selected = p.planTier === selectedPlan;
@@ -408,10 +748,10 @@ export default function RegisterPage() {
                         </div>
                         {error && <div role="alert" style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
                         <div style={{ display: 'flex', gap: '10px' }}>
-                            <button type="button" className="btn-secondary" style={{ height: '44px' }} disabled={busy} onClick={() => { setError(null); setStep(0); }}>
+                            <button type="button" className="btn-secondary" style={{ height: '50px', borderRadius: '12px' }} disabled={busy} onClick={() => { setError(null); setStep(0); }}>
                                 <ArrowLeft size={16} /> Back
                             </button>
-                            <button className="btn-primary" style={{ justifyContent: 'center', flex: 1, padding: '12px', height: '44px', fontSize: '15px' }} disabled={busy || !selectedPlan} onClick={createAcademy}>
+                            <button className="btn-primary reg-cta" style={{ flex: 1 }} disabled={busy || !selectedPlan} onClick={createAcademy}>
                                 {busy ? 'Creating your academy…' : <>Create Academy <ArrowRight size={16} /></>}
                             </button>
                         </div>
@@ -425,7 +765,9 @@ export default function RegisterPage() {
                             <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '10px', color: '#0F172A', letterSpacing: '-0.015em' }}>Welcome to ClassSphere!</h1>
                             <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px' }}>
                                 {form.academyName.trim()} is ready, with a Main Campus branch. Next, add your courses, batches and students.
-                                You can sign in any time with {form.email.trim().toLowerCase()}.
+                                You can sign in any time with {form.email.trim()
+                                    ? <>{form.email.trim().toLowerCase()} or your mobile number</>
+                                    : <>your mobile number {form.phone.trim()}</>}.
                             </p>
                             <button className="btn-primary" style={{ justifyContent: 'center', padding: '12px 32px', height: '44px', fontSize: '15px' }}
                                 onClick={() => router.replace(session ? homePath(session) : '/login')}>
@@ -434,11 +776,16 @@ export default function RegisterPage() {
                         </div>
                     </>
                 )}
-            </div>
+                    </div>
 
-            <p style={{ marginTop: '24px', fontSize: '13px', color: '#94A3B8' }}>
-                Already have an account? <Link href="/login" style={{ color: '#4F46E5', fontWeight: 600, textDecoration: 'none' }}>Sign in</Link>
-            </p>
+                    {/* ─── Static footer ─── */}
+                    {step < 2 && (
+                        <p className="reg-foot">
+                            Already have an account? <Link href="/login" style={{ color: '#4F46E5', fontWeight: 700, textDecoration: 'none', marginLeft: '4px' }}>Sign in</Link>
+                        </p>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

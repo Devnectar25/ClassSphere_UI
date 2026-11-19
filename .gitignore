@@ -38,6 +38,12 @@ logs/
 *.sqlite
 *.sqlite3
 *.db
+~$*
+*.swp
+*.swo
+*~
+*.orig
+.turbo/
 
 # debug
 npm-debug.log*
@@ -56,3 +62,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+
+# additional temporary, backup, and scratch files
+*.temp
+*.orig
+*.swp
+*.swo
+tmp/
+temp/
+scratch/

@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useCallback, Suspense } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Modal from '@/components/Modal';
+import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import {
     Plus,
     Upload,
@@ -11,8 +12,9 @@ import {
     X,
     Copy,
     Check,
+    KeyRound,
 } from 'lucide-react';
-import { api, useApi } from '@/lib/api';
+import { api, useApi, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 
@@ -25,6 +27,9 @@ import {
 import StatCard from './components/StatCard';
 import FilterBar from './components/FilterBar';
 import DataTable from './components/DataTable';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
 
 // Seed sample records matching the reference design screenshot
 const SAMPLE_GUARDIANS: UIGuardian[] = [
@@ -144,6 +149,7 @@ function GuardiansContent() {
 
     // Modals & local state
     const [adding, setAdding] = useState(false);
+    const [resettingGuardian, setResettingGuardian] = useState<UIGuardian | null>(null);
     const [credentials, setCredentials] = useState<GuardianCredentials | null>(null);
     const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
 
@@ -284,19 +290,8 @@ function GuardiansContent() {
         router.push(`/dashboard/guardians/${guardianId}`);
     };
 
-    const handleIssueLogin = async (g: UIGuardian) => {
-        const verb = g.portalStatus === 'active' ? 'Reset the password' : 'Create a portal login';
-        if (!confirm(`${verb} for ${g.fullName}?`)) return;
-        try {
-            const res = await api<{ credentials: { email: string; password: string } }>('/guardians/portal-access', {
-                method: 'POST',
-                body: JSON.stringify({ guardianId: g.guardianId }),
-            });
-            setCredentials({ name: g.fullName, ...res.credentials });
-            reload();
-        } catch (err) {
-            setActionBanner({ type: 'error', text: (err as Error).message });
-        }
+    const handleIssueLogin = (g: UIGuardian) => {
+        setResettingGuardian(g);
     };
 
     const handleResendInvite = (g: UIGuardian) => {
@@ -599,7 +594,7 @@ function GuardiansContent() {
                 endIndex={filteredGuardians.length}
             />
 
-            {/* Preserved Add Parent Modal */}
+            {/* Preserved Add Parent Modal with Validation & Searchable Country Flags */}
             {adding && (
                 <AddParent
                     onClose={() => setAdding(false)}
@@ -608,6 +603,20 @@ function GuardiansContent() {
                         reload();
                         if (creds) setCredentials(creds);
                         setActionBanner({ type: 'success', text: 'New parent registered successfully.' });
+                    }}
+                />
+            )}
+
+            {/* Custom Styled Reset Password Confirmation Modal */}
+            {resettingGuardian && (
+                <ResetPasswordModal
+                    guardian={resettingGuardian}
+                    onClose={() => setResettingGuardian(null)}
+                    onSuccess={creds => {
+                        setResettingGuardian(null);
+                        setCredentials(creds);
+                        reload();
+                        setActionBanner({ type: 'success', text: `Portal credentials generated for ${creds.name}.` });
                     }}
                 />
             )}
@@ -634,6 +643,9 @@ function AddParent({
         students: Array<{ studentId: string; firstName: string; lastName: string; enrollmentNumber: string }>;
     }>('/students?limit=200');
     const [form, setForm] = useState(emptyParent);
+    const [phoneCountry, setPhoneCountry] = useState<CountryOption>(
+        COUNTRIES.find(c => c.code === 'IN') || COUNTRIES[0]
+    );
     const [filter, setFilter] = useState('');
     const [error, setError] = useState<string | null>(null);
 
@@ -646,10 +658,40 @@ function AddParent({
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+
+        if (form.firstName.trim().length < 2 || !NAME_REGEX.test(form.firstName.trim())) {
+            setError('First name must be at least 2 characters and contain only letters.');
+            return;
+        }
+        if (form.lastName.trim().length < 2 || !NAME_REGEX.test(form.lastName.trim())) {
+            setError('Last name must be at least 2 characters and contain only letters.');
+            return;
+        }
+        if (!EMAIL_REGEX.test(form.email.trim())) {
+            setError('Please enter a valid email address.');
+            return;
+        }
+        const phoneErr = validatePhoneNumber(form.phone, phoneCountry);
+        if (phoneErr) {
+            setError(phoneErr);
+            return;
+        }
+
+        const phoneDigits = form.phone.replace(/\D/g, '');
+        const finalPhone = `${phoneCountry.dialCode} ${phoneDigits}`.trim();
+
         try {
             const res = await api<{ credentials?: { email: string; password: string } }>('/guardians', {
                 method: 'POST',
-                body: JSON.stringify(form),
+                body: JSON.stringify({
+                    firstName: form.firstName.trim(),
+                    lastName: form.lastName.trim(),
+                    relationship: form.relationship,
+                    phone: finalPhone,
+                    email: form.email.trim(),
+                    studentIds: form.studentIds,
+                    createLogin: form.createLogin,
+                }),
             });
             onCreated(res.credentials ? { name: `${form.firstName} ${form.lastName}`, ...res.credentials } : null);
         } catch (err) {
@@ -671,6 +713,7 @@ function AddParent({
                         <input
                             className="cs-input"
                             required
+                            placeholder="First name"
                             value={form.firstName}
                             onChange={e => setForm({ ...form, firstName: e.target.value })}
                         />
@@ -680,6 +723,7 @@ function AddParent({
                         <input
                             className="cs-input"
                             required
+                            placeholder="Last name"
                             value={form.lastName}
                             onChange={e => setForm({ ...form, lastName: e.target.value })}
                         />
@@ -700,12 +744,12 @@ function AddParent({
                     </div>
                     <div>
                         <label className="cs-label">Phone *</label>
-                        <input
-                            className="cs-input"
-                            required
-                            placeholder="+91 98765 43210"
+                        <CountryPhoneInput
                             value={form.phone}
-                            onChange={e => setForm({ ...form, phone: e.target.value })}
+                            selectedCountry={phoneCountry}
+                            onCountryChange={setPhoneCountry}
+                            onChange={(val: string) => setForm({ ...form, phone: val })}
+                            required={true}
                         />
                     </div>
                 </div>
@@ -791,6 +835,175 @@ function AddParent({
                         style={{ cursor: 'pointer' }}
                     >
                         Add Parent
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+function ResetPasswordModal({
+    guardian,
+    onClose,
+    onSuccess,
+}: {
+    guardian: UIGuardian;
+    onClose: () => void;
+    onSuccess: (credentials: GuardianCredentials) => void;
+}) {
+    const isReset = guardian.hasPortalAccess || guardian.portalStatus === 'active';
+    const [customPassword, setCustomPassword] = useState('');
+    const [useCustom, setUseCustom] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        if (useCustom && customPassword.length < 8) {
+            setError('Custom password must be at least 8 characters long.');
+            return;
+        }
+
+        setSaving(true);
+        try {
+            const body: { guardianId: string; password?: string } = {
+                guardianId: guardian.guardianId,
+            };
+            if (useCustom && customPassword.trim()) {
+                body.password = customPassword.trim();
+            }
+
+            const res = await api<{ credentials: { email: string; password: string } }>('/guardians/portal-access', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+
+            onSuccess({
+                name: guardian.fullName,
+                ...res.credentials,
+            });
+        } catch (err) {
+            setError((err as Error).message || 'Failed to process request.');
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Modal title={isReset ? 'Reset Portal Password' : 'Create Portal Access'} onClose={onClose}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {error && (
+                    <div style={{
+                        background: '#FEF2F2',
+                        border: '1px solid #F87171',
+                        color: '#991B1B',
+                        borderRadius: '10px',
+                        padding: '12px 14px',
+                        fontSize: '13px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                    }}>
+                        <span style={{ fontWeight: 600 }}>Error:</span> {error}
+                    </div>
+                )}
+
+                {/* Guardian Summary Card */}
+                <div style={{
+                    background: 'var(--cs-surface-2)',
+                    border: '1px solid var(--cs-border)',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px'
+                }}>
+                    <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #6C63FF 0%, #4F46E5 100%)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                        flexShrink: 0
+                    }}>
+                        {initials(guardian.fullName)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--cs-text-primary)' }}>
+                                {guardian.fullName}
+                            </span>
+                            <span className="badge badge-secondary" style={{ fontSize: '11px', textTransform: 'capitalize' }}>
+                                {guardian.relationship}
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {guardian.email || guardian.portalEmail || 'No email specified'}
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', lineHeight: 1.5 }}>
+                    {isReset
+                        ? `Are you sure you want to reset the portal login password for ${guardian.fullName}? A new password will be generated, and you will be able to copy or email the credentials immediately.`
+                        : `Generate parent portal login access for ${guardian.fullName}. They will be able to log in to view their linked children's academic records, fees, and attendance.`
+                    }
+                </div>
+
+                {/* Optional Custom Password Checkbox */}
+                <div style={{ borderTop: '1px solid var(--cs-border)', paddingTop: '14px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--cs-text-primary)' }}>
+                        <input
+                            type="checkbox"
+                            checked={useCustom}
+                            onChange={(e) => setUseCustom(e.target.checked)}
+                            style={{ width: '16px', height: '16px', accentColor: 'var(--cs-primary, #6C63FF)', cursor: 'pointer' }}
+                        />
+                        Set a custom password manually
+                    </label>
+
+                    {useCustom && (
+                        <div style={{ marginTop: '10px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--cs-text-secondary)' }}>
+                                New Password (min 8 characters)
+                            </label>
+                            <input
+                                type="text"
+                                className="input-field"
+                                placeholder="Enter custom password (e.g. Pass@123)"
+                                value={customPassword}
+                                onChange={(e) => setCustomPassword(e.target.value)}
+                                style={{ width: '100%', boxSizing: 'border-box' }}
+                                autoFocus
+                            />
+                        </div>
+                    )}
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', borderTop: '1px solid var(--cs-border)', paddingTop: '16px' }}>
+                    <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={onClose}
+                        disabled={saving}
+                        style={{ cursor: 'pointer' }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        className="btn-primary"
+                        disabled={saving}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: saving ? 'not-allowed' : 'pointer' }}
+                    >
+                        <KeyRound size={14} />
+                        {saving ? (isReset ? 'Resetting...' : 'Creating...') : (isReset ? 'Reset Password' : 'Create Login')}
                     </button>
                 </div>
             </form>
