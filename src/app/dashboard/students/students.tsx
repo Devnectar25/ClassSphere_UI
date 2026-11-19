@@ -692,7 +692,7 @@ export default function StudentsPage() {
 
             {/* Add Student Modal */}
             {showAdd && (
-                <Modal title="Add Student" onClose={closeAddModal}>
+                <Modal title="Add Student" onClose={closeAddModal} maxWidth="660px">
                     <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         {/* Student Photo Upload */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
@@ -753,7 +753,7 @@ export default function StudentsPage() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">First Name *</label>
+                                <label className="cs-label">First Name <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     placeholder="First name"
@@ -769,7 +769,7 @@ export default function StudentsPage() {
                                 )}
                             </div>
                             <div>
-                                <label className="cs-label">Last Name *</label>
+                                <label className="cs-label">Last Name <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     placeholder="Last name"
@@ -786,7 +786,7 @@ export default function StudentsPage() {
                             </div>
                         </div>
                         <div>
-                            <label className="cs-label">Email *</label>
+                            <label className="cs-label">Email <span style={{ color: '#EF4444' }}>*</span></label>
                             <input
                                 className="cs-input"
                                 type="email"
@@ -804,7 +804,7 @@ export default function StudentsPage() {
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">Mobile Number *</label>
+                                <label className="cs-label">Mobile Number <span style={{ color: '#EF4444' }}>*</span></label>
                                 <CountryPhoneInput
                                     value={form.phone}
                                     selectedCountry={selectedCountry}
@@ -938,11 +938,11 @@ export default function StudentsPage() {
 
             {/* Edit Student Modal */}
             {editingStudent && (
-                <Modal title={`Edit Student: ${editingStudent.firstName} ${editingStudent.lastName}`} onClose={() => setEditingStudent(null)}>
+                <Modal title={`Edit Student: ${editingStudent.firstName} ${editingStudent.lastName}`} onClose={() => setEditingStudent(null)} maxWidth="660px">
                     <form onSubmit={submitEdit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">First Name *</label>
+                                <label className="cs-label">First Name <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     placeholder="First name"
@@ -958,7 +958,7 @@ export default function StudentsPage() {
                                 )}
                             </div>
                             <div>
-                                <label className="cs-label">Last Name *</label>
+                                <label className="cs-label">Last Name <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     placeholder="Last name"
@@ -977,7 +977,7 @@ export default function StudentsPage() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">Email *</label>
+                                <label className="cs-label">Email <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     type="email"
@@ -994,7 +994,7 @@ export default function StudentsPage() {
                                 )}
                             </div>
                             <div>
-                                <label className="cs-label">Phone *</label>
+                                <label className="cs-label">Phone <span style={{ color: '#EF4444' }}>*</span></label>
                                 <CountryPhoneInput
                                     value={editForm.phone}
                                     selectedCountry={editCountry}
@@ -1074,7 +1074,9 @@ export default function StudentsPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="cs-label">Fee / Tuition Amount</label>
+                                <label className="cs-label">
+                                    Fee / Tuition Amount {editForm.feeStatus !== 'none' && <span style={{ color: '#EF4444' }}>*</span>}
+                                </label>
                                 <input
                                     className="cs-input"
                                     type="number"

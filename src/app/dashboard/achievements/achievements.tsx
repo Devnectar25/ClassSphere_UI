@@ -217,10 +217,10 @@ export default function AchievementsPage() {
 
             {/* Modal: New Achievement */}
             {showModal && (
-                <Modal title="New Student Achievement" onClose={() => setShowModal(false)}>
+                <Modal title="New Student Achievement" onClose={() => setShowModal(false)} maxWidth="660px">
                     <form onSubmit={handleCreateAchievement} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div>
-                            <label className="cs-label">Student *</label>
+                            <label className="cs-label">Student <span style={{ color: '#EF4444' }}>*</span></label>
                             <select
                                 className="cs-input"
                                 required
@@ -237,7 +237,7 @@ export default function AchievementsPage() {
                         </div>
 
                         <div>
-                            <label className="cs-label">Achievement Title *</label>
+                            <label className="cs-label">Achievement Title <span style={{ color: '#EF4444' }}>*</span></label>
                             <input
                                 className="cs-input"
                                 required
@@ -249,7 +249,7 @@ export default function AchievementsPage() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">Category *</label>
+                                <label className="cs-label">Category <span style={{ color: '#EF4444' }}>*</span></label>
                                 <select
                                     className="cs-input"
                                     value={form.category}
@@ -262,7 +262,7 @@ export default function AchievementsPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="cs-label">Level *</label>
+                                <label className="cs-label">Level <span style={{ color: '#EF4444' }}>*</span></label>
                                 <select
                                     className="cs-input"
                                     value={form.level}
@@ -279,7 +279,7 @@ export default function AchievementsPage() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">Award Date *</label>
+                                <label className="cs-label">Award Date <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     type="date"
@@ -289,7 +289,7 @@ export default function AchievementsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="cs-label">Visibility *</label>
+                                <label className="cs-label">Visibility <span style={{ color: '#EF4444' }}>*</span></label>
                                 <select
                                     className="cs-input"
                                     value={form.visibility}
@@ -305,7 +305,7 @@ export default function AchievementsPage() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">Awarding Body / Issuer *</label>
+                                <label className="cs-label">Awarding Body / Issuer <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     required

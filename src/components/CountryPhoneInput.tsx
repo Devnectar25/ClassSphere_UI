@@ -114,6 +114,7 @@ export interface CountryPhoneInputProps {
     disabled?: boolean;
     id?: string;
     showHelperText?: boolean;
+    dropdownPosition?: 'top' | 'bottom' | 'auto';
 }
 
 export default function CountryPhoneInput({
@@ -129,13 +130,35 @@ export default function CountryPhoneInput({
     disabled = false,
     id,
     showHelperText = true,
+    dropdownPosition = 'auto',
 }: CountryPhoneInputProps) {
     const [internalCountry, setInternalCountry] = useState<CountryOption>(COUNTRIES[0]);
     const country = externalCountry ?? internalCountry;
     const [isOpen, setIsOpen] = useState(false);
+    const [openUpward, setOpenUpward] = useState(false);
     const [search, setSearch] = useState('');
     const [isFocused, setIsFocused] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+
+    const toggleDropdown = () => {
+        if (!isOpen && containerRef.current) {
+            if (dropdownPosition === 'top') {
+                setOpenUpward(true);
+            } else if (dropdownPosition === 'bottom') {
+                setOpenUpward(false);
+            } else {
+                const rect = containerRef.current.getBoundingClientRect();
+                const modal = containerRef.current.closest('.modal-content');
+                const bottomLimit = modal ? modal.getBoundingClientRect().bottom : window.innerHeight;
+                const topLimit = modal ? modal.getBoundingClientRect().top : 0;
+                const spaceBelow = bottomLimit - rect.bottom;
+                const spaceAbove = rect.top - topLimit;
+                setOpenUpward(spaceBelow < 240 && spaceAbove > spaceBelow);
+            }
+        }
+        setIsOpen(prev => !prev);
+        setSearch('');
+    };
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
@@ -201,10 +224,7 @@ export default function CountryPhoneInput({
                 <button
                     type="button"
                     disabled={disabled}
-                    onClick={() => {
-                        setIsOpen(prev => !prev);
-                        setSearch('');
-                    }}
+                    onClick={toggleDropdown}
                     aria-expanded={isOpen}
                     aria-label="Select Country Code"
                     style={{
@@ -265,7 +285,9 @@ export default function CountryPhoneInput({
                     <div
                         style={{
                             position: 'absolute',
-                            top: 'calc(100% + 4px)',
+                            ...(openUpward
+                                ? { bottom: 'calc(100% + 4px)', top: 'auto' }
+                                : { top: 'calc(100% + 4px)', bottom: 'auto' }),
                             left: 0,
                             width: '280px',
                             maxHeight: '220px',
@@ -273,7 +295,7 @@ export default function CountryPhoneInput({
                             border: '1px solid #E2E8F0',
                             borderRadius: '10px',
                             boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.08)',
-                            zIndex: 100,
+                            zIndex: 1000,
                             display: 'flex',
                             flexDirection: 'column',
                             overflow: 'hidden',

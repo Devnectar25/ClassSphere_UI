@@ -146,6 +146,7 @@ function BatchesContent() {
         const defaultBranch = session?.selectedBranchId || workspace?.branches?.[0]?.branchId || '';
         setBatchForm({
             ...emptyBatchForm,
+            batchId: undefined,
             courseId: defaultCourse,
             branchId: defaultBranch,
             startDate: new Date().toISOString().split('T')[0]
@@ -547,10 +548,10 @@ function BatchesContent() {
 
             {/* Add Batch Modal */}
             {showAddBatch && (
-                <Modal title={batchForm.batchId ? `Edit Batch: ${batchForm.name}` : "Add New Batch"} onClose={() => setShowAddBatch(false)}>
+                <Modal title={batchForm.batchId ? `Edit Batch: ${batchForm.name}` : "Add New Batch"} onClose={() => setShowAddBatch(false)} maxWidth="700px">
                     <form onSubmit={submitBatch} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div>
-                            <label className="cs-label">Batch Name *</label>
+                            <label className="cs-label">Batch Name <span style={{ color: '#EF4444' }}>*</span></label>
                             <input
                                 className="cs-input"
                                 required
@@ -562,7 +563,7 @@ function BatchesContent() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
-                                <label className="cs-label">Course *</label>
+                                <label className="cs-label">Course <span style={{ color: '#EF4444' }}>*</span></label>
                                 <select
                                     className="cs-input"
                                     required
@@ -576,7 +577,7 @@ function BatchesContent() {
                                 </select>
                             </div>
                             <div>
-                                <label className="cs-label">Branch *</label>
+                                <label className="cs-label">Branch <span style={{ color: '#EF4444' }}>*</span></label>
                                 <select
                                     className="cs-input"
                                     required
@@ -628,7 +629,7 @@ function BatchesContent() {
                                 />
                             </div>
                             <div>
-                                <label className="cs-label">Start Date *</label>
+                                <label className="cs-label">Start Date <span style={{ color: '#EF4444' }}>*</span></label>
                                 <input
                                     className="cs-input"
                                     type="date"
@@ -760,7 +761,7 @@ function BatchesContent() {
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                             <button className="btn-secondary" type="button" onClick={() => setShowAddBatch(false)}>Cancel</button>
                             <button className="btn-primary" type="submit" disabled={saving || !batchForm.name || !batchForm.courseId}>
-                                {saving ? 'Creating…' : 'Create Batch'}
+                                {saving ? (batchForm.batchId ? 'Saving…' : 'Creating…') : (batchForm.batchId ? 'Save Changes' : 'Create Batch')}
                             </button>
                         </div>
                     </form>

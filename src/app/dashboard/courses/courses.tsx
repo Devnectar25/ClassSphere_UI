@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil } from 'lucide-react';
+import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil, LayoutGrid, List } from 'lucide-react';
 import { api, useApi, formatMoney } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -52,6 +52,7 @@ export default function CoursesPage() {
     const [message, setMessage] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'draft'>('all');
+    const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
     const canManage = can(session, 'courses.write');
 
     // Edit course state
@@ -233,134 +234,340 @@ export default function CoursesPage() {
                         </div>
                     </div>
 
-                    {canManage && (
-                        <button
-                            className="btn-primary"
-                            onClick={() => { setForm({ ...emptyCourse, category: Object.keys(catalogue)[0] ?? '' }); setCreating(true); }}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                whiteSpace: 'nowrap',
-                                padding: '8px 16px',
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                marginLeft: 'auto'
-                            }}
-                        >
-                            <Plus size={16} /> Create Course
-                        </button>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+                        <div style={{
+                            display: 'inline-flex',
+                            background: 'var(--cs-surface-2)',
+                            border: '1px solid var(--cs-border)',
+                            borderRadius: '8px',
+                            padding: '2px',
+                            alignItems: 'center'
+                        }}>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('table')}
+                                style={{
+                                    border: 'none',
+                                    background: viewMode === 'table' ? 'var(--cs-surface)' : 'transparent',
+                                    color: viewMode === 'table' ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    boxShadow: viewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title="Table View"
+                                aria-label="Table View"
+                            >
+                                <List size={15} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('grid')}
+                                style={{
+                                    border: 'none',
+                                    background: viewMode === 'grid' ? 'var(--cs-surface)' : 'transparent',
+                                    color: viewMode === 'grid' ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    boxShadow: viewMode === 'grid' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title="Grid Cards View"
+                                aria-label="Grid Cards View"
+                            >
+                                <LayoutGrid size={15} />
+                            </button>
+                        </div>
+
+                        {canManage && (
+                            <button
+                                className="btn-primary"
+                                onClick={() => { setForm({ ...emptyCourse, category: Object.keys(catalogue)[0] ?? '' }); setCreating(true); }}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    whiteSpace: 'nowrap',
+                                    padding: '8px 16px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    borderRadius: '8px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <Plus size={16} /> Create Course
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                {!courses ? <PageState error={error} /> : (
+                {!courses ? <PageState error={error} /> : viewMode === 'table' ? (
+                    <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                        <div style={{ overflowX: 'auto', width: '100%' }}>
+                            <table className="cs-table" style={{ width: '100%' }}>
+                                <thead>
+                                    <tr>
+                                        <th>Course</th>
+                                        <th>Code</th>
+                                        <th>Category</th>
+                                        <th>Level</th>
+                                        <th>Fee</th>
+                                        <th>Billing</th>
+                                        <th>Duration</th>
+                                        <th>Batches</th>
+                                        <th>Status</th>
+                                        <th style={{ width: '60px', textAlign: 'center' }}>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredCourses.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={10} style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--cs-text-muted)' }}>
+                                                <div style={{ fontSize: '14px', marginBottom: '14px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                                    {courses.length === 0
+                                                        ? 'No courses found for this course.'
+                                                        : 'No courses match your search or filter.'}
+                                                </div>
+                                                {canManage && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-primary"
+                                                        onClick={() => { setForm({ ...emptyCourse, category: Object.keys(catalogue)[0] ?? '' }); setCreating(true); }}
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                                    >
+                                                        <Plus size={14} /> {courses.length === 0 ? 'Create First Course' : 'Create Course'}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredCourses.map(c => (
+                                            <tr key={c.courseId}>
+                                                <td>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <div style={{ width: 32, height: 32, borderRadius: '8px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                            <BookOpen size={16} color="#6C63FF" />
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--cs-text-primary)' }}>{c.title}</div>
+                                                            {c.subjects.length > 0 && (
+                                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                                                    {c.subjects.slice(0, 3).map(s => (
+                                                                        <span key={s.subjectId} style={{ background: 'var(--cs-surface-2)', padding: '1px 5px', borderRadius: '4px' }}>{s.name}</span>
+                                                                    ))}
+                                                                    {c.subjects.length > 3 && <span>+{c.subjects.length - 3}</span>}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <code style={{ fontSize: '11px', color: 'var(--cs-text-muted)', background: 'var(--cs-surface-2)', padding: '2px 6px', borderRadius: '4px' }}>{c.code}</code>
+                                                </td>
+                                                <td>
+                                                    <span className="badge badge-secondary" style={{ fontSize: '11px' }}>
+                                                        <Tag size={10} style={{ marginRight: '4px' }} />{c.category}
+                                                    </span>
+                                                </td>
+                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
+                                                    {c.level || '—'}
+                                                </td>
+                                                <td style={{ fontSize: '13px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
+                                                    {formatMoney(c.tuitionAmount, currency)}
+                                                </td>
+                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', textTransform: 'capitalize' }}>
+                                                    {c.billingPeriod}
+                                                </td>
+                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>
+                                                    {c.durationMonths ? `${c.durationMonths} mo` : '—'}
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setViewingBatchesCourse(c)}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: 'var(--cs-primary)',
+                                                            fontSize: '12px',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            padding: 0
+                                                        }}
+                                                        title="Click to view batches for this course"
+                                                    >
+                                                        <Calendar size={12} /> {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'}
+                                                    </button>
+                                                </td>
+                                                <td>
+                                                    <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`}>
+                                                        {c.isActive ? 'active' : 'draft'}
+                                                    </span>
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    {canManage && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => startEdit(c)}
+                                                            style={{
+                                                                width: '28px',
+                                                                height: '28px',
+                                                                padding: 0,
+                                                                borderRadius: '6px',
+                                                                cursor: 'pointer',
+                                                                color: '#6C63FF',
+                                                                background: 'rgba(108, 99, 255, 0.08)',
+                                                                border: '1px solid rgba(108, 99, 255, 0.25)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
+                                                            title={`Edit ${c.title}`}
+                                                            aria-label={`Edit ${c.title}`}
+                                                        >
+                                                            <Pencil size={13} />
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', width: '100%' }}>
-                        {courses.length === 0 && <PageState error="No courses yet — create your first course." />}
-                        {courses.length > 0 && filteredCourses.length === 0 && (
-                            <div className="cs-card" style={{ padding: '32px', textAlign: 'center', color: 'var(--cs-text-muted)', gridColumn: '1 / -1' }}>
-                                No courses match your search or filter.
-                            </div>
-                        )}
-                        {filteredCourses.map(c => (
-                            <div key={c.courseId} className="cs-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
-                                        <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                            <BookOpen size={18} color="#6C63FF" />
-                                        </div>
-                                        <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--cs-text-primary)' }}>{c.title}</div>
-                                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{c.code} • {formatMoney(c.tuitionAmount, currency)} / {c.billingPeriod}</div>
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                                        <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`}>{c.isActive ? 'active' : 'draft'}</span>
-                                        {canManage && (
-                                            <button
-                                                type="button"
-                                                onClick={() => startEdit(c)}
-                                                style={{
-                                                    width: '28px',
-                                                    height: '28px',
-                                                    padding: 0,
-                                                    borderRadius: '7px',
-                                                    cursor: 'pointer',
-                                                    color: '#6C63FF',
-                                                    background: 'rgba(108, 99, 255, 0.08)',
-                                                    border: '1px solid rgba(108, 99, 255, 0.25)',
-                                                    display: 'inline-flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    transition: 'all 0.15s ease'
-                                                }}
-                                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
-                                                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
-                                                title={`Edit ${c.title}`}
-                                                aria-label={`Edit ${c.title}`}
-                                            >
-                                                <Pencil size={13} />
-                                            </button>
-                                        )}
-                                    </div>
+                        {filteredCourses.length === 0 ? (
+                            <div className="cs-card" style={{ padding: '48px 24px', textAlign: 'center', width: '100%', gridColumn: '1 / -1' }}>
+                                <div style={{ fontSize: '14px', marginBottom: '14px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                    {courses.length === 0
+                                        ? 'No courses found for this course.'
+                                        : 'No courses match your search or filter.'}
                                 </div>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                    <span className="badge badge-secondary"><Tag size={10} /> {c.category}</span>
-                                    {c.level && <span className="badge badge-info"><Users size={10} /> {c.level}</span>}
-                                    {c.durationMonths && <span className="badge badge-secondary"><Clock size={10} /> {c.durationMonths} months</span>}
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cs-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Subjects</div>
-                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                        {c.subjects.length === 0 && <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>No subjects yet</span>}
-                                        {c.subjects.map(s => <span key={s.subjectId} className="badge badge-primary">{s.name}</span>)}
-                                        {canManage && (
-                                            <button className="badge badge-secondary" style={{ border: '1px dashed var(--cs-border)', cursor: 'pointer' }} onClick={() => addSubjectToCourse(c)}>
-                                                <Plus size={10} /> Subject
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--cs-text-secondary)', borderTop: '1px solid var(--cs-border)', paddingTop: '10px', marginTop: 'auto' }}>
+                                {canManage && (
                                     <button
                                         type="button"
-                                        onClick={() => setViewingBatchesCourse(c)}
-                                        style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            padding: 0,
-                                            cursor: 'pointer',
-                                            fontSize: '12px',
-                                            color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
-                                            fontWeight: c.batchCount > 0 ? 600 : 400,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px'
-                                        }}
-                                        title="Click to view batches for this course"
+                                        className="btn-primary"
+                                        onClick={() => { setForm({ ...emptyCourse, category: Object.keys(catalogue)[0] ?? '' }); setCreating(true); }}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                                     >
-                                        {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'} • {c.studentCount} students
+                                        <Plus size={14} /> {courses.length === 0 ? 'Create First Course' : 'Create Course'}
                                     </button>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <Link
-                                            href={`/dashboard/batches?courseId=${c.courseId}&courseTitle=${encodeURIComponent(c.title)}`}
+                                )}
+                            </div>
+                        ) : (
+                            filteredCourses.map(c => (
+                                <div key={c.courseId} className="cs-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
+                                            <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <BookOpen size={18} color="#6C63FF" />
+                                            </div>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--cs-text-primary)' }}>{c.title}</div>
+                                                <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{c.code} • {formatMoney(c.tuitionAmount, currency)} / {c.billingPeriod}</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                            <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`}>{c.isActive ? 'active' : 'draft'}</span>
+                                            {canManage && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => startEdit(c)}
+                                                    style={{
+                                                        width: '28px',
+                                                        height: '28px',
+                                                        padding: 0,
+                                                        borderRadius: '7px',
+                                                        cursor: 'pointer',
+                                                        color: '#6C63FF',
+                                                        background: 'rgba(108, 99, 255, 0.08)',
+                                                        border: '1px solid rgba(108, 99, 255, 0.25)',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        transition: 'all 0.15s ease'
+                                                    }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
+                                                    title={`Edit ${c.title}`}
+                                                    aria-label={`Edit ${c.title}`}
+                                                >
+                                                    <Pencil size={13} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        <span className="badge badge-secondary"><Tag size={10} /> {c.category}</span>
+                                        {c.level && <span className="badge badge-info"><Users size={10} /> {c.level}</span>}
+                                        {c.durationMonths && <span className="badge badge-secondary"><Clock size={10} /> {c.durationMonths} months</span>}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cs-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Subjects</div>
+                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            {c.subjects.length === 0 && <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>No subjects yet</span>}
+                                            {c.subjects.map(s => <span key={s.subjectId} className="badge badge-primary">{s.name}</span>)}
+                                            {canManage && (
+                                                <button className="badge badge-secondary" style={{ border: '1px dashed var(--cs-border)', cursor: 'pointer' }} onClick={() => addSubjectToCourse(c)}>
+                                                    <Plus size={10} /> Subject
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--cs-text-secondary)', borderTop: '1px solid var(--cs-border)', paddingTop: '10px', marginTop: 'auto' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setViewingBatchesCourse(c)}
                                             style={{
-                                                display: 'flex',
+                                                background: 'none',
+                                                border: 'none',
+                                                padding: 0,
+                                                cursor: 'pointer',
+                                                fontSize: '12px',
+                                                color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                                fontWeight: c.batchCount > 0 ? 600 : 400,
+                                                display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: '4px',
-                                                color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
-                                                fontWeight: 600,
-                                                textDecoration: 'none'
+                                                gap: '4px'
                                             }}
-                                            title={`View ${c.title} batches in Batches & Schedule`}
+                                            title="Click to view batches for this course"
                                         >
-                                            <Calendar size={12} /> Batches
-                                        </Link>
+                                            {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'} • {c.studentCount} students
+                                        </button>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <Link
+                                                href={`/dashboard/batches?courseId=${c.courseId}&courseTitle=${encodeURIComponent(c.title)}`}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                                    fontWeight: 600,
+                                                    textDecoration: 'none'
+                                                }}
+                                                title={`View ${c.title} batches in Batches & Schedule`}
+                                            >
+                                                <Calendar size={12} /> Batches
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))
+                        )}
                     </div>
                 )}
             </div>
@@ -436,7 +643,7 @@ export default function CoursesPage() {
 
             {/* Create Course Modal */}
             {creating && (
-                <Modal title={`Create ${workspace?.organization.academyType ?? ''} Course`} onClose={() => setCreating(false)}>
+                <Modal title="Create Course" onClose={() => setCreating(false)} maxWidth="660px">
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
                             <div>
@@ -459,23 +666,24 @@ export default function CoursesPage() {
                                 <label className="cs-label">Level</label>
                                 <input className="cs-input" placeholder="e.g. Class 10" value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} />
                             </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.3fr 90px', gap: '10px' }}>
                             <div>
                                 <label className="cs-label">Fee ({currency})</label>
                                 <input className="cs-input" type="number" min="0" required value={form.tuitionAmount} onChange={e => setForm({ ...form, tuitionAmount: e.target.value })} />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                <div>
-                                    <label className="cs-label">Billing</label>
-                                    <select className="cs-input" value={form.billingPeriod} onChange={e => setForm({ ...form, billingPeriod: e.target.value })}>
-                                        <option value="monthly">Monthly</option>
-                                        <option value="term">Per term</option>
-                                        <option value="annual">Annual</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="cs-label">Months</label>
-                                    <input className="cs-input" type="number" min="1" value={form.durationMonths} onChange={e => setForm({ ...form, durationMonths: e.target.value })} />
-                                </div>
+                            <div>
+                                <label className="cs-label">Billing</label>
+                                <select className="cs-input" value={form.billingPeriod} onChange={e => setForm({ ...form, billingPeriod: e.target.value })}>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="term">Per term</option>
+                                    <option value="annual">Annual</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="cs-label">Months</label>
+                                <input className="cs-input" type="number" min="1" value={form.durationMonths} onChange={e => setForm({ ...form, durationMonths: e.target.value })} />
                             </div>
                         </div>
                         <div>
@@ -516,7 +724,7 @@ export default function CoursesPage() {
 
             {/* Edit Course Modal */}
             {editingCourse && (
-                <Modal title={`Edit Course: ${editingCourse.title}`} onClose={() => setEditingCourse(null)}>
+                <Modal title={`Edit Course: ${editingCourse.title}`} onClose={() => setEditingCourse(null)} maxWidth="660px">
                     <form onSubmit={submitEdit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
                             <div>
@@ -539,23 +747,24 @@ export default function CoursesPage() {
                                 <label className="cs-label">Level</label>
                                 <input className="cs-input" placeholder="e.g. Class 10" value={editForm.level} onChange={e => setEditForm({ ...editForm, level: e.target.value })} />
                             </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.3fr 90px', gap: '10px' }}>
                             <div>
                                 <label className="cs-label">Fee ({currency})</label>
                                 <input className="cs-input" type="number" min="0" required value={editForm.tuitionAmount} onChange={e => setEditForm({ ...editForm, tuitionAmount: e.target.value })} />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                <div>
-                                    <label className="cs-label">Billing</label>
-                                    <select className="cs-input" value={editForm.billingPeriod} onChange={e => setEditForm({ ...editForm, billingPeriod: e.target.value })}>
-                                        <option value="monthly">Monthly</option>
-                                        <option value="term">Per term</option>
-                                        <option value="annual">Annual</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="cs-label">Months</label>
-                                    <input className="cs-input" type="number" min="1" value={editForm.durationMonths} onChange={e => setEditForm({ ...editForm, durationMonths: e.target.value })} />
-                                </div>
+                            <div>
+                                <label className="cs-label">Billing</label>
+                                <select className="cs-input" value={editForm.billingPeriod} onChange={e => setEditForm({ ...editForm, billingPeriod: e.target.value })}>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="term">Per term</option>
+                                    <option value="annual">Annual</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="cs-label">Months</label>
+                                <input className="cs-input" type="number" min="1" value={editForm.durationMonths} onChange={e => setEditForm({ ...editForm, durationMonths: e.target.value })} />
                             </div>
                         </div>
 

@@ -4,6 +4,7 @@ import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import BadgeList from '@/components/BadgeList';
 import Modal from '@/components/Modal';
+import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import {
     Mail, Phone, Shield, Users, ShieldCheck, CheckCircle2, Eye, Lock,
     MapPin, Plus, Trash2, RotateCcw, Search, Sliders, X, ChevronLeft, ChevronRight
@@ -380,6 +381,8 @@ interface FlattenedPageItem {
     path: string;
     description: string;
     section: string;
+    permissions: Partial<Record<string, AccessType>>;
+    branchScopedFor?: string[];
 }
 
 const ALL_PAGE_ITEMS: FlattenedPageItem[] = PAGE_ACCESS_SECTIONS.flatMap(sec =>
@@ -388,6 +391,8 @@ const ALL_PAGE_ITEMS: FlattenedPageItem[] = PAGE_ACCESS_SECTIONS.flatMap(sec =>
         path: item.path,
         description: item.description,
         section: sec.section,
+        permissions: item.permissions,
+        branchScopedFor: item.branchScopedFor,
     }))
 );
 
@@ -595,6 +600,9 @@ export default function StaffPage() {
 
     const [adding, setAdding] = useState(false);
     const [form, setForm] = useState(emptyUser);
+    const [phoneCountry, setPhoneCountry] = useState<CountryOption>(COUNTRIES[0]);
+    const [phoneError, setPhoneError] = useState('');
+    const [phoneTouched, setPhoneTouched] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const canManage = can(session, 'staff.write');
@@ -732,13 +740,27 @@ export default function StaffPage() {
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setBusy(true);
         setMessage(null);
+
+        const phoneDigits = form.phone ? form.phone.replace(/\D/g, '') : '';
+        if (phoneDigits) {
+            const phoneErr = validatePhoneNumber(phoneDigits, phoneCountry, false);
+            if (phoneErr) {
+                setPhoneError(phoneErr);
+                setPhoneTouched(true);
+                return;
+            }
+        }
+
+        setBusy(true);
         try {
-            await api('/staff', { method: 'POST', body: JSON.stringify({ ...form, branchId: form.branchId || null }) });
+            const finalPhone = phoneDigits ? `${phoneCountry.dialCode} ${phoneDigits}`.trim() : null;
+            await api('/staff', { method: 'POST', body: JSON.stringify({ ...form, phone: finalPhone, branchId: form.branchId || null }) });
             setMessage(`${form.fullName} can now sign in as ${form.email} with the temporary password.`);
             setAdding(false);
             setForm(emptyUser);
+            setPhoneError('');
+            setPhoneTouched(false);
             reload();
         } catch (err) {
             setMessage((err as Error).message);
@@ -802,7 +824,7 @@ export default function StaffPage() {
                     {canManage && (
                         <button
                             className="btn-primary"
-                            onClick={() => setAdding(true)}
+                            onClick={() => { setForm(emptyUser); setPhoneError(''); setPhoneTouched(false); setAdding(true); }}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', fontSize: '13px', fontWeight: 700 }}
                         >
                             <Plus size={15} /> Add User
@@ -1420,7 +1442,12 @@ export default function StaffPage() {
             )}
 
             {adding && (
-                <Modal title="Add Academy User" onClose={() => setAdding(false)}>
+                <Modal
+                    title="Add Academy User"
+                    onClose={() => { setAdding(false); setPhoneError(''); setPhoneTouched(false); }}
+                    maxWidth="580px"
+                    style={{ overflow: 'visible' }}
+                >
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
@@ -1437,7 +1464,32 @@ export default function StaffPage() {
                             </div>
                             <div>
                                 <label className="cs-label">Phone</label>
-                                <input className="cs-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                                <CountryPhoneInput
+                                    value={form.phone}
+                                    selectedCountry={phoneCountry}
+                                    onCountryChange={country => {
+                                        setPhoneCountry(country);
+                                        if (phoneTouched && form.phone) {
+                                            setPhoneError(validatePhoneNumber(form.phone, country, false));
+                                        }
+                                    }}
+                                    onChange={(val: string, country: CountryOption) => {
+                                        setForm(f => ({ ...f, phone: val }));
+                                        setPhoneCountry(country);
+                                        if (phoneTouched) {
+                                            setPhoneError(validatePhoneNumber(val, country, false));
+                                        }
+                                    }}
+                                    onBlur={() => {
+                                        setPhoneTouched(true);
+                                        if (form.phone) {
+                                            setPhoneError(validatePhoneNumber(form.phone, phoneCountry, false));
+                                        }
+                                    }}
+                                    touched={phoneTouched}
+                                    error={phoneError}
+                                    placeholder="e.g. 9840012345"
+                                />
                             </div>
                             <div>
                                 <label className="cs-label">Role</label>
