@@ -1,12 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
     LayoutDashboard, Users, GraduationCap, BookOpen, Calendar,
     CreditCard, Receipt, ClipboardList, Bell, Trophy, BarChart3,
     Settings, LogOut, ChevronLeft, ChevronRight, Building2,
-    Shield, ShieldCheck, UserCog, FileCheck
+    Shield, ShieldCheck, UserCog, FileCheck, X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { can, clearSession, homePath, saveSession, useSession, type SessionState } from '@/lib/session';
@@ -55,9 +55,24 @@ const navGroups = [
     },
 ];
 
+/** Event the Topbar's menu button dispatches to open the sidebar drawer on small screens. */
+export const SIDEBAR_TOGGLE_EVENT = 'cs:toggle-sidebar';
+
 export default function Sidebar() {
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsedPref, setCollapsed] = useState(false);
+    const [mobileOpen, setMobileOpen] = useState(false);
     const pathname = usePathname();
+    // The drawer always shows full labels, whatever the desktop collapse preference
+    const collapsed = collapsedPref && !mobileOpen;
+
+    useEffect(() => {
+        const toggle = () => setMobileOpen(o => !o);
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false); };
+        window.addEventListener(SIDEBAR_TOGGLE_EVENT, toggle);
+        window.addEventListener('keydown', onKey);
+        return () => { window.removeEventListener(SIDEBAR_TOGGLE_EVENT, toggle); window.removeEventListener('keydown', onKey); };
+    }, []);
+
     const router = useRouter();
     const session = useSession();
     const { workspace } = useWorkspace();
@@ -78,7 +93,10 @@ export default function Sidebar() {
     const academies = session?.memberships.filter(m => m.role !== 'Guardian') ?? [];
 
     return (
-        <aside style={{
+        <>
+        <style>{SIDEBAR_CSS}</style>
+        {mobileOpen && <div className="cs-sidebar-backdrop" onClick={() => setMobileOpen(false)} aria-hidden="true" />}
+        <aside className={`cs-sidebar${mobileOpen ? ' is-open' : ''}`} style={{
             width: collapsed ? '72px' : '232px',
             minHeight: '100vh',
             background: 'var(--cs-surface)',
@@ -114,7 +132,7 @@ export default function Sidebar() {
                     </div>
                 )}
                 {!collapsed && (
-                    <div style={{ overflow: 'hidden' }}>
+                    <div style={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
                         <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: '15px', color: 'var(--cs-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {session?.session.tenantName ?? <>Class<span className="gradient-text">Sphere</span></>}
                         </div>
@@ -123,6 +141,9 @@ export default function Sidebar() {
                         </div>
                     </div>
                 )}
+                <button type="button" className="cs-sidebar-close" onClick={() => setMobileOpen(false)} aria-label="Close menu">
+                    <X size={18} />
+                </button>
             </div>
 
             {/* Academy & branch context (the branch view is chosen on the Branches page) */}
@@ -161,7 +182,7 @@ export default function Sidebar() {
                             {items.map(item => {
                                 const active = pathname === item.href;
                                 return (
-                                    <Link key={item.href} href={item.href} style={{ textDecoration: 'none' }}>
+                                    <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} style={{ textDecoration: 'none' }}>
                                         <div className={`sidebar-link${active ? ' active' : ''}`} style={collapsed ? { justifyContent: 'center', padding: '12px' } : {}}>
                                             <item.icon size={18} style={{ flexShrink: 0 }} />
                                             {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>}
@@ -177,7 +198,7 @@ export default function Sidebar() {
             {/* Bottom */}
             <div style={{ borderTop: '1px solid var(--cs-border)', padding: '12px 10px' }}>
                 {session?.user.isPlatformAdmin && (
-                    <Link href="/admin" style={{ textDecoration: 'none' }}>
+                    <Link href="/admin" onClick={() => setMobileOpen(false)} style={{ textDecoration: 'none' }}>
                         <div className="sidebar-link" style={collapsed ? { justifyContent: 'center', padding: '12px' } : {}}>
                             <ShieldCheck size={18} />
                             {!collapsed && <span>Platform Admin</span>}
@@ -192,7 +213,8 @@ export default function Sidebar() {
 
             {/* Collapse toggle */}
             <button
-                onClick={() => setCollapsed(!collapsed)}
+                className="cs-sidebar-collapse"
+                onClick={() => setCollapsed(!collapsedPref)}
                 aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 style={{
                     position: 'absolute',
@@ -215,5 +237,29 @@ export default function Sidebar() {
                 {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             </button>
         </aside>
+        </>
     );
 }
+
+const SIDEBAR_CSS = `
+.cs-sidebar-close { display: none; }
+@media (max-width: 1023px) {
+  .cs-sidebar {
+    position: fixed !important; top: 0; left: 0; bottom: 0; height: 100dvh; min-height: 0 !important;
+    width: min(280px, 86vw) !important; z-index: 70 !important;
+    transform: translateX(-100%); transition: transform 0.28s ease !important;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+  }
+  .cs-sidebar.is-open { transform: translateX(0); box-shadow: 0 24px 60px -12px rgba(15,23,42,0.45); }
+  .cs-sidebar-collapse { display: none !important; }
+  .cs-sidebar-close {
+    display: inline-flex; margin-left: auto; width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px;
+    border: 1px solid var(--cs-border); background: var(--cs-surface-2); color: var(--cs-text-secondary);
+    align-items: center; justify-content: center; cursor: pointer;
+  }
+  .cs-sidebar-backdrop { position: fixed; inset: 0; z-index: 69; background: rgba(15,23,42,0.45); backdrop-filter: blur(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-sidebar { transition: none !important; }
+}
+`;

@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { Shield, CheckCircle, ChevronRight, ArrowLeft } from 'lucide-react';
+import { CheckCircle, ChevronRight, ArrowLeft } from 'lucide-react';
 import SiteFooter from '@/components/SiteFooter';
+import PublicNav from '@/components/PublicNav';
 import { useApi, formatMoney, type Plan } from '@/lib/api';
 
 export default function PricingPage() {
@@ -11,52 +12,13 @@ export default function PricingPage() {
     <div style={{ fontFamily: "'Inter', sans-serif", background: '#F8FAFC', color: '#0F172A', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
       {/* ─── Navbar ─── */}
-      <nav className="glass-strong" style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        borderBottom: '1px solid #E2E8F0',
-        padding: '0 40px', height: '64px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        maxWidth: '100%',
-      }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: '8px',
-            background: 'linear-gradient(135deg, #4F46E5, #06B6D4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(79,70,229,0.25)'
-          }}>
-            <Shield size={17} color="white" />
-          </div>
-          <span style={{ fontWeight: 800, fontSize: '17px', color: '#0F172A' }}>
-            Class<span className="gradient-text">Sphere</span>
-          </span>
-        </Link>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '28px', fontSize: '14px' }}>
-          {[
-            { label: 'Categories', href: '/#categories' },
-            { label: 'Portals', href: '/#portals' },
-            { label: 'Features', href: '/#features' },
-            { label: 'How It Works', href: '/#how-it-works' },
-          ].map(item => (
-            <Link key={item.label} href={item.href} style={{ color: '#475569', textDecoration: 'none', fontWeight: 500, transition: 'color 0.2s' }}>
-              {item.label}
-            </Link>
-          ))}
-          <Link href="/pricing" style={{ color: '#4F46E5', textDecoration: 'none', fontWeight: 600 }}>
-            Pricing
-          </Link>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <Link href="/login" style={{ textDecoration: 'none' }}>
-            <button className="btn-ghost" style={{ fontSize: '13px', fontWeight: 600, color: '#4F46E5' }}>Sign In</button>
-          </Link>
-          <Link href="/register" style={{ textDecoration: 'none' }}>
-            <button className="btn-primary" style={{ fontSize: '13px', padding: '10px 20px' }}>Start Free Trial</button>
-          </Link>
-        </div>
-      </nav>
+      <PublicNav links={[
+          { label: 'Categories', href: '/#categories' },
+          { label: 'Modules', href: '/#modules' },
+          { label: 'Features', href: '/#features' },
+          { label: 'How It Works', href: '/#how-it-works' },
+          { label: 'Pricing', href: '/pricing' },
+        ]} activeHref="/pricing" />
 
       {/* ─── Pricing Section ─── */}
       <main style={{ flex: 1, padding: '48px 32px 64px', maxWidth: '1120px', width: '100%', margin: '0 auto' }}>
@@ -72,7 +34,7 @@ export default function PricingPage() {
             Simple, transparent pricing
           </h1>
           <p style={{ fontSize: '15px', color: '#64748B', maxWidth: '600px', margin: '0 auto', lineHeight: 1.6 }}>
-            Students and parents get free access with every plan. Academies receive a 14-day free trial with no hidden charges.
+            Everything your organisation needs to manage batches, attendance, and fees. All plans include a 14-day free trial with no hidden charges.
           </p>
         </div>
 

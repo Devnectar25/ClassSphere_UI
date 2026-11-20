@@ -3,10 +3,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-    Bell, Search, Plus, ChevronDown, LogOut, User, ShieldCheck,
+    Bell, Search, Plus, ChevronDown, LogOut, User, ShieldCheck, Menu,
     CheckCircle2, XCircle, ExternalLink
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace';
+import { SIDEBAR_TOGGLE_EVENT } from '@/components/Sidebar';
 import { initials } from '@/lib/api';
 import { ROLE_LABELS, can, clearSession, useSession } from '@/lib/session';
 import Modal from '@/components/Modal';
@@ -87,7 +88,8 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
 
     return (
         <>
-            <header style={{
+            <style>{TOPBAR_CSS}</style>
+            <header className="cs-topbar" style={{
                 height: '64px',
                 gap: '16px',
                 borderBottom: '1px solid var(--cs-border)',
@@ -101,14 +103,22 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
                 top: 0,
                 zIndex: 9,
             }}>
-                <div style={{ minWidth: 0 }}>
-                    <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '18px', fontWeight: 800, color: 'var(--cs-text-primary)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
+                <button
+                    type="button"
+                    className="cs-topbar-menu"
+                    aria-label="Open menu"
+                    onClick={() => window.dispatchEvent(new Event(SIDEBAR_TOGGLE_EVENT))}
+                >
+                    <Menu size={20} />
+                </button>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                    <h1 className="cs-topbar-title" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '18px', fontWeight: 800, color: 'var(--cs-text-primary)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
                     {subtitle && <p style={{ fontSize: '13px', color: 'var(--cs-text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</p>}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                     {/* Search */}
-                    <div style={{
+                    <div className="cs-topbar-search" style={{
                         display: 'flex', alignItems: 'center', gap: '10px',
                         background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)',
                         borderRadius: '10px', padding: '0 16px', width: '400px', height: '40px',
@@ -122,7 +132,7 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
                     </div>
 
                     {/* Notifications */}
-                    <button style={{
+                    <button className="cs-topbar-bell" style={{
                         width: 40, height: 40, borderRadius: '10px',
                         background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)',
                         cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -135,7 +145,7 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
                     {action && (
                         <button className="btn-primary" onClick={action.onClick} disabled={action.disabled} title={action.hint} style={{ whiteSpace: 'nowrap' }}>
                             <Plus size={16} />
-                            {action.label}
+                            <span className="cs-topbar-action-label">{action.label}</span>
                         </button>
                     )}
 
@@ -153,7 +163,7 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
                             }}
                         >
                             <div className="avatar-placeholder" style={{ width: 30, height: 30, fontSize: '12px' }}>{initials(userName)}</div>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div className="cs-topbar-usertext" style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>{userName}</span>
                                 <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap' }}>{actorLabel}</span>
                             </div>
@@ -391,3 +401,23 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
         </>
     );
 }
+
+const TOPBAR_CSS = `
+.cs-topbar-menu { display: none; width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px; border: 1px solid var(--cs-border); background: var(--cs-surface-2); color: var(--cs-text-primary); align-items: center; justify-content: center; cursor: pointer; }
+.cs-topbar-menu:focus-visible { outline: 2px solid #4F46E5; outline-offset: 2px; }
+@media (max-width: 1280px) { .cs-topbar-search { width: 260px !important; } }
+@media (max-width: 1023px) {
+  .cs-topbar-menu { display: inline-flex; }
+  .cs-topbar { gap: 10px !important; padding: 0 14px !important; }
+  .cs-topbar-search { display: none !important; }
+}
+@media (max-width: 767px) {
+  .cs-topbar-usertext { display: none !important; }
+  .cs-topbar-title { font-size: 16px !important; }
+}
+@media (max-width: 480px) {
+  .cs-topbar { padding: 0 10px !important; }
+  .cs-topbar-bell { display: none !important; }
+  .cs-topbar-action-label { display: none; }
+}
+`;

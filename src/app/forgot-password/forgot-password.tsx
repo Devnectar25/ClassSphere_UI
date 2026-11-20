@@ -27,25 +27,37 @@ function ForgotPasswordContent() {
 
     return (
         <div className="reg-page">
-            <div className="reg-shell">
+            <div className="reg-shell auth-shell">
                 <AuthBrandPanel />
                 <div className="reg-main">
-                    <Link href="/" aria-label="Close and go to home page" className="reg-close">
+                    <Link href={loginHref(initialIdentifier)} aria-label="Back to sign in" className="reg-close">
                         <X size={18} />
                     </Link>
-                    <div style={{ flexShrink: 0, padding: '32px 36px 0' }}>
+                    <div style={{ flexShrink: 0, padding: '36px 36px 0' }}>
                         <div style={{ width: '100%', maxWidth: '380px', margin: '0 auto' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.16em', color: accent, marginBottom: '8px', textAlign: 'center' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.16em', color: accent, marginBottom: '8px' }}>
                                 ACCOUNT RECOVERY
                             </div>
-                            <h1 className="reg-title" style={{ marginBottom: '6px' }}>Reset your password</h1>
-                            <p className="reg-subtitle" style={{ fontSize: '14px', marginBottom: 0 }}>
+                            <h1 className="reg-title" style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
+                                Reset your password
+                            </h1>
+                            <p className="reg-subtitle" style={{ fontSize: '13.5px', color: '#64748B', letterSpacing: '-0.005em', lineHeight: 1.5, marginBottom: 0 }}>
                                 Verify with a one-time code, then choose a new password.
                             </p>
                         </div>
                     </div>
-                    <div className="auth-body auth-compact" style={{ padding: '20px 36px 24px', overflowX: 'hidden', overflowY: 'auto' }}>
-                        <div style={{ width: '100%', maxWidth: '380px', margin: '0 auto' }}>
+                    <div
+                        className="auth-body auth-compact"
+                        style={{
+                            padding: '24px 36px 28px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            flex: 1,
+                            minHeight: 0,
+                            overflowY: 'auto',
+                        }}
+                    >
+                        <div style={{ width: '100%', maxWidth: '380px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <ForgotPasswordPanel
                                 initialIdentifier={initialIdentifier}
                                 lockInitialIdentifier
