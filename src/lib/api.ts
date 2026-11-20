@@ -57,7 +57,7 @@ export function useApi<T>(path: string | null) {
     }, [path, scope, version]);
 
     const reload = useCallback(() => setVersion(v => v + 1), []);
-    return { data, error, loading: data === null && error === null, reload };
+    return { data, error, loading: Boolean(path) && data === null && error === null, reload };
 }
 
 export function formatMoney(value: number, currency = 'INR', fractionDigits = 0) {

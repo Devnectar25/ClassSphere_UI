@@ -71,7 +71,7 @@ export default function InvoicesPage() {
     const { workspace, currency } = useWorkspace();
     const { data, error, reload } = useApi<Ledger>('/invoices');
     const [search, setSearch] = useState('');
-    const [activeTab, setActiveTab] = useState('all');
+    const [activeTab, setActiveTab] = useState('pending');
     const [offset, setOffset] = useState(0);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
     const [collecting, setCollecting] = useState<Invoice | null>(null);
@@ -745,7 +745,7 @@ export default function InvoicesPage() {
                                     </div>
 
                                     <div className="tab-list">
-                                        {['all', 'pending', 'paid', 'overdue', 'void'].map(tab => (
+                                        {['pending', 'paid', 'overdue', 'void', 'all'].map(tab => (
                                             <button key={tab} className={`tab-trigger${activeTab === tab ? ' active' : ''}`} onClick={() => { setActiveTab(tab); setOffset(0); }}>
                                                 {tab === 'all' ? 'All' : statusConfig[tab].label}
                                             </button>

@@ -1,8 +1,8 @@
 'use client';
 import Topbar from '@/components/Topbar';
-import PageState from '@/components/PageState';
 import { useState } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Check, Users } from 'lucide-react';
+import Link from 'next/link';
+import { Calendar, ChevronLeft, ChevronRight, Check, Users, Plus, AlertCircle, Inbox } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 
@@ -32,7 +32,7 @@ function windowStart(offsetWeeks: number) {
 export default function AttendancePage() {
     const session = useSession();
     const canMark = can(session, 'attendance.write');
-    const { data: batches, error: batchError } = useApi<Array<{ batchId: string; name: string }>>('/batches');
+    const { data: batches, error: batchError, loading: batchesLoading } = useApi<Array<{ batchId: string; name: string }>>('/batches');
     const [selected, setSelected] = useState<string | null>(null);
     const [weekOffset, setWeekOffset] = useState(0);
     const [edits, setEdits] = useState<Record<string, Record<string, StatusKey>>>({}); // date -> studentId -> status
@@ -45,7 +45,7 @@ export default function AttendancePage() {
     const start = windowStart(weekOffset);
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 13);
-    const { data: register, error, reload } = useApi<Register>(
+    const { data: register, error, reload, loading: registerLoading } = useApi<Register>(
         batchId ? `/attendance?batchId=${batchId}&from=${iso(start)}&to=${iso(end)}` : null);
 
     const statusAt = (studentId: string, date: string, records: Record<string, string>) =>
@@ -99,7 +99,7 @@ export default function AttendancePage() {
 
     return (
         <>
-            <Topbar title="Attendance Register" subtitle="Track session-by-session attendance across all batches" action={canMark ? {
+            <Topbar title="Attendance Register" subtitle="Track session-by-session attendance across all batches" action={canMark && batchId ? {
                 label: hasSessionToday || !register ? 'Mark Today' : 'No Class Today', onClick: markToday, disabled: !hasSessionToday, hint: markHint,
             } : undefined} />
             <div className="page-body">
@@ -134,7 +134,7 @@ export default function AttendancePage() {
                             <Calendar size={18} color="var(--cs-primary)" />
                             <span style={{ fontSize: '15px', fontWeight: 700 }}>Batch:</span>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                             {batches?.map(b => (
                                 <button
                                     key={b.batchId}
@@ -149,6 +149,11 @@ export default function AttendancePage() {
                                     }}
                                 >{b.name}</button>
                             ))}
+                            {!batchesLoading && (!batches || batches.length === 0) && (
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)', fontStyle: 'italic' }}>
+                                    No batches available
+                                </span>
+                            )}
                         </div>
 
                         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -158,22 +163,166 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
-                    {/* Legend */}
-                    <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', gap: '16px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>Legend (click a cell to change):</span>
-                        {KEYS.map(k => {
-                            const cfg = statusConfig[k];
-                            return (
-                                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ width: 24, height: 24, borderRadius: '6px', background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: cfg.color }}>{k}</span>
-                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-secondary)' }}>{cfg.label}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    {/* Legend (shown when batches exist) */}
+                    {batches && batches.length > 0 && register && register.students.length > 0 && (
+                        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>Legend (click a cell to change):</span>
+                            {KEYS.map(k => {
+                                const cfg = statusConfig[k];
+                                return (
+                                    <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ width: 24, height: 24, borderRadius: '6px', background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: cfg.color }}>{k}</span>
+                                        <span style={{ fontSize: '12px', color: 'var(--cs-text-secondary)' }}>{cfg.label}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
 
-                    {/* Grid */}
-                    {!register ? <PageState error={batchError ?? error} /> : (
+                    {/* Grid / Content State */}
+                    {batchError ? (
+                        <div style={{ padding: '56px 24px', textAlign: 'center', color: 'var(--cs-danger)', fontSize: '14px' }}>
+                            <AlertCircle size={28} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.8 }} />
+                            Unable to load batches: {batchError}
+                        </div>
+                    ) : batchesLoading ? (
+                        <div style={{ padding: '56px 24px', textAlign: 'center', color: 'var(--cs-text-muted)', fontSize: '14px' }}>
+                            Loading batches…
+                        </div>
+                    ) : !batches || batches.length === 0 ? (
+                        <div style={{
+                            padding: '64px 24px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                        }}>
+                            <div style={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: '50%',
+                                background: 'rgba(108, 99, 255, 0.08)',
+                                color: 'var(--cs-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginBottom: '6px'
+                            }}>
+                                <Inbox size={24} />
+                            </div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cs-text)' }}>
+                                No Data Available
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)', maxWidth: '420px', lineHeight: 1.5 }}>
+                                No batches found for this academy or branch. Create a batch first to start recording attendance.
+                            </div>
+                            <Link
+                                href="/dashboard/batches"
+                                className="btn-primary"
+                                style={{
+                                    marginTop: '12px',
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontSize: '13px',
+                                    padding: '8px 16px',
+                                    borderRadius: '8px',
+                                    fontWeight: 600
+                                }}
+                            >
+                                <Plus size={15} /> Go to Batches & Schedule
+                            </Link>
+                        </div>
+                    ) : error ? (
+                        <div style={{ padding: '56px 24px', textAlign: 'center', color: 'var(--cs-danger)', fontSize: '14px' }}>
+                            <AlertCircle size={28} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.8 }} />
+                            Unable to load attendance register: {error}
+                        </div>
+                    ) : registerLoading || !register ? (
+                        <div style={{ padding: '56px 24px', textAlign: 'center', color: 'var(--cs-text-muted)', fontSize: '14px' }}>
+                            Loading attendance register…
+                        </div>
+                    ) : register.students.length === 0 ? (
+                        <div style={{
+                            padding: '64px 24px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                        }}>
+                            <div style={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: '50%',
+                                background: 'rgba(108, 99, 255, 0.08)',
+                                color: 'var(--cs-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginBottom: '6px'
+                            }}>
+                                <Users size={24} />
+                            </div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cs-text)' }}>
+                                No Students Enrolled
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)', maxWidth: '420px', lineHeight: 1.5 }}>
+                                There are no students enrolled in <strong>{batchName}</strong> yet. Enroll students to track attendance.
+                            </div>
+                            <Link
+                                href="/dashboard/students"
+                                className="btn-primary"
+                                style={{
+                                    marginTop: '12px',
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontSize: '13px',
+                                    padding: '8px 16px',
+                                    borderRadius: '8px',
+                                    fontWeight: 600
+                                }}
+                            >
+                                <Plus size={15} /> Go to Students
+                            </Link>
+                        </div>
+                    ) : register.sessions.length === 0 ? (
+                        <div style={{
+                            padding: '64px 24px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                        }}>
+                            <div style={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: '50%',
+                                background: 'rgba(108, 99, 255, 0.08)',
+                                color: 'var(--cs-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginBottom: '6px'
+                            }}>
+                                <Calendar size={24} />
+                            </div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cs-text)' }}>
+                                No Sessions Scheduled
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)', maxWidth: '440px', lineHeight: 1.5 }}>
+                                No class sessions are scheduled for <strong>{batchName}</strong> between {rangeLabel}. Use the date arrows above to navigate to scheduled weeks or set session days in Batches & Schedule.
+                            </div>
+                        </div>
+                    ) : (
                         <div style={{ overflowX: 'auto' }}>
                             <table className="cs-table">
                                 <thead>
@@ -230,7 +379,11 @@ export default function AttendancePage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Users size={14} color="var(--cs-text-muted)" />
                             <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>
-                                {message ?? `Batch: ${batchName} • ${register?.students.length ?? 0} students • ${register?.sessions.length ?? 0} sessions shown`}
+                                {message ?? (
+                                    batchName
+                                        ? `Batch: ${batchName} • ${register?.students.length ?? 0} students • ${register?.sessions.length ?? 0} sessions shown`
+                                        : 'No data available • 0 students • 0 sessions shown'
+                                )}
                             </span>
                         </div>
                         <button className="btn-primary" style={{ fontSize: '13px' }} disabled={!canMark || saving || pendingChanges === 0} onClick={save}>

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
+import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import { api } from '@/lib/api';
 import { can, selectBranch, useSession } from '@/lib/session';
 import { Building2, MapPin, Phone, Users, BookOpen } from 'lucide-react';
@@ -14,18 +15,46 @@ export default function BranchesPage() {
     const limits = workspace?.entitlements.branches;
     const [adding, setAdding] = useState(false);
     const [form, setForm] = useState({ name: '', code: '', address: '', phone: '' });
+    const [phoneCountry, setPhoneCountry] = useState<CountryOption>(COUNTRIES[0]);
+    const [phoneError, setPhoneError] = useState('');
+    const [phoneTouched, setPhoneTouched] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+
+        const phoneDigits = form.phone ? form.phone.replace(/\D/g, '') : '';
+        if (phoneDigits) {
+            const phoneErr = validatePhoneNumber(phoneDigits, phoneCountry, false);
+            if (phoneErr) {
+                setPhoneError(phoneErr);
+                setPhoneTouched(true);
+                return;
+            }
+        }
+
+        setSaving(true);
         try {
-            await api('/branches', { method: 'POST', body: JSON.stringify(form) });
+            const finalPhone = phoneDigits ? `${phoneCountry.dialCode} ${phoneDigits}`.trim() : null;
+            await api('/branches', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ...form,
+                    phone: finalPhone,
+                }),
+            });
             setAdding(false);
             setForm({ name: '', code: '', address: '', phone: '' });
+            setPhoneCountry(COUNTRIES[0]);
+            setPhoneError('');
+            setPhoneTouched(false);
             reload();
         } catch (err) {
             setError((err as Error).message);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -84,7 +113,12 @@ export default function BranchesPage() {
             </div>
 
             {adding && (
-                <Modal title="Add Branch" onClose={() => setAdding(false)}>
+                <Modal
+                    title="Add Branch"
+                    onClose={() => { setAdding(false); setError(null); setPhoneError(''); setPhoneTouched(false); }}
+                    maxWidth="540px"
+                    style={{ overflow: 'visible' }}
+                >
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
                             <div>
@@ -102,10 +136,37 @@ export default function BranchesPage() {
                         </div>
                         <div>
                             <label className="cs-label">Phone</label>
-                            <input className="cs-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                            <CountryPhoneInput
+                                value={form.phone}
+                                selectedCountry={phoneCountry}
+                                onCountryChange={country => {
+                                    setPhoneCountry(country);
+                                    if (phoneTouched && form.phone) {
+                                        setPhoneError(validatePhoneNumber(form.phone, country, false));
+                                    }
+                                }}
+                                onChange={(val: string, country: CountryOption) => {
+                                    setForm(f => ({ ...f, phone: val }));
+                                    setPhoneCountry(country);
+                                    if (phoneTouched) {
+                                        setPhoneError(validatePhoneNumber(val, country, false));
+                                    }
+                                }}
+                                onBlur={() => {
+                                    setPhoneTouched(true);
+                                    if (form.phone) {
+                                        setPhoneError(validatePhoneNumber(form.phone, phoneCountry, false));
+                                    }
+                                }}
+                                touched={phoneTouched}
+                                error={phoneError}
+                                placeholder="e.g. 9840012345"
+                            />
                         </div>
                         {error && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{error}</div>}
-                        <button className="btn-primary" type="submit" style={{ alignSelf: 'flex-end' }}>Create Branch</button>
+                        <button className="btn-primary" type="submit" disabled={saving} style={{ alignSelf: 'flex-end' }}>
+                            {saving ? 'Creating…' : 'Create Branch'}
+                        </button>
                     </form>
                 </Modal>
             )}

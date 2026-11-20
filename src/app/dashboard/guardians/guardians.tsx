@@ -705,11 +705,11 @@ function AddParent({
         ) ?? [];
 
     return (
-        <Modal title="Add Parent / Guardian" onClose={onClose}>
+        <Modal title="Add Parent / Guardian" onClose={onClose} maxWidth="660px">
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div>
-                        <label className="cs-label">First Name *</label>
+                        <label className="cs-label">First Name <span style={{ color: '#EF4444' }}>*</span></label>
                         <input
                             className="cs-input"
                             required
@@ -719,7 +719,7 @@ function AddParent({
                         />
                     </div>
                     <div>
-                        <label className="cs-label">Last Name *</label>
+                        <label className="cs-label">Last Name <span style={{ color: '#EF4444' }}>*</span></label>
                         <input
                             className="cs-input"
                             required
@@ -729,7 +729,7 @@ function AddParent({
                         />
                     </div>
                     <div>
-                        <label className="cs-label">Relationship *</label>
+                        <label className="cs-label">Relationship <span style={{ color: '#EF4444' }}>*</span></label>
                         <select
                             className="cs-input"
                             value={form.relationship}
@@ -743,7 +743,7 @@ function AddParent({
                         </select>
                     </div>
                     <div>
-                        <label className="cs-label">Phone *</label>
+                        <label className="cs-label">Phone <span style={{ color: '#EF4444' }}>*</span></label>
                         <CountryPhoneInput
                             value={form.phone}
                             selectedCountry={phoneCountry}
@@ -754,7 +754,7 @@ function AddParent({
                     </div>
                 </div>
                 <div>
-                    <label className="cs-label">Email (portal login) *</label>
+                    <label className="cs-label">Email (portal login) <span style={{ color: '#EF4444' }}>*</span></label>
                     <input
                         className="cs-input"
                         type="email"
@@ -765,7 +765,7 @@ function AddParent({
                     />
                 </div>
                 <div>
-                    <label className="cs-label">Linked Children ({form.studentIds.length} selected) *</label>
+                    <label className="cs-label">Linked Children ({form.studentIds.length} selected) <span style={{ color: '#EF4444' }}>*</span></label>
                     <input
                         className="cs-input"
                         placeholder="Search student by name or enrollment number…"
