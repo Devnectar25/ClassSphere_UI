@@ -209,21 +209,33 @@ export default function ForgotPasswordPanel({
     const stepText = otpVerified ? 'Set a new password' : challenge ? 'Enter the OTP' : 'Verify your account';
 
     return (
-        <form onSubmit={submitReset} noValidate>
-            {/* Mini progress */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                    {[1, 2, 3].map(n => (
-                        <span key={n} style={{ width: n === stepNo ? 28 : 16, height: 4, borderRadius: 4, background: n <= stepNo ? accent : '#E2E8F0', transition: 'all 0.25s' }} />
-                    ))}
+        <form onSubmit={submitReset} noValidate style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {/* Mini progress */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                        {[1, 2, 3].map(n => (
+                            <span key={n} style={{ width: n === stepNo ? 28 : 16, height: 4, borderRadius: 4, background: n <= stepNo ? accent : '#E2E8F0', transition: 'all 0.25s' }} />
+                        ))}
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>Step {stepNo} of 3 · {stepText}</span>
                 </div>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>Step {stepNo} of 3 · {stepText}</span>
-            </div>
 
-            {/* Email / Mobile + Send OTP */}
-            <div>
-                <label className="cs-label" htmlFor="fp-identifier">Email or Mobile Number <span className="reg-req">*</span></label>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                {/* Contextual guidance */}
+                <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '11px 14px', marginBottom: '16px', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
+                    {otpVerified
+                        ? 'Your identity is verified. Enter and confirm your new password below.'
+                        : challenge
+                            ? 'Enter the 6-digit one-time code sent to your registered contact.'
+                            : 'Enter your registered email or mobile number to receive a 6-digit verification code.'}
+                </div>
+
+                {/* Email / Mobile + Send OTP */}
+                <div>
+                    <label className="cs-label" htmlFor="fp-identifier" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
+                        Email or Mobile Number <span className="reg-req">*</span>
+                    </label>
+                    <div style={{ display: 'flex', gap: '10px' }}>
                     <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
                         <UserRound size={17} style={iconLeft} />
                         <input
@@ -253,7 +265,7 @@ export default function ForgotPasswordPanel({
                         />
                     </div>
                     {otpVerified ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 12px', borderRadius: '12px', background: '#ECFDF5', color: '#047857', fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 12px', borderRadius: '12px', background: '#ECFDF5', color: '#047857', fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', height: '42px' }}>
                             <BadgeCheck size={16} /> Verified
                         </span>
                     ) : (
@@ -262,11 +274,21 @@ export default function ForgotPasswordPanel({
                             onClick={sendOtp}
                             disabled={resendIn > 0 || sendingOtp}
                             style={{
-                                minWidth: '104px', padding: '0 14px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
-                                whiteSpace: 'nowrap', border: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '42px',
+                                minWidth: '104px',
+                                padding: '0 16px',
+                                borderRadius: '12px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                border: 'none',
                                 cursor: resendIn > 0 || sendingOtp ? 'not-allowed' : 'pointer',
                                 backgroundColor: resendIn > 0 || sendingOtp ? '#E2E8F0' : accent,
                                 color: resendIn > 0 || sendingOtp ? '#64748B' : '#FFFFFF',
+                                transition: 'all 0.15s ease',
                             }}
                         >
                             {sendingOtp ? 'Sending…' : resendIn > 0 ? `Resend ${resendIn}s` : challenge ? 'Resend OTP' : 'Send OTP'}
@@ -297,14 +319,14 @@ export default function ForgotPasswordPanel({
                                 value={otpInput}
                                 onChange={e => { setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setOtpError(null); }}
                                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); verifyOtp(); } }}
-                                style={{ flex: 1, minWidth: 0, letterSpacing: '0.2em', backgroundColor: '#FFFFFF' }}
+                                style={{ flex: 1, minWidth: 0, height: '42px', letterSpacing: '0.2em', backgroundColor: '#FFFFFF' }}
                             />
                             <button
                                 type="button"
                                 className="btn-primary"
                                 onClick={verifyOtp}
                                 disabled={otpInput.length !== 6 || verifyingOtp}
-                                style={{ justifyContent: 'center', minWidth: '88px', borderRadius: '12px', background: accent, borderColor: accent }}
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '42px', minWidth: '88px', borderRadius: '12px', background: accent, borderColor: accent }}
                             >
                                 {verifyingOtp ? 'Verifying…' : 'Verify'}
                             </button>
@@ -449,16 +471,17 @@ export default function ForgotPasswordPanel({
                     </button>
                 </>
             )}
+            </div>
 
-            <p style={{ marginTop: '18px', paddingTop: '14px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
+            <div style={{ marginTop: 'auto', paddingTop: '18px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
                 <button
                     type="button"
                     onClick={onBack}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: 700, color: accent }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, color: accent }}
                 >
                     <ArrowLeft size={15} /> Back to Sign in
                 </button>
-            </p>
+            </div>
         </form>
     );
 }

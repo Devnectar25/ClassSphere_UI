@@ -134,7 +134,7 @@ function PortalRegisterForm() {
                 return '';
             }
             case 'email': {
-                if (!val) return '';
+                if (!val) return 'Email address is required.';
                 if (/\s/.test(val)) return 'Email address cannot contain spaces.';
                 if (val.length > MAX.email) return `Email address cannot exceed ${MAX.email} characters.`;
                 if (!EMAIL_REGEX.test(val)) return 'Please enter a valid email address (e.g. name@domain.com).';
@@ -250,7 +250,7 @@ function PortalRegisterForm() {
             errs.phoneOtp = 'Please verify your mobile number with the OTP.';
         }
         if (!acceptTerms) {
-            errs.acceptTerms = 'Please agree to the Terms of Service and Privacy Policy to continue.';
+            errs.acceptTerms = 'Please agree to the Terms & Conditions and Privacy Policy to continue.';
         }
         setFieldErrors(errs);
 
@@ -469,9 +469,9 @@ function PortalRegisterForm() {
                             </>
                         )}
 
-                        {/* Email (optional) */}
+                        {/* Email */}
                         <div>
-                            <label className="cs-label">Email Address <span style={{ color: '#94A3B8', fontWeight: 400 }}>(optional)</span></label>
+                            <label className="cs-label">Email Address *</label>
                             <input
                                 className="cs-input"
                                 type="email"
@@ -482,6 +482,7 @@ function PortalRegisterForm() {
                                 onChange={handleFieldChange('email')}
                                 onBlur={handleBlur('email')}
                                 style={getInputStyle('email')}
+                                required
                             />
                             {touched.email && fieldErrors.email && (
                                 <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>{fieldErrors.email}</p>
@@ -691,11 +692,11 @@ function PortalRegisterForm() {
                                     }}
                                     style={{ marginTop: 2, accentColor: accent }}
                                 />
-                                <span>I agree to ClassSphere&apos;s <a href="#" style={{ color: accent, fontWeight: 500 }}>Terms of Service</a> and <a href="#" style={{ color: accent, fontWeight: 500 }}>Privacy Policy</a></span>
+                                <span>I agree to ClassSphere&apos;s <Link href="/terms" target="_blank" style={{ color: accent, fontWeight: 500 }}>Terms &amp; Conditions</Link> and <Link href="/privacy" target="_blank" style={{ color: accent, fontWeight: 500 }}>Privacy Policy</Link></span>
                             </label>
                             {termsTouched && !acceptTerms && (
                                 <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                    Please agree to the Terms of Service and Privacy Policy to continue.
+                                    Please agree to the Terms &amp; Conditions and Privacy Policy to continue.
                                 </p>
                             )}
                         </div>

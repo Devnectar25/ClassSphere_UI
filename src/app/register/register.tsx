@@ -14,7 +14,7 @@ const steps = ['Account', 'Plan', 'Ready'];
 // Values are the backend's academy types
 const CATEGORIES = [
     ['Tuition', 'Tuition / Coaching'], ['Music', 'Music'], ['Dance', 'Dance'], ['Sports', 'Sports / Martial Arts / Yoga'],
-    ['Arts', 'Arts'], ['Test Prep', 'Test Prep'], ['Language', 'Language'], ['Other', 'Coding / Hobby / Other'],
+    ['Arts', 'Arts'], ['Test Prep', 'Test Prep'], ['Language', 'Language'], ['Other', 'Other'],
 ];
 
 // Email: local part of letters/digits/._%+-, a domain of dot-separated labels and a 2+ letter TLD
@@ -23,7 +23,7 @@ const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?
 const NAME_REGEX = /^[a-zA-Z]+(?:[ '.-][a-zA-Z]*)*$/;
 // Academy names: letters, spaces and common punctuation (no digits)
 const ACADEMY_NAME_REGEX = /^[a-zA-Z][a-zA-Z &'.,()\-/]*$/;
-const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName'];
+const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName', 'customCategory'];
 const CATEGORY_VALUES = CATEGORIES.map(([value]) => value);
 const iconLeft: React.CSSProperties = { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' };
 const MAX = { academyName: 100, firstName: 50, lastName: 50, email: 254, phone: 10, password: 64 };
@@ -69,6 +69,7 @@ export default function RegisterPage() {
         email: '',
         phone: '',
         academyType: 'Tuition',
+        customCategory: '',
         password: '',
         confirmPassword: '',
     });
@@ -96,6 +97,21 @@ export default function RegisterPage() {
         const t = setTimeout(() => setResendIn(s => s - 1), 1000);
         return () => clearTimeout(t);
     }, [resendIn]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const cat = params.get('category');
+            if (cat) {
+                if (cat.toLowerCase() === 'coaching' || cat.toLowerCase() === 'tuition') {
+                    setForm(f => ({ ...f, academyType: 'Tuition' }));
+                } else if (CATEGORY_VALUES.some(v => v.toLowerCase() === cat.toLowerCase())) {
+                    const matched = CATEGORY_VALUES.find(v => v.toLowerCase() === cat.toLowerCase());
+                    if (matched) setForm(f => ({ ...f, academyType: matched }));
+                }
+            }
+        }
+    }, []);
 
     // Mobile numbers / emails the server reported as already registered (one account per mobile number)
     const [takenPhones, setTakenPhones] = useState<string[]>([]);
@@ -171,7 +187,7 @@ export default function RegisterPage() {
                 return '';
             }
             case 'email': {
-                if (!val) return ''; // optional
+                if (!val) return 'Email address is required.';
                 if (/\s/.test(val)) return 'Email address cannot contain spaces.';
                 if (val.length > MAX.email) return `Email address cannot exceed ${MAX.email} characters.`;
                 const [local = ''] = val.split('@');
@@ -188,6 +204,15 @@ export default function RegisterPage() {
             }
             case 'academyType':
                 return CATEGORY_VALUES.includes(value) ? '' : 'Please choose a class category.';
+            case 'customCategory':
+                if (form.academyType === 'Other') {
+                    if (!val) return 'Please specify your class category name.';
+                    if (val.length < 2) return 'Category name must be at least 2 characters.';
+                    if (val.length > 50) return 'Category name cannot exceed 50 characters.';
+                    if (/\d/.test(val)) return 'Category name cannot contain numbers.';
+                    if (!ACADEMY_NAME_REGEX.test(val)) return "Use letters, spaces and & ' . , ( ) - / only, starting with a letter.";
+                }
+                return '';
             case 'password': {
                 if (!value) return 'Password is required.';
                 const failed = PASSWORD_RULES.find(r => !r.test(value));
@@ -259,11 +284,15 @@ export default function RegisterPage() {
 
     const continueToPlan = async (e: React.FormEvent) => {
         e.preventDefault();
-        const fields = ['academyName', 'firstName', 'lastName', 'email', 'phone', 'academyType', 'password', 'confirmPassword'] as const;
+        const fields = [
+            'academyName', 'firstName', 'lastName', 'email', 'phone', 'academyType',
+            ...(form.academyType === 'Other' ? ['customCategory' as const] : []),
+            'password', 'confirmPassword'
+        ] as const;
         setTouched(Object.fromEntries(fields.map(f => [f, true])));
         setTermsTouched(true);
 
-        const errorsObj: Record<string, string> = Object.fromEntries(fields.map(f => [f, validateField(f, form[f])]));
+        const errorsObj: Record<string, string> = Object.fromEntries(fields.map(f => [f, validateField(f, form[f as keyof typeof form] ?? '')]));
 
         // Re-check uniqueness with the server (another sign-up may have used the number meanwhile)
         if (!errorsObj.phone || (form.email.trim() && !errorsObj.email)) {
@@ -280,7 +309,7 @@ export default function RegisterPage() {
         }
 
         if (!acceptTerms) {
-            errorsObj.acceptTerms = 'Please agree to the Terms of Service and Privacy Policy to continue.';
+            errorsObj.acceptTerms = 'Please agree to the Terms & Conditions and Privacy Policy to continue.';
         }
 
         setFieldErrors(errorsObj);
@@ -308,8 +337,15 @@ export default function RegisterPage() {
         setError(null);
         try {
             // The confirmation is checked client-side only
-            const payload: Partial<typeof form> = { ...form };
+            const effectiveAcademyType = form.academyType === 'Other' && form.customCategory.trim()
+                ? form.customCategory.trim()
+                : form.academyType;
+            const payload: Record<string, unknown> = {
+                ...form,
+                academyType: effectiveAcademyType,
+            };
             delete payload.confirmPassword;
+            delete payload.customCategory;
             const created = await api<SessionState>('/auth/register', {
                 method: 'POST', body: JSON.stringify({ ...payload, planTier: selectedPlan, acceptTerms }),
             });
@@ -443,7 +479,7 @@ export default function RegisterPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="cs-label">Email Address <span style={{ color: '#94A3B8', fontWeight: 400 }}>(optional)</span></label>
+                                <label className="cs-label">Email Address <span className="reg-req">*</span></label>
                                 <div style={{ position: 'relative' }}>
                                     <Mail size={17} style={iconLeft} />
                                     <input
@@ -456,6 +492,7 @@ export default function RegisterPage() {
                                         onChange={handleFieldChange('email')}
                                         onBlur={handleBlur('email')}
                                         style={{ paddingLeft: '42px', ...getInputStyle('email') }}
+                                        required
                                     />
                                 </div>
                                 {touched.email && fieldErrors.email ? (
@@ -467,7 +504,7 @@ export default function RegisterPage() {
                                     </p>
                                 ) : (
                                     <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
-                                        Leave blank to sign in with your mobile number
+                                        Required for account verification, login, and billing receipts
                                     </p>
                                 )}
                             </div>
@@ -577,6 +614,31 @@ export default function RegisterPage() {
                                     <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
                                         {fieldErrors.academyType}
                                     </p>
+                                )}
+
+                                {form.academyType === 'Other' && (
+                                    <div style={{ marginTop: '10px' }}>
+                                        <label className="cs-label" style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
+                                            Specify Category Name <span className="reg-req">*</span>
+                                        </label>
+                                        <input
+                                            className="cs-input reg-input"
+                                            type="text"
+                                            placeholder="Enter your class category (e.g. Coding, Robotics, Karate)"
+                                            maxLength={50}
+                                            value={form.customCategory}
+                                            onChange={handleFieldChange('customCategory')}
+                                            onBlur={handleBlur('customCategory')}
+                                            style={getInputStyle('customCategory')}
+                                            autoFocus
+                                            required
+                                        />
+                                        {touched.customCategory && fieldErrors.customCategory && (
+                                            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                                {fieldErrors.customCategory}
+                                            </p>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             <div>
@@ -705,11 +767,11 @@ export default function RegisterPage() {
                                         }}
                                         style={{ marginTop: 2, accentColor: '#4F46E5' }}
                                     />
-                                    <span>I agree to ClassSphere&apos;s <a href="#" style={{ color: '#4F46E5', fontWeight: 500 }}>Terms of Service</a> and <a href="#" style={{ color: '#4F46E5', fontWeight: 500 }}>Privacy Policy</a></span>
+                                    <span>I agree to ClassSphere&apos;s <Link href="/terms" target="_blank" style={{ color: '#4F46E5', fontWeight: 500 }}>Terms &amp; Conditions</Link> and <Link href="/privacy" target="_blank" style={{ color: '#4F46E5', fontWeight: 500 }}>Privacy Policy</Link></span>
                                 </label>
                                 {termsTouched && !acceptTerms && (
                                     <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        Please agree to the Terms of Service and Privacy Policy to continue.
+                                        Please agree to the Terms &amp; Conditions and Privacy Policy to continue.
                                     </p>
                                 )}
                             </div>

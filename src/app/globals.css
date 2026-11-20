@@ -1491,7 +1491,7 @@ html:has(.modal-overlay, .scroll-lock) main {
 /* Left-panel text scales with screen height so it fits inside the card */
 .reg-aside-title { font-size: clamp(28px, min(3.6vw, 5.4vh), 46px); margin-bottom: clamp(14px, 2.6vh, 22px); }
 .reg-aside-intro { font-size: clamp(14px, 2vh, 16px); max-width: 420px; margin-bottom: clamp(38px, calc(3vh + 20px), 46px); }
-.reg-aside-point { padding: clamp(11px, 2vh, 16px) 0; }
+.reg-aside-point { padding: clamp(6px, 1.1vh, 9px) 0; }
 
 @media (max-height: 640px) {
   .reg-aside-foot { display: none !important; }
@@ -1622,3 +1622,271 @@ html:has(.modal-overlay, .scroll-lock) main {
 /* Registration fields — compact */
 .reg-main .reg-body .cs-input { height: 42px; }
 .reg-main .reg-body .cs-label { margin-bottom: 5px; }
+
+/* ─── Compact Auth Shell (Sign-in & Account Recovery share the exact same 2-column modal) ─── */
+.reg-shell.auth-shell {
+  width: 100%;
+  max-width: 940px;
+  height: auto;
+  min-height: min(540px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-self: center;
+  margin: auto;
+}
+.reg-shell.auth-shell .reg-aside {
+  display: flex !important;
+}
+.reg-shell.auth-shell .reg-main {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.reg-shell.auth-shell .auth-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  .reg-shell.auth-shell {
+    grid-template-columns: 1fr !important;
+    max-width: 480px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: auto !important;
+  }
+  .reg-shell.auth-shell .reg-aside {
+    display: none !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .reg-shell.auth-shell {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: calc(100dvh - 32px) !important;
+    margin: auto !important;
+  }
+}
+
+/* About page — card hover */
+.about-card { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+.about-card:hover {
+  transform: translateY(-3px);
+  border-color: #C7D2FE !important;
+  box-shadow: 0 16px 32px -16px rgba(79, 70, 229, 0.35) !important;
+}
+
+/* About page — motion */
+@keyframes aboutWordIn {
+  from { opacity: 0; transform: translateY(14px); filter: blur(4px); }
+  to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
+}
+@keyframes aboutPanelIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes aboutOrbFloat {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(24px, 18px); }
+}
+.about-word  { display: inline-block; animation: aboutWordIn 0.55s ease both; }
+.about-panel { animation: aboutPanelIn 0.35s ease both; }
+.about-orb   { animation: aboutOrbFloat 9s ease-in-out infinite; }
+.about-orb-alt { animation-duration: 11s; animation-direction: reverse; }
+
+@media (prefers-reduced-motion: reduce) {
+  .about-word, .about-panel, .about-orb { animation: none !important; }
+}
+
+/* About page — staggered cards and photo hover */
+@keyframes aboutCardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.about-stagger { animation: aboutCardIn 0.4s ease both; }
+.about-photo-img { transition: transform 0.5s ease; }
+.about-photo:hover .about-photo-img { transform: scale(1.07); }
+@media (prefers-reduced-motion: reduce) {
+  .about-stagger { animation: none !important; }
+  .about-photo-img { transition: none !important; }
+}
+
+/* About page — portal shortcut cards */
+.about-portal-card { transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+.about-portal-card:hover {
+  transform: translateY(-3px);
+  border-color: #C7D2FE !important;
+  box-shadow: 0 14px 28px -14px rgba(79, 70, 229, 0.4) !important;
+}
+.about-portal-link svg { transition: transform 0.2s ease; }
+.about-portal-card:hover .about-portal-link svg { transform: translateX(3px); }
+@media (prefers-reduced-motion: reduce) {
+  .about-portal-card, .about-portal-link svg { transition: none !important; }
+}
+
+/* About page — getting-started steps */
+@keyframes aboutStepIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.about-step { animation: aboutStepIn 0.45s ease backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .about-step { animation: none !important; transition: none !important; }
+}
+
+/* About page — getting-started step loop */
+@keyframes aboutStepProgress { from { width: 0; } to { width: 100%; } }
+@keyframes aboutBadgePulse {
+  0%   { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.45); }
+  100% { box-shadow: 0 0 0 10px rgba(79, 70, 229, 0); }
+}
+.about-step-progress { width: 0; animation: aboutStepProgress 2.4s linear forwards; }
+.about-step-badge.is-pulsing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: aboutBadgePulse 1.2s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-step-progress, .about-step-badge.is-pulsing::after { animation: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE LAYER
+   Breakpoints: ≤480 mobile · 481–767 large mobile · 768–1024 tablet ·
+                1025–1440 laptop · ≥1441 desktop (desktop design unchanged).
+   Most pages style layout inline, so fixed inline grids are adapted here with
+   attribute selectors (React writes e.g. style="grid-template-columns: 1fr 1fr").
+   ═══════════════════════════════════════════════════════════════════════ */
+
+html { -webkit-text-size-adjust: 100%; }
+img, video, canvas, iframe { max-width: 100%; }
+pre, code { overflow-wrap: anywhere; }
+
+/* ── Tablet and below (≤1024px) ───────────────────────────────────────── */
+@media (max-width: 1024px) {
+  /* 4-column rows (stat cards, footer) → 2 columns */
+  :is([style*="grid-template-columns: repeat(4, 1fr)"], [style*="grid-template-columns:repeat(4, 1fr)"]),
+  :is([style*="grid-template-columns: 2fr 1fr 1fr 1fr"], [style*="grid-template-columns:2fr 1fr 1fr 1fr"]),
+  :is([style*="grid-template-columns: 1.4fr 1fr 1fr 1fr auto"], [style*="grid-template-columns:1.4fr 1fr 1fr 1fr auto"]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  /* Content + fixed side panel → stacked */
+  :is([style*="grid-template-columns: 1fr 360px"], [style*="grid-template-columns:1fr 360px"]),
+  :is([style*="grid-template-columns: 1fr 320px"], [style*="grid-template-columns:1fr 320px"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  /* Any table scrolls inside its box instead of widening the page */
+  div:has(> table) { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+
+  .page-body { padding: 16px; }
+}
+
+/* ── Large mobile and below (≤767px) ──────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Multi-column inline grids → one column */
+  :is([style*="grid-template-columns: repeat(3, 1fr)"], [style*="grid-template-columns:repeat(3, 1fr)"]),
+  :is([style*="grid-template-columns: 1fr 1fr 1fr"], [style*="grid-template-columns:1fr 1fr 1fr"]),
+  :is([style*="grid-template-columns: 2fr 1fr"], [style*="grid-template-columns:2fr 1fr"]),
+  :is([style*="grid-template-columns: 1.2fr 1fr"], [style*="grid-template-columns:1.2fr 1fr"]),
+  :is([style*="grid-template-columns: 160px 1fr"], [style*="grid-template-columns:160px 1fr"]),
+  :is([style*="grid-template-columns: 140px 1fr"], [style*="grid-template-columns:140px 1fr"]),
+  :is([style*="grid-template-columns: 1.4fr 1fr 1fr 1fr auto"], [style*="grid-template-columns:1.4fr 1fr 1fr 1fr auto"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  /* Columns that were separated by a left divider get a top divider instead */
+  :is([style*="grid-template-columns: repeat(3, 1fr)"], [style*="grid-template-columns:repeat(3, 1fr)"]) > [style*="border-left"] {
+    border-left: none !important;
+    padding-left: 0 !important;
+    border-top: 1px solid #E2E8F0;
+    padding-top: 12px;
+  }
+
+  /* Header rows (title + buttons) wrap instead of overflowing */
+  main :is([style*="justify-content: space-between"], [style*="justify-content:space-between"]):not(.cs-topbar),
+  .page-body :is([style*="justify-content: space-between"], [style*="justify-content:space-between"]) {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  /* Wide tables keep readable columns and scroll sideways */
+  div:has(> table) > table { min-width: 620px; }
+  .cs-table th, .cs-table td { padding-left: 12px; padding-right: 12px; }
+
+  /* Public pages: comfortable 16px side gutters */
+  div:has(> .cs-pubnav) section,
+  div:has(> .cs-pubnav) > main {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  div:has(> .cs-pubnav) h1 { overflow-wrap: anywhere; }
+
+  /* Modals fill the small screen safely */
+  .modal-overlay { padding: 12px; align-items: flex-start; }
+  .modal-content { width: 100%; max-width: 100%; padding: 20px; max-height: calc(100dvh - 24px); }
+
+  .page-body { padding: 12px; gap: 12px; }
+}
+
+/* ── Small phones (≤640px) ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Two-up form rows (first/last name, etc.) → stacked */
+  :is([style*="grid-template-columns: 1fr 1fr"], [style*="grid-template-columns:1fr 1fr"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* ── Mobile (≤480px) ───────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  :is([style*="grid-template-columns: repeat(4, 1fr)"], [style*="grid-template-columns:repeat(4, 1fr)"]),
+  :is([style*="grid-template-columns: 2fr 1fr 1fr 1fr"], [style*="grid-template-columns:2fr 1fr 1fr 1fr"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  /* auto-fit/auto-fill grids whose minimum column is wider than a 320px phone */
+  [style*="minmax(360px"], [style*="minmax(340px"], [style*="minmax(320px"],
+  [style*="minmax(300px"], [style*="minmax(290px"], [style*="minmax(280px"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  /* Auth cards: slimmer side padding */
+  .auth-body, .reg-body { padding-left: 18px !important; padding-right: 18px !important; }
+  .reg-main > div:is([style*="padding: 32px 36px"], [style*="padding:32px 36px"]) { padding-left: 18px !important; padding-right: 18px !important; }
+
+  .modal-content { padding: 16px; }
+  .btn-primary, .btn-secondary { white-space: normal; }
+}
+
+/* Public pages: large fixed-size headings scale down on phones */
+@media (max-width: 767px) {
+  div:has(> .cs-pubnav) h2:is([style*="font-size: 36px"], [style*="font-size:36px"]),
+  div:has(> .cs-pubnav) h2:is([style*="font-size: 32px"], [style*="font-size:32px"]),
+  div:has(> .cs-pubnav) h2:is([style*="font-size: 30px"], [style*="font-size:30px"]) { font-size: 26px !important; line-height: 1.25 !important; }
+}
+
+/* Dashboard: fixed-width search boxes and filter controls go full width on phones
+   (table column widths are left alone — tables scroll sideways). */
+@media (max-width: 767px) {
+  .page-body :is([style*="width: 280px"], [style*="width:280px"]):not(th):not(td):not(col),
+  .page-body :is([style*="width: 300px"], [style*="width:300px"]):not(th):not(td):not(col),
+  .page-body :is([style*="width: 320px"], [style*="width:320px"]):not(th):not(td):not(col),
+  .page-body :is([style*="min-width: 240px"], [style*="min-width:240px"]):not(th):not(td),
+  .page-body :is([style*="min-width: 270px"], [style*="min-width:270px"]):not(th):not(td),
+  .page-body :is([style*="min-width: 280px"], [style*="min-width:280px"]):not(th):not(td),
+  .page-body :is([style*="min-width: 300px"], [style*="min-width:300px"]):not(th):not(td) {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+  /* Popovers / dropdown panels never exceed the screen */
+  :is([style*="position: absolute"], [style*="position:absolute"]):is([style*="width: 280px"], [style*="width:280px"]),
+  :is([style*="position: absolute"], [style*="position:absolute"]):is([style*="width: 220px"], [style*="width:220px"]) { max-width: calc(100vw - 24px); }
+}
