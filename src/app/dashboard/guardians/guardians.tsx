@@ -31,6 +31,7 @@ import {
     GuardianCredentials,
 } from './components/types';
 import DataTable from './components/DataTable';
+import EditGuardianModal from './components/EditGuardianModal';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
@@ -66,6 +67,7 @@ function GuardiansContent() {
 
     // Modals & local state
     const [adding, setAdding] = useState(false);
+    const [editingGuardian, setEditingGuardian] = useState<RawGuardian | null>(null);
     const [resettingGuardian, setResettingGuardian] = useState<UIGuardian | null>(null);
     const [credentials, setCredentials] = useState<GuardianCredentials | null>(null);
     const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
@@ -532,7 +534,10 @@ function GuardiansContent() {
                         onResendInvite={handleResendInvite}
                         onCreateLogin={handleIssueLogin}
                         onViewDetail={g => router.push(`/dashboard/guardians/${g.guardianId}`)}
-                        onEdit={g => alert(`Edit parent details for ${g.fullName}`)}
+                        onEdit={g => {
+                            const raw = rawGuardians?.find(rg => rg.guardianId === g.guardianId);
+                            if (raw) setEditingGuardian(raw);
+                        }}
                         onResetPassword={handleIssueLogin}
                         onDisableLogin={handleDisableLogin}
                         onRemove={handleRemoveParent}
@@ -542,6 +547,19 @@ function GuardiansContent() {
                     />
                 </div>
             </div>
+
+            {/* Edit Parent Modal */}
+            {editingGuardian && (
+                <EditGuardianModal
+                    guardian={editingGuardian}
+                    onClose={() => setEditingGuardian(null)}
+                    onSaved={() => {
+                        setEditingGuardian(null);
+                        reload();
+                        setActionBanner({ type: 'success', text: 'Parent details updated successfully.' });
+                    }}
+                />
+            )}
 
             {/* Preserved Add Parent Modal with Validation & Searchable Country Flags */}
             {adding && (

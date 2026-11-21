@@ -19,7 +19,8 @@ import {
     CheckCircle2,
     XCircle,
     RotateCcw,
-    Table as TableIcon
+    Table as TableIcon,
+    Filter
 } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
@@ -105,6 +106,17 @@ const formatFriendlyDate = (dateStr: string) => {
     }
 };
 
+const formatShortDate = (dateStr: string) => {
+    try {
+        const d = new Date(`${dateStr}T00:00:00`);
+        return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch {
+        return dateStr;
+    }
+};
+
+type StudentTimeframeType = 'daily' | 'weekly' | 'monthly' | 'custom' | 'all';
+
 const addDaysToIso = (dateStr: string, days: number): string => {
     const d = new Date(`${dateStr}T00:00:00`);
     d.setDate(d.getDate() + days);
@@ -131,13 +143,87 @@ export default function AttendancePage() {
     const [dailyEdits, setDailyEdits] = useState<Record<string, { status: StatusKey; remarks: string }>>({});
     const [dailySearch, setDailySearch] = useState<string>('');
 
-    // Mode 2: Student Attendance state
+    // Mode 2: Student Attendance state & timeframe filters
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
     const [studentSearch, setStudentSearch] = useState<string>('');
+    const [studentTimeframe, setStudentTimeframe] = useState<StudentTimeframeType>('monthly');
+    const [studentDailyDate, setStudentDailyDate] = useState<string>(today);
+    const [studentWeekOffset, setStudentWeekOffset] = useState<number>(0);
+    const [studentMonthOffset, setStudentMonthOffset] = useState<number>(0);
+    const [customFrom, setCustomFrom] = useState<string>(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        return iso(d);
+    });
+    const [customTo, setCustomTo] = useState<string>(today);
     const [studentRecordDate, setStudentRecordDate] = useState<string>(today);
     const [studentRecordBatchId, setStudentRecordBatchId] = useState<string>('');
     const [studentRecordStatus, setStudentRecordStatus] = useState<StatusKey>('P');
     const [studentRecordRemarks, setStudentRecordRemarks] = useState<string>('');
+
+    // Dynamic Timeframe Range Calculations for Student Attendance
+    const getWeekRange = (offset: number) => {
+        const d = new Date();
+        const day = d.getDay();
+        const diffToMonday = (day === 0 ? -6 : 1) - day + (offset * 7);
+        const monday = new Date(d);
+        monday.setDate(d.getDate() + diffToMonday);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        const from = iso(monday);
+        const to = iso(sunday);
+        const label = offset === 0
+            ? `This Week (${formatShortDate(from)} – ${formatShortDate(to)})`
+            : `${formatShortDate(from)} – ${formatShortDate(to)}`;
+        return { from, to, label };
+    };
+
+    const getMonthRange = (offset: number) => {
+        const d = new Date();
+        const target = new Date(d.getFullYear(), d.getMonth() + offset, 1);
+        const year = target.getFullYear();
+        const month = target.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const from = iso(firstDay);
+        const to = iso(lastDay);
+        const monthName = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        const label = offset === 0 ? `This Month (${monthName})` : monthName;
+        return { from, to, label };
+    };
+
+    const currentWeekRange = getWeekRange(studentWeekOffset);
+    const currentMonthRange = getMonthRange(studentMonthOffset);
+
+    let studentFrom: string | null = null;
+    let studentTo: string | null = null;
+    let studentTimeframeLabel = '';
+
+    if (studentTimeframe === 'daily') {
+        studentFrom = studentDailyDate;
+        studentTo = studentDailyDate;
+        studentTimeframeLabel = studentDailyDate === today
+            ? `Today (${formatFriendlyDate(studentDailyDate)})`
+            : formatFriendlyDate(studentDailyDate);
+    } else if (studentTimeframe === 'weekly') {
+        studentFrom = currentWeekRange.from;
+        studentTo = currentWeekRange.to;
+        studentTimeframeLabel = currentWeekRange.label;
+    } else if (studentTimeframe === 'monthly') {
+        studentFrom = currentMonthRange.from;
+        studentTo = currentMonthRange.to;
+        studentTimeframeLabel = currentMonthRange.label;
+    } else if (studentTimeframe === 'custom') {
+        studentFrom = customFrom || null;
+        studentTo = customTo || null;
+        studentTimeframeLabel = customFrom && customTo
+            ? `${formatShortDate(customFrom)} to ${formatShortDate(customTo)}`
+            : 'Custom Range';
+    } else {
+        studentFrom = null;
+        studentTo = null;
+        studentTimeframeLabel = 'All Historical Records';
+    }
 
     // Mode 3: Matrix Register state
     const [weekOffset, setWeekOffset] = useState(0);
@@ -169,9 +255,13 @@ export default function AttendancePage() {
         activeBatchId && dailyDate ? `/attendance?batchId=${activeBatchId}&date=${dailyDate}` : null
     );
 
-    // Student attendance query
+    // Student attendance query with dynamic timeframe filtering
+    const studentQueryUrl = selectedStudentId
+        ? `/attendance?studentId=${selectedStudentId}${studentFrom ? `&from=${studentFrom}` : ''}${studentTo ? `&to=${studentTo}` : ''}`
+        : null;
+
     const { data: studentData, error: studentError, reload: reloadStudent, loading: studentLoading } = useApi<StudentAttendanceResponse>(
-        selectedStudentId ? `/attendance?studentId=${selectedStudentId}` : null
+        studentQueryUrl
     );
 
     // Sync daily edits when dailyData arrives
@@ -495,7 +585,7 @@ export default function AttendancePage() {
                             }}
                         >
                             <UserCheck size={15} />
-                            Student Attendance (Daily Log)
+                            Student Attendance
                         </button>
                         <button
                             onClick={() => setViewMode('matrix')}
@@ -517,7 +607,7 @@ export default function AttendancePage() {
                     {/* Quick Mode Indicator / Context */}
                     <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
                         {viewMode === 'daily' && `Marking roll call for: ${formatFriendlyDate(dailyDate)}`}
-                        {viewMode === 'student' && `Managing individual attendance records`}
+                        {viewMode === 'student' && `Individual student attendance (${studentTimeframeLabel})`}
                         {viewMode === 'matrix' && `2-week session overview: ${rangeLabel}`}
                     </div>
                 </div>
@@ -888,44 +978,279 @@ export default function AttendancePage() {
                     ═══════════════════════════════════════════════════════════════ */}
                 {viewMode === 'student' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        {/* Student Picker Bar */}
-                        <div className="cs-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <User size={18} color="var(--cs-primary)" />
-                                <span style={{ fontSize: '14px', fontWeight: 700 }}>Select Student:</span>
+                        {/* Student Picker & Timeframe Filter Bar */}
+                        <div className="cs-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                                {/* Student Selector */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <User size={16} color="var(--cs-primary)" />
+                                        <span style={{ fontSize: '13px', fontWeight: 700 }}>Select Student:</span>
+                                    </div>
+                                    <select
+                                        value={selectedStudentId ?? ''}
+                                        onChange={e => setSelectedStudentId(e.target.value)}
+                                        style={{
+                                            minWidth: '260px',
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--cs-border)',
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            color: 'var(--cs-text-primary)',
+                                            background: 'var(--cs-surface)'
+                                        }}
+                                    >
+                                        <option value="" disabled>Choose a student to manage…</option>
+                                        {(studentsList?.students ?? []).map(st => (
+                                            <option key={st.studentId} value={st.studentId}>
+                                                {st.firstName} {st.lastName} {st.batches ? `(${st.batches})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Back to daily roll call button */}
+                                <button
+                                    onClick={() => setViewMode('daily')}
+                                    className="btn-ghost"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+                                >
+                                    <ChevronLeft size={14} /> Back to Daily Roll Call
+                                </button>
                             </div>
 
-                            {/* Dropdown with all academy students */}
-                            <select
-                                value={selectedStudentId ?? ''}
-                                onChange={e => setSelectedStudentId(e.target.value)}
-                                style={{
-                                    minWidth: '260px',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    border: '1px solid var(--cs-border)',
-                                    fontSize: '13px',
-                                    fontWeight: 600,
-                                    color: 'var(--cs-text-primary)',
-                                    background: 'var(--cs-surface)'
-                                }}
-                            >
-                                <option value="" disabled>Choose a student to manage…</option>
-                                {(studentsList?.students ?? []).map(st => (
-                                    <option key={st.studentId} value={st.studentId}>
-                                        {st.firstName} {st.lastName} {st.batches ? `(${st.batches})` : ''}
-                                    </option>
-                                ))}
-                            </select>
+                            {/* Attendance Filter Controls */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '14px',
+                                paddingTop: '12px',
+                                borderTop: '1px solid var(--cs-border)',
+                                flexWrap: 'wrap'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Filter size={15} color="var(--cs-primary)" />
+                                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
+                                        Attendance Filter:
+                                    </span>
+                                    <select
+                                        value={studentTimeframe}
+                                        onChange={e => setStudentTimeframe(e.target.value as StudentTimeframeType)}
+                                        style={{
+                                            padding: '7px 12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--cs-border)',
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            color: 'var(--cs-primary)',
+                                            background: 'var(--cs-surface)',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <option value="daily">Daily basis</option>
+                                        <option value="weekly">Weekly basis</option>
+                                        <option value="monthly">Monthly basis</option>
+                                        <option value="custom">Custom Date Range</option>
+                                        <option value="all">All Records (All Time)</option>
+                                    </select>
+                                </div>
 
-                            {/* Back to daily roll call button */}
-                            <button
-                                onClick={() => setViewMode('daily')}
-                                className="btn-ghost"
-                                style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
-                            >
-                                <ChevronLeft size={14} /> Back to Daily Roll Call
-                            </button>
+                                {/* Dynamic Controls based on timeframe */}
+                                {studentTimeframe === 'daily' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <button
+                                                className="btn-ghost"
+                                                style={{ padding: '6px' }}
+                                                onClick={() => setStudentDailyDate(d => addDaysToIso(d, -1))}
+                                                title="Previous Day"
+                                            >
+                                                <ChevronLeft size={15} />
+                                            </button>
+                                            <input
+                                                type="date"
+                                                value={studentDailyDate}
+                                                max={today}
+                                                onChange={e => setStudentDailyDate(e.target.value)}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--cs-border)',
+                                                    fontSize: '13px',
+                                                    fontWeight: 600,
+                                                    background: 'var(--cs-surface)'
+                                                }}
+                                            />
+                                            <button
+                                                className="btn-ghost"
+                                                style={{ padding: '6px' }}
+                                                onClick={() => setStudentDailyDate(d => addDaysToIso(d, 1))}
+                                                disabled={studentDailyDate >= today}
+                                                title="Next Day"
+                                            >
+                                                <ChevronRight size={15} />
+                                            </button>
+                                        </div>
+                                        {studentDailyDate !== today ? (
+                                            <button
+                                                onClick={() => setStudentDailyDate(today)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '6px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    background: 'rgba(79, 70, 229, 0.1)',
+                                                    color: 'var(--cs-primary)',
+                                                    border: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Today
+                                            </button>
+                                        ) : (
+                                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#10B981' }}>
+                                                Today
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+
+                                {studentTimeframe === 'weekly' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <button
+                                            className="btn-ghost"
+                                            style={{ padding: '6px' }}
+                                            onClick={() => setStudentWeekOffset(w => w - 1)}
+                                            title="Previous Week"
+                                        >
+                                            <ChevronLeft size={15} />
+                                        </button>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>
+                                            {currentWeekRange.label}
+                                        </span>
+                                        <button
+                                            className="btn-ghost"
+                                            style={{ padding: '6px' }}
+                                            onClick={() => setStudentWeekOffset(w => w + 1)}
+                                            disabled={studentWeekOffset >= 0}
+                                            title="Next Week"
+                                        >
+                                            <ChevronRight size={15} />
+                                        </button>
+                                        {studentWeekOffset !== 0 && (
+                                            <button
+                                                onClick={() => setStudentWeekOffset(0)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '6px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    background: 'rgba(79, 70, 229, 0.1)',
+                                                    color: 'var(--cs-primary)',
+                                                    border: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Current Week
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {studentTimeframe === 'monthly' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <button
+                                            className="btn-ghost"
+                                            style={{ padding: '6px' }}
+                                            onClick={() => setStudentMonthOffset(m => m - 1)}
+                                            title="Previous Month"
+                                        >
+                                            <ChevronLeft size={15} />
+                                        </button>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>
+                                            {currentMonthRange.label}
+                                        </span>
+                                        <button
+                                            className="btn-ghost"
+                                            style={{ padding: '6px' }}
+                                            onClick={() => setStudentMonthOffset(m => m + 1)}
+                                            disabled={studentMonthOffset >= 0}
+                                            title="Next Month"
+                                        >
+                                            <ChevronRight size={15} />
+                                        </button>
+                                        {studentMonthOffset !== 0 && (
+                                            <button
+                                                onClick={() => setStudentMonthOffset(0)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '6px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    background: 'rgba(79, 70, 229, 0.1)',
+                                                    color: 'var(--cs-primary)',
+                                                    border: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Current Month
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {studentTimeframe === 'custom' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cs-text-muted)' }}>
+                                                Starting Date:
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={customFrom}
+                                                max={customTo || today}
+                                                onChange={e => setCustomFrom(e.target.value)}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--cs-border)',
+                                                    fontSize: '13px',
+                                                    fontWeight: 600,
+                                                    background: 'var(--cs-surface)'
+                                                }}
+                                            />
+                                        </div>
+                                        <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontWeight: 600 }}>to</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cs-text-muted)' }}>
+                                                Ending Date:
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={customTo}
+                                                min={customFrom}
+                                                max={today}
+                                                onChange={e => setCustomTo(e.target.value)}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid var(--cs-border)',
+                                                    fontSize: '13px',
+                                                    fontWeight: 600,
+                                                    background: 'var(--cs-surface)'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {studentTimeframe === 'all' && (
+                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
+                                        Showing all recorded sessions since enrollment.
+                                    </span>
+                                )}
+                            </div>
                         </div>
 
                         {/* Selected Student Details & Record Management */}
@@ -991,6 +1316,10 @@ export default function AttendancePage() {
                                                 <div style={{ fontSize: '11px', color: '#991B1B', fontWeight: 600 }}>Absent</div>
                                             </div>
                                         </div>
+                                    </div>
+                                    <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                                        <span>Attendance metrics for:</span>
+                                        <strong style={{ color: 'var(--cs-text-primary)' }}>{studentTimeframeLabel}</strong>
                                     </div>
 
                                     {/* Quick Record Attendance Form for this Particular Student */}
@@ -1121,9 +1450,12 @@ export default function AttendancePage() {
 
                                 {/* Daily Attendance History Log for this Student */}
                                 <div className="cs-card">
-                                    <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <div style={{ fontSize: '15px', fontWeight: 700 }}>
-                                            Daily Attendance History ({studentData.records.length} records)
+                                    <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                        <div style={{ fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                            <span>Attendance History ({studentData.records.length} records)</span>
+                                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cs-primary)', background: 'rgba(79, 70, 229, 0.08)', padding: '2px 8px', borderRadius: '12px' }}>
+                                                {studentTimeframeLabel}
+                                            </span>
                                         </div>
                                         <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
                                             Click status badge to toggle status.
@@ -1133,9 +1465,11 @@ export default function AttendancePage() {
                                     {studentData.records.length === 0 ? (
                                         <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--cs-text-muted)' }}>
                                             <Calendar size={32} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.5 }} />
-                                            <div style={{ fontSize: '14px', fontWeight: 600 }}>No attendance records found</div>
+                                            <div style={{ fontSize: '14px', fontWeight: 600 }}>
+                                                No attendance records found for {studentTimeframeLabel}
+                                            </div>
                                             <div style={{ fontSize: '12px', marginTop: '4px' }}>
-                                                Use the form above to record attendance for {studentData.student.name} on any date.
+                                                Use the form above to record attendance for {studentData.student.name} or adjust the timeframe filter.
                                             </div>
                                         </div>
                                     ) : (

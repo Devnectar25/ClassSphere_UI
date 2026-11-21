@@ -13,7 +13,7 @@ import { gradeClass } from '@/lib/academy';
 
 interface Invoice {
     id: string; invoiceNumber: string; billingPeriod: string; designation: string; subtitle: string;
-    amount: number; balance: number; paymentMethod: string; status: 'settled' | 'pending' | 'overdue'; receiptNumber: string;
+    amount: number; balance: number; late_fee_amount?: number; overdue_status?: string; days_overdue?: number; due_date?: string; paymentMethod: string; status: 'settled' | 'pending' | 'overdue' | 'waived' | 'in_grace'; receiptNumber: string;
 }
 interface Payment {
     paymentId: string; receiptNumber: string; paidAt: string; amount: number; paymentMethod: string;
@@ -337,7 +337,17 @@ export default function ParentPortalPage() {
 
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                                 <Stat label="Attendance" value={ward.sessionsTotal ? `${ward.attendanceRate}%` : '—'} sub={`${ward.sessionsCompleted} of ${ward.sessionsTotal} sessions`} onClick={() => setPage('attendance')} />
-                                <Stat label="Fees due" value={money(ward.balance)} sub={ward.balance > 0 ? `Next due ${ward.nextDraftDate}` : 'All settled'} tone={ward.balance > 0 ? 'text-red-600' : 'text-emerald-700'} onClick={() => setPage('fees')} />
+                                <Stat
+                                    label="Fees due"
+                                    value={money(ward.balance)}
+                                    sub={(() => {
+                                        const wardLateFee = (ward.invoices || []).reduce((acc, i) => acc + (Number(i.late_fee_amount) || 0), 0);
+                                        if (wardLateFee > 0) return `Includes ${money(wardLateFee)} late fee`;
+                                        return ward.balance > 0 ? `Next due ${ward.nextDraftDate}` : 'All settled';
+                                    })()}
+                                    tone={ward.balance > 0 ? 'text-red-600' : 'text-emerald-700'}
+                                    onClick={() => setPage('fees')}
+                                />
                                 <Stat label="Latest result" value={latestResult?.result?.grade ?? '—'} sub={latestResult ? `${latestResult.test.title} • ${latestResult.result?.percentage}%` : 'No results yet'} onClick={() => setPage('results')} />
                                 <Stat label="Practice" value={`${ward.practiceHours} h`} sub={`${ward.practiceStreakDays}-day streak`} onClick={() => setPage('practice')} />
                             </div>
@@ -429,7 +439,15 @@ export default function ParentPortalPage() {
                     {page === 'fees' && (
                         <>
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                <Stat label="Outstanding dues" value={money(ward.balance)} tone={ward.balance > 0 ? 'text-red-600' : 'text-emerald-700'} />
+                                <Stat
+                                    label="Outstanding dues"
+                                    value={money(ward.balance)}
+                                    sub={(() => {
+                                        const wardLateFee = (ward.invoices || []).reduce((acc, i) => acc + (Number(i.late_fee_amount) || 0), 0);
+                                        return wardLateFee > 0 ? `Includes ${money(wardLateFee)} late fee` : (ward.balance > 0 ? 'Due soon' : 'All clear');
+                                    })()}
+                                    tone={ward.balance > 0 ? 'text-red-600' : 'text-emerald-700'}
+                                />
                                 <Stat label="Next due" value={ward.balance > 0 ? money(ward.nextDraftAmount) : '—'} sub={ward.balance > 0 ? ward.nextDraftDate : 'Nothing due'} />
                                 <Stat label="Paid so far" value={money(totalPaid)} sub={`${ward.payments.length} payments`} />
                                 <div className={`${card} flex items-center justify-center`}>
@@ -442,19 +460,48 @@ export default function ParentPortalPage() {
                                     <thead><tr className={th}><th className="py-1.5">Invoice</th><th>Description</th><th>Amount</th><th>Status</th><th></th></tr></thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {ward.invoices.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-slate-500 text-xs">No invoices yet.</td></tr>}
-                                        {ward.invoices.map(inv => (
-                                            <tr key={inv.id}>
-                                                <td className="py-2 font-mono text-xs whitespace-nowrap">{inv.invoiceNumber}</td>
-                                                <td>{inv.designation}<div className="text-[11px] text-slate-500">{inv.billingPeriod} • {inv.subtitle}</div></td>
-                                                <td className="whitespace-nowrap font-semibold">{money(inv.amount)}</td>
-                                                <td><span className={`text-[11px] font-semibold capitalize ${inv.status === 'settled' ? 'text-emerald-700' : inv.status === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}>{inv.status}</span></td>
-                                                <td className="text-right">
-                                                    {inv.status !== 'settled' && (
-                                                        <button onClick={() => { setPayInvoice(inv); setModal('pay'); }} className="px-2.5 py-1 rounded-lg bg-[#1e3a8a] text-white text-xs font-semibold whitespace-nowrap cursor-pointer">Pay {money(inv.balance)}</button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {ward.invoices.map(inv => {
+                                            const hasLateFee = Number(inv.late_fee_amount || 0) > 0;
+                                            const isOverdue = inv.overdue_status === 'overdue' || inv.status === 'overdue';
+                                            const isInGrace = inv.overdue_status === 'in_grace';
+                                            const isWaived = inv.overdue_status === 'waived';
+
+                                            return (
+                                                <tr key={inv.id}>
+                                                    <td className="py-2 font-mono text-xs whitespace-nowrap">{inv.invoiceNumber}</td>
+                                                    <td>
+                                                        {inv.designation}
+                                                        <div className="text-[11px] text-slate-500">{inv.billingPeriod} • {inv.subtitle}</div>
+                                                    </td>
+                                                    <td className="whitespace-nowrap font-semibold">
+                                                        <div>{money(inv.amount)}</div>
+                                                        {hasLateFee && (
+                                                            <div className="text-[11px] text-red-600 font-semibold">
+                                                                +{money(inv.late_fee_amount || 0)} late fee
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        {isWaived ? (
+                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">Waived</span>
+                                                        ) : isInGrace ? (
+                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">In Grace ({inv.days_overdue || 0}d)</span>
+                                                        ) : isOverdue ? (
+                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Overdue ({inv.days_overdue || 0}d)</span>
+                                                        ) : (
+                                                            <span className={`text-[11px] font-semibold capitalize ${inv.status === 'settled' ? 'text-emerald-700' : 'text-amber-600'}`}>{inv.status}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="text-right">
+                                                        {inv.status !== 'settled' && (
+                                                            <button onClick={() => { setPayInvoice(inv); setModal('pay'); }} className="px-2.5 py-1 rounded-lg bg-[#1e3a8a] text-white text-xs font-semibold whitespace-nowrap cursor-pointer">
+                                                                Pay {money(inv.balance)}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </section>

@@ -55,5 +55,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
 export function useWorkspace() {
     const { workspace, reload } = useContext(WorkspaceContext);
-    return { workspace, reload, currency: workspace?.organization.currency ?? 'INR' };
+    const rawCurrency = workspace?.organization?.currency;
+    const currency = (typeof rawCurrency === 'string' && /^[A-Za-z]{3}$/.test(rawCurrency.trim()))
+        ? rawCurrency.trim().toUpperCase()
+        : 'INR';
+    return { workspace, reload, currency };
 }

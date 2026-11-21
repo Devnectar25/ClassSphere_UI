@@ -64,9 +64,19 @@ export function useApi<T>(path: string | null) {
 }
 
 export function formatMoney(value: number, currency = 'INR', fractionDigits = 0) {
-    return new Intl.NumberFormat('en-IN', {
-        style: 'currency', currency, minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits,
-    }).format(value);
+    const safeCurrency = (typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency.trim()))
+        ? currency.trim().toUpperCase()
+        : 'INR';
+    try {
+        return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: safeCurrency,
+            minimumFractionDigits: fractionDigits,
+            maximumFractionDigits: fractionDigits,
+        }).format(value || 0);
+    } catch {
+        return `₹${Number(value || 0).toLocaleString('en-IN')}`;
+    }
 }
 
 export function formatDate(value: string | null | undefined) {

@@ -15,7 +15,11 @@ import {
     MessageSquare,
     Activity,
     Info,
+    Edit3,
+    CheckCircle2,
+    AlertCircle,
 } from 'lucide-react';
+import EditGuardianModal from '../components/EditGuardianModal';
 
 interface LinkedStudent {
     studentId: string;
@@ -49,8 +53,10 @@ const TABS = [
 type TabId = typeof TABS[number]['id'];
 
 export default function GuardianDetailPage({ guardianId }: { guardianId: string }) {
-    const { data: guardians, error } = useApi<GuardianDetail[]>('/guardians');
+    const { data: guardians, error, reload } = useApi<GuardianDetail[]>('/guardians');
     const [activeTab, setActiveTab] = useState<TabId>('overview');
+    const [isEditing, setIsEditing] = useState(false);
+    const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const guardian = guardians?.find(g => g.guardianId === guardianId);
     const fullName = guardian ? `${guardian.firstName} ${guardian.lastName}` : 'Guardian Details';
@@ -79,6 +85,38 @@ export default function GuardianDetailPage({ guardianId }: { guardianId: string 
                         <ArrowLeft size={16} /> Back to parents & guardians
                     </Link>
                 </div>
+
+                {/* Feedback Action Banner */}
+                {actionBanner && (
+                    <div
+                        style={{
+                            marginBottom: '16px',
+                            padding: '10px 16px',
+                            borderRadius: '8px',
+                            background: actionBanner.type === 'success' ? '#ECFDF5' : '#FEF2F2',
+                            border: `1px solid ${actionBanner.type === 'success' ? '#A7F3D0' : '#FCA5A5'}`,
+                            color: actionBanner.type === 'success' ? '#065F46' : '#991B1B',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            animation: 'fadeIn 0.2s ease',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {actionBanner.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                            <span>{actionBanner.text}</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setActionBanner(null)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 4px', fontSize: '14px' }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
 
                 {!guardians ? (
                     <PageState error={error} />
@@ -165,6 +203,24 @@ export default function GuardianDetailPage({ guardianId }: { guardianId: string 
                                 >
                                     {guardian.payerStatus}
                                 </span>
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => setIsEditing(true)}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        height: '28px',
+                                        padding: '0 12px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <Edit3 size={13} color="var(--cs-primary)" /> Edit Profile
+                                </button>
                             </div>
                         </div>
 
@@ -199,8 +255,28 @@ export default function GuardianDetailPage({ guardianId }: { guardianId: string 
                         {activeTab === 'overview' && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
                                 <div className="cs-card" style={{ padding: '20px' }}>
-                                    <div className="section-title" style={{ marginBottom: '16px' }}>
-                                        Contact Information
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <div className="section-title" style={{ margin: 0 }}>
+                                            Contact Information
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="btn-ghost"
+                                            onClick={() => setIsEditing(true)}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '5px',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                color: 'var(--cs-primary)',
+                                                padding: '4px 8px',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <Edit3 size={13} /> Edit
+                                        </button>
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '12px', fontSize: '13px' }}>
                                         <span style={{ color: 'var(--cs-text-muted)' }}>Full Name:</span>
@@ -375,6 +451,27 @@ export default function GuardianDetailPage({ guardianId }: { guardianId: string 
                                     Security log of password resets, profile updates and permission changes.
                                 </p>
                             </div>
+                        )}
+
+                        {/* Edit Guardian Modal */}
+                        {isEditing && guardian && (
+                            <EditGuardianModal
+                                guardian={{
+                                    guardianId: guardian.guardianId,
+                                    firstName: guardian.firstName,
+                                    lastName: guardian.lastName,
+                                    relationship: guardian.relationship,
+                                    phone: guardian.phone,
+                                    email: guardian.email,
+                                    isPrimary: guardian.isPrimary,
+                                    students: guardian.students,
+                                }}
+                                onClose={() => setIsEditing(false)}
+                                onSaved={() => {
+                                    reload();
+                                    setActionBanner({ type: 'success', text: 'Parent profile updated successfully.' });
+                                }}
+                            />
                         )}
                     </>
                 )}

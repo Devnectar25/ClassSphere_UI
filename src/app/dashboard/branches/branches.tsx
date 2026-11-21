@@ -9,7 +9,8 @@ import { api, useApi } from '@/lib/api';
 import { can, selectBranch, useSession } from '@/lib/session';
 import {
     Building2, MapPin, Phone, Users, BookOpen, Pencil, Check,
-    ExternalLink, ArrowRight, Calendar, UserCheck, CheckCircle2, X
+    ExternalLink, ArrowRight, Calendar, UserCheck, CheckCircle2, X,
+    Trash2, AlertTriangle
 } from 'lucide-react';
 import { useWorkspace, type Branch } from '@/lib/workspace';
 
@@ -64,6 +65,34 @@ export default function BranchesPage() {
 
     // Manage branch modal state
     const [managingBranch, setManagingBranch] = useState<Branch | null>(null);
+
+    // Delete branch state
+    const [deletingBranch, setDeletingBranch] = useState<Branch | null>(null);
+    const [deleteSaving, setDeleteSaving] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    const handleDeleteBranch = async () => {
+        if (!deletingBranch) return;
+        setDeleteSaving(true);
+        setDeleteError(null);
+        try {
+            await api(`/branches?branchId=${deletingBranch.branchId}`, {
+                method: 'DELETE',
+            });
+            if (session?.selectedBranchId === deletingBranch.branchId) {
+                selectBranch(null);
+            }
+            const deletedName = deletingBranch.name;
+            setDeletingBranch(null);
+            reload();
+            setActionBanner({ type: 'success', text: `Branch "${deletedName}" has been successfully deleted.` });
+        } catch (err) {
+            setDeleteError((err as Error).message || 'Failed to delete branch.');
+        } finally {
+            setDeleteSaving(false);
+        }
+    };
 
     const submitAdd = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -189,6 +218,38 @@ export default function BranchesPage() {
                 action={canManage ? { label: 'Add Branch', onClick: () => setAdding(true) } : undefined}
             />
             <div className="page-body">
+                {/* Action Feedback Banner */}
+                {actionBanner && (
+                    <div
+                        style={{
+                            marginBottom: '16px',
+                            padding: '10px 16px',
+                            borderRadius: '8px',
+                            background: actionBanner.type === 'success' ? '#ECFDF5' : '#FEF2F2',
+                            border: `1px solid ${actionBanner.type === 'success' ? '#A7F3D0' : '#FCA5A5'}`,
+                            color: actionBanner.type === 'success' ? '#065F46' : '#991B1B',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            animation: 'fadeIn 0.2s ease',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {actionBanner.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                            <span>{actionBanner.text}</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setActionBanner(null)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 4px', fontSize: '14px' }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
+
                 {!workspace ? <PageState error={null} /> : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>
                         {workspace.branches.map(b => {
@@ -290,13 +351,43 @@ export default function BranchesPage() {
                                                     justifyContent: 'center',
                                                     gap: '5px',
                                                     fontSize: '12px',
-                                                    padding: '0 14px',
+                                                    padding: '0 12px',
                                                     fontWeight: 600,
                                                     color: 'var(--cs-primary)',
                                                     borderColor: 'rgba(108, 99, 255, 0.3)'
                                                 }}
                                             >
                                                 <Pencil size={12} /> Edit
+                                            </button>
+                                        )}
+                                        {canManage && !b.isPrimary && (
+                                            <button
+                                                type="button"
+                                                className="btn-ghost"
+                                                onClick={() => {
+                                                    setDeleteError(null);
+                                                    setDeletingBranch(b);
+                                                }}
+                                                title={`Delete ${b.name}`}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '4px',
+                                                    fontSize: '12px',
+                                                    padding: '0 10px',
+                                                    fontWeight: 600,
+                                                    color: '#EF4444',
+                                                    background: 'rgba(239, 68, 68, 0.08)',
+                                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)')}
+                                            >
+                                                <Trash2 size={12} /> Delete
                                             </button>
                                         )}
                                     </div>
@@ -717,26 +808,123 @@ export default function BranchesPage() {
 
                         {editError && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{editError}</div>}
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                            {canManage && editingBranch && !editingBranch.isPrimary ? (
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => {
+                                        const b = editingBranch;
+                                        setEditingBranch(null);
+                                        setDeleteError(null);
+                                        setDeletingBranch(b);
+                                    }}
+                                    disabled={editSaving}
+                                    style={{
+                                        color: '#EF4444',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                        padding: '6px 10px',
+                                        borderRadius: '6px',
+                                        background: 'rgba(239, 68, 68, 0.08)',
+                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <Trash2 size={13} /> Delete Branch
+                                </button>
+                            ) : <div />}
+
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => setEditingBranch(null)}
+                                    disabled={editSaving}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="btn-primary"
+                                    type="submit"
+                                    disabled={editSaving}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                >
+                                    <Check size={14} />
+                                    {editSaving ? 'Saving Changes…' : 'Save Changes'}
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {/* Delete Branch Confirmation Modal */}
+            {deletingBranch && (
+                <Modal
+                    title={`Delete Branch: ${deletingBranch.name}`}
+                    onClose={() => !deleteSaving && setDeletingBranch(null)}
+                    maxWidth="520px"
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div
+                            style={{
+                                padding: '12px 16px',
+                                borderRadius: '10px',
+                                background: '#FEF2F2',
+                                border: '1px solid #FECACA',
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '12px',
+                            }}
+                        >
+                            <AlertTriangle size={20} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <div style={{ fontSize: '13px', color: '#991B1B', lineHeight: 1.5 }}>
+                                <strong>Warning:</strong> Are you sure you want to delete <strong>{deletingBranch.name}</strong> (<code>{deletingBranch.code}</code>)?
+                                <div style={{ marginTop: '6px', fontSize: '12px', color: '#7F1D1D' }}>
+                                    This branch currently has <strong>{deletingBranch.studentCount} student{deletingBranch.studentCount !== 1 ? 's' : ''}</strong> and <strong>{deletingBranch.batchCount} batch{deletingBranch.batchCount !== 1 ? 'es' : ''}</strong>.
+                                    They will be safely moved to your Primary Campus.
+                                </div>
+                            </div>
+                        </div>
+
+                        {deleteError && (
+                            <div style={{ color: '#DC2626', fontSize: '13px', background: '#FEE2E2', padding: '8px 12px', borderRadius: '6px' }}>
+                                {deleteError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px', borderTop: '1px solid var(--cs-border)' }}>
                             <button
                                 type="button"
                                 className="btn-secondary"
-                                onClick={() => setEditingBranch(null)}
-                                disabled={editSaving}
+                                onClick={() => setDeletingBranch(null)}
+                                disabled={deleteSaving}
                             >
                                 Cancel
                             </button>
                             <button
+                                type="button"
                                 className="btn-primary"
-                                type="submit"
-                                disabled={editSaving}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                onClick={handleDeleteBranch}
+                                disabled={deleteSaving}
+                                style={{
+                                    background: '#DC2626',
+                                    borderColor: '#DC2626',
+                                    color: '#FFFFFF',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                }}
                             >
-                                <Check size={14} />
-                                {editSaving ? 'Saving Changes…' : 'Save Changes'}
+                                <Trash2 size={14} />
+                                {deleteSaving ? 'Deleting…' : 'Delete Branch'}
                             </button>
                         </div>
-                    </form>
+                    </div>
                 </Modal>
             )}
         </>

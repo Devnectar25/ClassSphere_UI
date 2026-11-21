@@ -858,13 +858,19 @@ html:has(.modal-overlay, .scroll-lock) main {
   background: var(--cs-surface);
   border: 1px solid var(--cs-border);
   border-radius: var(--cs-radius-lg);
-  padding: 28px;
+  padding: 24px;
   max-width: 520px;
   width: 90%;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 32px);
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   box-shadow: var(--cs-shadow-float);
   animation: fadeIn 0.3s ease;
+}
+
+.modal-content::-webkit-scrollbar {
+  display: none;
 }
 
 

@@ -41,7 +41,7 @@ export default function Modal({ title, onClose, children, isOpen, maxWidth, styl
                 onClick={e => e.stopPropagation()}
                 style={{ ...(maxWidth ? { maxWidth } : {}), ...style }}
             >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                     <div className="section-title">{title}</div>
                     <button className="btn-ghost" style={{ padding: '6px' }} onClick={onClose} aria-label="Close"><X size={16} /></button>
                 </div>
