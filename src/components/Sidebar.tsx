@@ -17,17 +17,11 @@ const navGroups = [
         label: 'Core',
         items: [
             { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', permission: 'reports.read' },
-            { href: '/dashboard/students', icon: GraduationCap, label: 'Students', permission: 'students.read' },
-            { href: '/dashboard/guardians', icon: Users, label: 'Guardians', permission: 'guardians.read' },
-        ]
-    },
-    {
-        label: 'Academic',
-        items: [
+            { href: '/dashboard/branches', icon: Building2, label: 'Branches', permission: 'staff.read' },
             { href: '/dashboard/courses', icon: BookOpen, label: 'Courses', permission: 'academics.read' },
             { href: '/dashboard/batches', icon: Calendar, label: 'Batches & Schedule', permission: 'academics.read' },
-            { href: '/dashboard/attendance', icon: ClipboardList, label: 'Attendance', permission: 'academics.read' },
-            { href: '/dashboard/tests', icon: FileCheck, label: 'Tests & Results', permission: 'academics.read' },
+            { href: '/dashboard/students', icon: GraduationCap, label: 'Students', permission: 'students.read' },
+            { href: '/dashboard/guardians', icon: Users, label: 'Guardians', permission: 'guardians.read' },
         ]
     },
     {
@@ -38,8 +32,10 @@ const navGroups = [
         ]
     },
     {
-        label: 'Communication',
+        label: 'Academic',
         items: [
+            { href: '/dashboard/attendance', icon: ClipboardList, label: 'Attendance', permission: 'academics.read' },
+            { href: '/dashboard/tests', icon: FileCheck, label: 'Tests & Results', permission: 'academics.read' },
             { href: '/dashboard/notices', icon: Bell, label: 'Notices & Events', permission: 'academics.read' },
             { href: '/dashboard/achievements', icon: Trophy, label: 'Achievements', permission: 'academics.read' },
         ]
@@ -47,7 +43,6 @@ const navGroups = [
     {
         label: 'Administration',
         items: [
-            { href: '/dashboard/branches', icon: Building2, label: 'Branches', permission: 'staff.read' },
             { href: '/dashboard/staff', icon: UserCog, label: 'Users & Roles', permission: 'staff.read' },
             { href: '/dashboard/reports', icon: BarChart3, label: 'Reports', permission: 'reports.read' },
             { href: '/dashboard/settings', icon: Settings, label: 'Settings', permission: 'settings.write' },

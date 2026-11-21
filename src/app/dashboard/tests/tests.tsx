@@ -279,7 +279,7 @@ function ScheduleTest({ onClose, onScheduled }: { onClose: () => void; onSchedul
     };
 
     return (
-        <Modal title="Schedule Test" onClose={onClose}>
+        <Modal title="Schedule Test" onClose={onClose} maxWidth="680px">
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
                     <label className="cs-label">Batch</label>

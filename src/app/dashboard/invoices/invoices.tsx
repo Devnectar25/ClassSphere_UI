@@ -86,8 +86,10 @@ export default function InvoicesPage() {
         const invId = inv.invoiceId || inv.invoiceNumber;
         setDownloadingId(invId);
         try {
-            const jspdfModule = await import('jspdf');
-            const jsPDFConstructor = jspdfModule.jsPDF || (jspdfModule as any).default?.jsPDF || jspdfModule.default;
+            // Load jsPDF UMD build to avoid Turbopack optional ESM dependency resolution (canvg / html2canvas)
+            // @ts-expect-error - jsPDF UMD bundle
+            const jspdfModule = await import('jspdf/dist/jspdf.umd.min.js');
+            const jsPDFConstructor = jspdfModule.jsPDF || (jspdfModule as any).default?.jsPDF || (jspdfModule as any).default;
             if (!jsPDFConstructor) {
                 throw new Error('PDF generator library (jsPDF) could not be loaded.');
             }
@@ -673,7 +675,6 @@ export default function InvoicesPage() {
             setNotice(`Payment of ${money(paidAmt)} recorded for ${collecting.invoiceNumber} (Term ${termNo}). Receipt ${res.receiptNumber}.`);
             setCollecting(null);
             reload();
-            downloadInvoice(updatedInv);
         } catch (err) {
             setNotice((err as Error).message);
         } finally {
@@ -760,12 +761,12 @@ export default function InvoicesPage() {
                                         <tr style={{ background: 'var(--cs-surface-2)' }}>
                                             <th style={{ width: '12%', padding: '10px 6px 10px 14px' }}>Invoice #</th>
                                             <th style={{ width: '14%', padding: '10px 6px' }}>Student</th>
-                                            <th style={{ width: '17%', padding: '10px 6px' }}>Batch</th>
-                                            <th style={{ width: '18%', padding: '10px 6px' }}>Fee Type</th>
+                                            <th style={{ width: '16%', padding: '10px 6px' }}>Batch</th>
+                                            <th style={{ width: '17%', padding: '10px 6px' }}>Fee Type</th>
                                             <th style={{ width: '9%', padding: '10px 6px' }}>Amount</th>
                                             <th style={{ width: '10%', padding: '10px 6px' }}>Due Date</th>
                                             <th style={{ width: '8%', padding: '10px 4px', textAlign: 'center' }}>Status</th>
-                                            <th style={{ width: '12%', padding: '10px 8px', textAlign: 'center' }}>Actions</th>
+                                            <th style={{ width: '14%', padding: '10px 8px', textAlign: 'center' }}>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -779,12 +780,7 @@ export default function InvoicesPage() {
                                                 : [desig];
 
                                             return (
-                                                <tr
-                                                    key={inv.invoiceId}
-                                                    onClick={(e) => { e.stopPropagation(); if (!downloadingId) downloadInvoice(inv); }}
-                                                    style={{ cursor: 'pointer' }}
-                                                    title={`Click any field to view / generate invoice for ${inv.studentName}`}
-                                                >
+                                                <tr key={inv.invoiceId}>
                                                     <td style={{ padding: '9px 6px 9px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                                                         <code style={{ fontSize: '11px', background: 'var(--cs-surface-2)', padding: '2px 5px', borderRadius: '4px', color: '#8B85FF', display: 'inline-block', letterSpacing: '-0.02em' }}>
                                                             {inv.invoiceNumber}
@@ -867,15 +863,14 @@ export default function InvoicesPage() {
                                                         </span>
                                                     </td>
                                                     <td style={{ padding: '9px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            {canCollect && inv.balanceAmount > 0 ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                                            {canCollect && inv.balanceAmount > 0 && (
                                                                 <button
                                                                     type="button"
-                                                                    className="btn-primary cell-nowrap"
+                                                                    className="btn-secondary cell-nowrap"
                                                                     style={{
-                                                                        padding: '4px 12px',
+                                                                        padding: '4px 10px',
                                                                         height: '28px',
-                                                                        minWidth: '82px',
                                                                         fontSize: '11.5px',
                                                                         display: 'inline-flex',
                                                                         alignItems: 'center',
@@ -883,12 +878,13 @@ export default function InvoicesPage() {
                                                                         gap: '4px',
                                                                         borderRadius: '6px'
                                                                     }}
-                                                                    onClick={(e) => { e.stopPropagation(); setCollecting(inv); setPayment({ amount: String(inv.balanceAmount), paymentMethod: 'Cash' }); }}
+                                                                    onClick={() => { setCollecting(inv); setPayment({ amount: String(inv.balanceAmount), paymentMethod: 'Cash' }); }}
                                                                     title={`Collect payment for ${inv.studentName}`}
                                                                 >
                                                                     <CreditCard size={11} /> Collect
                                                                 </button>
-                                                            ) : (() => {
+                                                            )}
+                                                            {(() => {
                                                                 const isDownloading = downloadingId === (inv.invoiceId || inv.invoiceNumber);
                                                                 return (
                                                                     <button
@@ -908,8 +904,7 @@ export default function InvoicesPage() {
                                                                             opacity: isDownloading ? 0.75 : 1,
                                                                             cursor: isDownloading ? 'wait' : 'pointer'
                                                                         }}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
+                                                                        onClick={() => {
                                                                             if (!isDownloading) downloadInvoice(inv);
                                                                         }}
                                                                         title={`Download Invoice ${inv.invoiceNumber}`}
