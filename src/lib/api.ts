@@ -33,7 +33,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         },
     });
     const body = await res.json().catch(() => null);
-    if (res.status === 401 && session) clearSession(); // AuthGuard then returns the user to sign-in
+    // AuthGuard then returns the user to sign-in; a suspended or deactivated account is signed out the same way
+    const blocked = res.status === 403 && (body?.title === 'Account Suspended' || body?.title === 'Account Inactive');
+    if ((res.status === 401 || blocked) && session) clearSession();
     if (!res.ok || !body?.success) {
         throw new Error(body?.detail || body?.title || `Request failed (${res.status})`);
     }

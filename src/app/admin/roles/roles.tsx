@@ -166,19 +166,19 @@ export default function PlatformAdminRolesPage() {
         switch (role) {
             case 'SuperAdmin':
                 return (
-                    <span className="inline-block px-2 py-0.5 text-[11px] font-bold rounded-full whitespace-nowrap bg-purple-50 text-purple-700 border border-purple-200">
+                    <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-purple-50 text-purple-700 border border-purple-200">
                         SuperAdmin
                     </span>
                 );
             case 'FinanceAdmin':
                 return (
-                    <span className="inline-block px-2 py-0.5 text-[11px] font-bold rounded-full whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                         FinanceAdmin
                     </span>
                 );
             default:
                 return (
-                    <span className="inline-block px-2 py-0.5 text-[11px] font-bold rounded-full whitespace-nowrap bg-blue-50 text-blue-700 border border-blue-200">
+                    <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                         SupportAdmin
                     </span>
                 );
@@ -189,9 +189,8 @@ export default function PlatformAdminRolesPage() {
         <div className="space-y-6">
             {/* Toast */}
             {toast && (
-                <div className={`fixed bottom-6 right-6 z-[10000] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all ${
-                    toast.type === 'success' ? 'bg-white border-emerald-200 text-emerald-800' : 'bg-white border-rose-200 text-rose-800'
-                }`}>
+                <div className={`fixed bottom-6 right-6 z-[10000] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all ${toast.type === 'success' ? 'bg-white border-emerald-200 text-emerald-800' : 'bg-white border-rose-200 text-rose-800'
+                    }`}>
                     {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
                     {toast.message}
                 </div>
@@ -242,24 +241,16 @@ export default function PlatformAdminRolesPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
-                <div>
-                    <table className="w-full table-fixed text-left text-sm text-slate-600">
-                        <colgroup>
-                            <col className="w-[22%]" />
-                            <col className="w-[15%]" />
-                            <col className="w-[11%]" />
-                            <col className="w-[32%]" />
-                            <col className="w-[10%]" />
-                            <col className="w-[10%]" />
-                        </colgroup>
-                        <thead className="bg-slate-50 text-slate-700 text-[11px] font-semibold uppercase tracking-wider border-b border-slate-200">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-600">
+                        <thead className="bg-slate-50 text-slate-700 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
                             <tr>
-                                <th className="py-3 px-3">Operator</th>
-                                <th className="py-3 px-3">Role</th>
-                                <th className="py-3 px-3">2FA</th>
-                                <th className="py-3 px-3">Permissions</th>
-                                <th className="py-3 px-3 text-center">Status</th>
-                                <th className="py-3 px-3 text-right">Action</th>
+                                <th className="py-3 px-4">Operator Profile</th>
+                                <th className="py-3 px-4">Assigned Role</th>
+                                <th className="py-3 px-4">2FA Security</th>
+                                <th className="py-3 px-4">Granular Permissions</th>
+                                <th className="py-3 px-4 text-center">Status</th>
+                                <th className="py-3 px-4 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-normal">
@@ -279,36 +270,36 @@ export default function PlatformAdminRolesPage() {
                                 </tr>
                             ) : (
                                 filteredAdmins.map((admin) => (
-                                    <tr key={admin.adminId} className="hover:bg-slate-50/80 transition-colors [&>td]:align-middle">
-                                        <td className="py-3.5 px-3">
-                                            <div className="font-semibold text-slate-900 break-words line-clamp-2" title={admin.fullName}>{admin.fullName}</div>
-                                            <div className="text-xs text-slate-500 font-mono truncate" title={admin.email}>{admin.email}</div>
+                                    <tr key={admin.adminId} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-3.5 px-4">
+                                            <div className="font-semibold text-slate-900">{admin.fullName}</div>
+                                            <div className="text-xs text-slate-500 font-mono">{admin.email}</div>
                                         </td>
-                                        <td className="py-3.5 px-3">
+                                        <td className="py-3.5 px-4">
                                             {getRoleBadge(admin.role)}
                                         </td>
-                                        <td className="py-3.5 px-3">
-                                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 whitespace-nowrap">
+                                        <td className="py-3.5 px-4">
+                                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                                                 <Lock className="w-3 h-3 text-emerald-600" />
                                                 Enforced
                                             </span>
                                         </td>
-                                        <td className="py-3.5 px-3">
-                                            <div className="flex flex-wrap gap-1">
+                                        <td className="py-3.5 px-4">
+                                            <div className="flex flex-wrap gap-1 max-w-md">
                                                 {admin.permissions?.map((p) => (
-                                                    <span key={p} className="max-w-full break-all text-[11px] font-mono px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                                                    <span key={p} className="text-[11px] font-mono px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
                                                         {p}
                                                     </span>
                                                 ))}
                                             </div>
                                         </td>
-                                        <td className="py-3.5 px-3 text-center">
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        <td className="py-3.5 px-4 text-center">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                                 Active
                                             </span>
                                         </td>
-                                        <td className="py-3.5 px-3 text-right">
+                                        <td className="py-3.5 px-4 text-center">
                                             <button
                                                 onClick={() => handleOpenEdit(admin)}
                                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
@@ -396,7 +387,7 @@ export default function PlatformAdminRolesPage() {
                                 Granular Capability Entitlements <span className="text-rose-500">*</span>
                             </label>
                             <FieldError message={adminForm.error('permissions')} />
-                            <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                                 {AVAILABLE_PERMISSIONS.map(p => {
                                     const checked = selectedPermissions.includes(p.key);
                                     return (

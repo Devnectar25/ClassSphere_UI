@@ -81,7 +81,8 @@ export default function BranchesPage() {
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
-                                        <MapPin size={14} style={{ marginTop: '1px', flexShrink: 0, color: 'var(--cs-text-muted)' }} /> {b.address ?? '—'}
+                                        <MapPin size={14} style={{ marginTop: '1px', flexShrink: 0, color: 'var(--cs-text-muted)' }} />
+                                        <span>{[b.address, b.location, b.city, b.state].filter(Boolean).join(', ') || b.address || '—'}</span>
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
                                         <Phone size={13} color="var(--cs-text-muted)" /> {b.phone ?? '—'}

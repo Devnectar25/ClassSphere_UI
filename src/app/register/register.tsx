@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
     CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff, BadgeCheck, Circle, Building2, Phone, Mail, X, AlertCircle, RefreshCw,
+    Globe, Map, Building, Compass, MapPin,
 } from 'lucide-react';
 import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
@@ -23,7 +24,7 @@ const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?
 const NAME_REGEX = /^[a-zA-Z]+(?:[ '.-][a-zA-Z]*)*$/;
 // Academy names: letters, spaces and common punctuation (no digits)
 const ACADEMY_NAME_REGEX = /^[a-zA-Z][a-zA-Z &'.,()\-/]*$/;
-const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName', 'customCategory'];
+const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName', 'customCategory', 'state', 'city'];
 const CATEGORY_VALUES = CATEGORIES.map(([value]) => value);
 const iconLeft: React.CSSProperties = { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' };
 const MAX = { academyName: 100, firstName: 50, lastName: 50, email: 254, phone: 10, password: 64 };
@@ -83,12 +84,17 @@ export default function RegisterPage() {
     const selectedPlan = planTier ?? plans?.find(p => p.isPopular)?.planTier;
     const [form, setForm] = useState({
         academyName: '',
+        academyType: 'Tuition',
+        customCategory: '',
+        country: 'India',
+        state: '',
+        city: '',
+        location: '',
+        address: '',
         firstName: '',
         lastName: '',
         email: '',
         phone: '',
-        academyType: 'Tuition',
-        customCategory: '',
         password: '',
         confirmPassword: '',
     });
@@ -195,6 +201,25 @@ export default function RegisterPage() {
                 if (/\d/.test(val)) return 'Academy name cannot contain numbers.';
                 if (!ACADEMY_NAME_REGEX.test(val)) return "Use letters, spaces and & ' . , ( ) - / only, starting with a letter.";
                 if (/\s{2,}/.test(val)) return 'Academy name cannot contain consecutive spaces.';
+                return '';
+            case 'country':
+                if (!val) return 'Country is required.';
+                return '';
+            case 'state':
+                if (!val) return 'State / Province is required.';
+                if (val.length < 2) return 'State must be at least 2 characters.';
+                return '';
+            case 'city':
+                if (!val) return 'City is required.';
+                if (val.length < 2) return 'City must be at least 2 characters.';
+                return '';
+            case 'location':
+                if (!val) return 'Location / Area is required.';
+                if (val.length < 2) return 'Location must be at least 2 characters.';
+                return '';
+            case 'address':
+                if (!val) return 'Campus street address is required.';
+                if (val.length < 5) return 'Address must be at least 5 characters.';
                 return '';
             case 'firstName':
             case 'lastName': {
@@ -306,8 +331,10 @@ export default function RegisterPage() {
     const continueToPlan = async (e: React.FormEvent) => {
         e.preventDefault();
         const fields = [
-            'academyName', 'firstName', 'lastName', 'email', 'phone', 'academyType',
+            'firstName', 'lastName', 'email', 'phone',
+            'academyName', 'academyType',
             ...(form.academyType === 'Other' ? ['customCategory' as const] : []),
+            'country', 'state', 'city', 'location', 'address',
             'password', 'confirmPassword'
         ] as const;
         setTouched(Object.fromEntries(fields.map(f => [f, true])));
@@ -568,27 +595,6 @@ export default function RegisterPage() {
                 {step === 0 && (
                     <>
                         <form onSubmit={continueToPlan} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            <div>
-                                <label className="cs-label">Academy / Class Name <span className="reg-req">*</span></label>
-                                <div style={{ position: 'relative' }}>
-                                    <Building2 size={17} style={iconLeft} />
-                                    <input
-                                        className="cs-input reg-input"
-                                        placeholder="e.g. Ravi's Math Academy"
-                                        autoComplete="organization"
-                                        maxLength={MAX.academyName}
-                                        value={form.academyName}
-                                        onChange={handleFieldChange('academyName')}
-                                        onBlur={handleBlur('academyName')}
-                                        style={{ paddingLeft: '42px', ...getInputStyle('academyName') }}
-                                    />
-                                </div>
-                                {touched.academyName && fieldErrors.academyName && (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.academyName}
-                                    </p>
-                                )}
-                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                 <div>
                                     <label className="cs-label">Your First Name <span className="reg-req">*</span></label>
@@ -748,6 +754,29 @@ export default function RegisterPage() {
                                     </div>
                                 )}
                             </div>
+
+                            <div>
+                                <label className="cs-label">Academy / Class Name <span className="reg-req">*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <Building2 size={17} style={iconLeft} />
+                                    <input
+                                        className="cs-input reg-input"
+                                        placeholder="e.g. Apex Music & Arts Conservatory"
+                                        autoComplete="organization"
+                                        maxLength={MAX.academyName}
+                                        value={form.academyName}
+                                        onChange={handleFieldChange('academyName')}
+                                        onBlur={handleBlur('academyName')}
+                                        style={{ paddingLeft: '42px', ...getInputStyle('academyName') }}
+                                    />
+                                </div>
+                                {touched.academyName && fieldErrors.academyName && (
+                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                        {fieldErrors.academyName}
+                                    </p>
+                                )}
+                            </div>
+
                             <div>
                                 <label className="cs-label" id="reg-category-label">Class Category <span className="reg-req">*</span></label>
                                 <select
@@ -790,6 +819,126 @@ export default function RegisterPage() {
                                     </div>
                                 )}
                             </div>
+
+                            {/* 1) Country & 2) State */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                    <label className="cs-label">Country <span className="reg-req">*</span></label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Globe size={17} style={iconLeft} />
+                                        <select
+                                            className="cs-input reg-native-select"
+                                            value={form.country}
+                                            onChange={handleFieldChange('country')}
+                                            onBlur={handleBlur('country')}
+                                            style={{ paddingLeft: '42px', ...getInputStyle('country') }}
+                                        >
+                                            <option value="India">India</option>
+                                            <option value="United States">United States</option>
+                                            <option value="United Kingdom">United Kingdom</option>
+                                            <option value="Canada">Canada</option>
+                                            <option value="Australia">Australia</option>
+                                            <option value="United Arab Emirates">United Arab Emirates</option>
+                                            <option value="Singapore">Singapore</option>
+                                            <option value="Other">Other Country</option>
+                                        </select>
+                                    </div>
+                                    {touched.country && fieldErrors.country && (
+                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                            {fieldErrors.country}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="cs-label">State / Province <span className="reg-req">*</span></label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Map size={17} style={iconLeft} />
+                                        <input
+                                            className="cs-input reg-input"
+                                            placeholder="e.g. Maharashtra"
+                                            maxLength={60}
+                                            value={form.state}
+                                            onChange={handleFieldChange('state')}
+                                            onBlur={handleBlur('state')}
+                                            style={{ paddingLeft: '42px', ...getInputStyle('state') }}
+                                        />
+                                    </div>
+                                    {touched.state && fieldErrors.state && (
+                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                            {fieldErrors.state}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 3) City & 5) Location */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                    <label className="cs-label">City <span className="reg-req">*</span></label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Building size={17} style={iconLeft} />
+                                        <input
+                                            className="cs-input reg-input"
+                                            placeholder="e.g. Pune"
+                                            maxLength={60}
+                                            value={form.city}
+                                            onChange={handleFieldChange('city')}
+                                            onBlur={handleBlur('city')}
+                                            style={{ paddingLeft: '42px', ...getInputStyle('city') }}
+                                        />
+                                    </div>
+                                    {touched.city && fieldErrors.city && (
+                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                            {fieldErrors.city}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="cs-label">Location / Area / Pin <span className="reg-req">*</span></label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Compass size={17} style={iconLeft} />
+                                        <input
+                                            className="cs-input reg-input"
+                                            placeholder="e.g. Kothrud, 411038"
+                                            maxLength={80}
+                                            value={form.location}
+                                            onChange={handleFieldChange('location')}
+                                            onBlur={handleBlur('location')}
+                                            style={{ paddingLeft: '42px', ...getInputStyle('location') }}
+                                        />
+                                    </div>
+                                    {touched.location && fieldErrors.location && (
+                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                            {fieldErrors.location}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 4) Address */}
+                            <div>
+                                <label className="cs-label">Street Address / Campus Premises <span className="reg-req">*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <MapPin size={17} style={iconLeft} />
+                                    <input
+                                        className="cs-input reg-input"
+                                        placeholder="e.g. Office 204, Crystal Plaza, Paud Road"
+                                        maxLength={200}
+                                        value={form.address}
+                                        onChange={handleFieldChange('address')}
+                                        onBlur={handleBlur('address')}
+                                        style={{ paddingLeft: '42px', ...getInputStyle('address') }}
+                                    />
+                                </div>
+                                {touched.address && fieldErrors.address && (
+                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                        {fieldErrors.address}
+                                    </p>
+                                )}
+                            </div>
+
                             <div>
                                 <label className="cs-label">Password <span className="reg-req">*</span></label>
                                 <div style={{ position: 'relative' }}>
@@ -924,6 +1073,7 @@ export default function RegisterPage() {
                                     </p>
                                 )}
                             </div>
+
                             {error && (
                                 <div role="alert" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '8px', padding: '10px 14px', color: '#B91C1C', fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <span>⚠️</span>

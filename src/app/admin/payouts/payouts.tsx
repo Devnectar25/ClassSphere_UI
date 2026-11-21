@@ -184,9 +184,8 @@ export default function PlatformAdminPayoutsPage() {
         <div className="space-y-6">
             {/* Toast */}
             {toast && (
-                <div className={`fixed bottom-6 right-6 z-[10000] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all ${
-                    toast.type === 'success' ? 'bg-white border-emerald-200 text-emerald-800' : 'bg-white border-rose-200 text-rose-800'
-                }`}>
+                <div className={`fixed bottom-6 right-6 z-[10000] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all ${toast.type === 'success' ? 'bg-white border-emerald-200 text-emerald-800' : 'bg-white border-rose-200 text-rose-800'
+                    }`}>
                     {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
                     {toast.message}
                 </div>
@@ -211,7 +210,7 @@ export default function PlatformAdminPayoutsPage() {
 
             {/* Filters */}
             <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-full md:w-auto flex-wrap">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
                     {[
                         { key: '', label: 'All Payouts' },
                         { key: 'pending', label: 'Pending Cycle' },
@@ -225,9 +224,8 @@ export default function PlatformAdminPayoutsPage() {
                                 setStatusFilter(tab.key);
                                 setPage(1);
                             }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
-                                statusFilter === tab.key ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                            }`}
+                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${statusFilter === tab.key ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                                }`}
                         >
                             {tab.label}
                         </button>
@@ -248,8 +246,8 @@ export default function PlatformAdminPayoutsPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
-                <div>
-                    <table className="w-full table-fixed text-left text-sm text-slate-600">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1020px] table-fixed text-left text-sm text-slate-600">
                         <colgroup>
                             <col className="w-[18%]" />
                             <col className="w-[11%]" />
