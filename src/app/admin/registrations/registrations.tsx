@@ -210,8 +210,8 @@ export default function PlatformAdminRegistrationsPage() {
 
             {/* Table */}
             <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
-                <div>
-                    <table className="w-full table-fixed text-left text-xs">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[980px] table-fixed text-left text-xs">
                         <colgroup>
                             <col className="w-[16%]" />
                             <col className="w-[21%]" />

@@ -219,15 +219,41 @@ function LoginForm() {
                             </div>
 
                             {error && (
-                                <div role="alert" style={{ marginTop: '14px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '10px', padding: '10px 14px', color: '#B91C1C', fontSize: '13px', lineHeight: 1.5 }}>
-                                    {error}
-                                    {error.toLowerCase().includes('sign up') && (
-                                        <>
-                                            {' '}
-                                            <Link href="/register" style={{ color: '#4F46E5', fontWeight: 600, textDecoration: 'underline' }}>
-                                                Sign up now
-                                            </Link>
-                                        </>
+                                <div role="alert" style={{ marginTop: '14px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '10px', padding: '12px 14px', color: '#B91C1C', fontSize: '13px', lineHeight: 1.5 }}>
+                                    {error.toLowerCase().includes('suspend') ? (
+                                        <div>
+                                            <p style={{ margin: 0, fontWeight: 500 }}>
+                                                {error}
+                                            </p>
+                                            <div style={{ marginTop: '8px' }}>
+                                                <Link
+                                                    href={`/contact?topic=Technical+support${email.includes('@') ? `&email=${encodeURIComponent(email.trim())}` : /^\d{10}$/.test(email.trim()) ? `&phone=${encodeURIComponent(email.trim())}` : ''}&message=${encodeURIComponent('My academy or account has been suspended. Please review my suspension and help me restore access.')}`}
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        color: '#4F46E5',
+                                                        fontWeight: 700,
+                                                        fontSize: '13px',
+                                                        textDecoration: 'underline',
+                                                    }}
+                                                >
+                                                    Contact Us <ArrowRight size={14} />
+                                                </Link>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            {error}
+                                            {error.toLowerCase().includes('sign up') && (
+                                                <>
+                                                    {' '}
+                                                    <Link href="/register" style={{ color: '#4F46E5', fontWeight: 600, textDecoration: 'underline' }}>
+                                                        Sign up now
+                                                    </Link>
+                                                </>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             )}

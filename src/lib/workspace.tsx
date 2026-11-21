@@ -7,6 +7,11 @@ export interface Branch {
     name: string;
     code: string;
     address: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    location?: string | null;
+    pincode?: string | null;
     phone: string | null;
     isPrimary: boolean;
     isActive: boolean;

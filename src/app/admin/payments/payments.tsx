@@ -222,8 +222,8 @@ export default function PlatformAdminPaymentsPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
-                <div>
-                    <table className="w-full table-fixed text-left text-sm text-slate-600">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1050px] table-fixed text-left text-sm text-slate-600">
                         <colgroup>
                             <col className="w-[15%]" />
                             <col className="w-[16%]" />

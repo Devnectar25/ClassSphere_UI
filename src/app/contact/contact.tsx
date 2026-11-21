@@ -100,6 +100,25 @@ export default function ContactPage() {
     }, 2800);
     return () => clearInterval(id);
   }, []);
+
+  // Prefill form from URL query parameters (e.g. from suspended account login redirect)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const emailParam = params.get('email');
+    const phoneParam = params.get('phone');
+    const topicParam = params.get('topic');
+    const msgParam = params.get('message');
+    if (emailParam || phoneParam || topicParam || msgParam) {
+      setForm(f => ({
+        ...f,
+        ...(emailParam ? { email: emailParam } : {}),
+        ...(phoneParam ? { phone: phoneParam.replace(/\D/g, '').slice(0, LIMITS.phone) } : {}),
+        ...(topicParam && TOPICS.includes(topicParam) ? { topic: topicParam } : {}),
+        ...(msgParam ? { message: msgParam } : {}),
+      }));
+    }
+  }, []);
   const refs = useRef<Partial<Record<Field, HTMLElement | null>>>({});
 
   const setField = (field: Field, value: string) => {
