@@ -1,24 +1,35 @@
 'use client';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
-import { Settings, Bell, Shield, Palette, CreditCard, Save, Upload } from 'lucide-react';
+import { Settings, Palette, Save, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { useWorkspace, type Workspace } from '@/lib/workspace';
+import CountrySelect from '@/components/CountrySelect';
 
 const tabs = [
-    { id: 'general', label: 'General', icon: Settings },
-    { id: 'branding', label: 'Branding', icon: Palette },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'payments', label: 'Payments', icon: CreditCard },
-    { id: 'security', label: 'Security', icon: Shield },
+    { id: 'general', label: 'Academy Profile & Location', icon: Settings },
+    { id: 'branding', label: 'Branding & Visuals', icon: Palette },
+];
+
+const CATEGORIES = [
+    'Tuition',
+    'Music',
+    'Sports',
+    'Dance',
+    'Karate',
+    'Art & Craft',
+    'Language',
+    'Coding & Tech',
+    'Academics',
+    'Other',
 ];
 
 export default function SettingsPage() {
     const { workspace, reload } = useWorkspace();
     return (
         <>
-            <Topbar title="Settings" subtitle="Configure your academy profile, branding, and integrations" />
+            <Topbar title="Academy Settings" subtitle="Manage your academy profile, administrator contact, branch location and branding" />
             <div className="page-body">
                 {workspace ? <SettingsForm workspace={workspace} onSaved={reload} /> : <PageState error={null} />}
             </div>
@@ -28,23 +39,41 @@ export default function SettingsPage() {
 
 function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: () => void }) {
     const org = workspace.organization;
-    const [activeTab, setActiveTab] = useState('general');
-    const [general, setGeneral] = useState({
-        name: org.name,
-        category: org.settings.category ?? '',
-        email: org.settings.email ?? '',
-        phone: org.settings.phone ?? '',
-        city: org.settings.city ?? '',
-        timezone: org.timezone,
-        currency: org.currency,
+    const primaryBranch = workspace.branches.find(b => b.isPrimary) || workspace.branches[0];
+    const settings = (org.settings as Record<string, any>) || {};
+    const contact = settings.contact || {};
+
+    const [activeTab, setActiveTab] = useState<'general' | 'branding'>('general');
+    
+    // Properly extract the exact registration data filled during signup
+    const [form, setForm] = useState({
+        // Administrator Contact
+        contactName: contact.name || workspace.actor?.fullName || '',
+        email: settings.email || contact.email || workspace.actor?.email || primaryBranch?.email || '',
+        phone: settings.phone || contact.phone || primaryBranch?.phone || '',
+
+        // Academy Profile
+        name: org.name || '',
+        category: org.academyType || settings.category || 'Tuition',
+
+        // Campus & Branch Location
+        country: settings.country || primaryBranch?.country || 'India',
+        state: settings.state || primaryBranch?.state || '',
+        city: settings.city || primaryBranch?.city || '',
+        location: settings.location || primaryBranch?.location || '',
+        address: settings.address || primaryBranch?.address || '',
     });
+
     const [branding, setBranding] = useState({
-        primaryColor: org.branding.primaryColor ?? '',
-        tagline: org.branding.tagline ?? '',
-        logoUrl: org.branding.logoUrl ?? '',
+        primaryColor: org.branding?.primaryColor || '#4F46E5',
+        tagline: org.branding?.tagline || '',
+        logoUrl: org.branding?.logoUrl || '',
     });
-    const [triggers, setTriggers] = useState(org.settings.notificationTriggers ?? []);
+
     const [status, setStatus] = useState<string | null>(null);
+    const [customCountry, setCustomCountry] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [isSuccess, setIsSuccess] = useState(false);
 
     // Logo is stored with the academy branding as a data URL (max 512 KB)
     const pickLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,36 +81,84 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
         if (!file) return;
         if (file.size > 512 * 1024) {
             setStatus('Logo must be 512 KB or smaller.');
+            setIsSuccess(false);
             return;
         }
         const reader = new FileReader();
-        reader.onload = () => { setBranding(b => ({ ...b, logoUrl: String(reader.result) })); setStatus(null); };
+        reader.onload = () => { 
+            setBranding(b => ({ ...b, logoUrl: String(reader.result) })); 
+            setStatus(null); 
+        };
         reader.readAsDataURL(file);
     };
 
-    const save = async (payload: object) => {
-        setStatus('Saving…');
+    const saveProfile = async () => {
+        if (!form.name.trim()) {
+            setStatus('Academy Name is required.');
+            setIsSuccess(false);
+            return;
+        }
+
+        setSaving(true);
+        setStatus('Saving changes…');
+        setIsSuccess(false);
+
         try {
-            await api('/tenants', { method: 'PUT', body: JSON.stringify(payload) });
-            setStatus('Saved.');
+            await api('/tenants', {
+                method: 'PUT',
+                body: JSON.stringify({
+                    name: form.name.trim(),
+                    settings: {
+                        category: form.category.trim(),
+                        contact: {
+                            name: form.contactName.trim(),
+                            email: form.email.trim(),
+                            phone: form.phone.trim(),
+                        },
+                        email: form.email.trim(),
+                        phone: form.phone.trim(),
+                        country: (form.country === 'Other Country' && customCountry.trim() ? customCountry.trim() : form.country).trim(),
+                        state: form.state.trim(),
+                        city: form.city.trim(),
+                        location: form.location.trim(),
+                        address: form.address.trim(),
+                    },
+                }),
+            });
+            setStatus('Academy profile & location saved successfully.');
+            setIsSuccess(true);
             onSaved();
         } catch (err) {
-            setStatus((err as Error).message);
+            setStatus((err as Error).message || 'Failed to save changes.');
+            setIsSuccess(false);
+        } finally {
+            setSaving(false);
         }
     };
 
-    const generalFields: Array<{ key: keyof typeof general; label: string }> = [
-        { key: 'name', label: 'Academy Name' },
-        { key: 'category', label: 'Class Category' },
-        { key: 'email', label: 'Email Address' },
-        { key: 'phone', label: 'Mobile Number' },
-        { key: 'city', label: 'City / Location' },
-        { key: 'timezone', label: 'Timezone (IANA, e.g. Asia/Kolkata)' },
-        { key: 'currency', label: 'Currency (ISO code, e.g. INR)' },
-    ];
+    const saveBranding = async () => {
+        setSaving(true);
+        setStatus('Saving branding…');
+        setIsSuccess(false);
+
+        try {
+            await api('/tenants', {
+                method: 'PUT',
+                body: JSON.stringify({ branding }),
+            });
+            setStatus('Branding saved successfully.');
+            setIsSuccess(true);
+            onSaved();
+        } catch (err) {
+            setStatus((err as Error).message || 'Failed to save branding.');
+            setIsSuccess(false);
+        } finally {
+            setSaving(false);
+        }
+    };
 
     return (
-        <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Horizontal Tabs */}
             <div className="tab-list" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
                 {tabs.map(tab => {
@@ -89,7 +166,7 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
                     return (
                         <button
                             key={tab.id}
-                            onClick={() => { setActiveTab(tab.id); setStatus(null); }}
+                            onClick={() => { setActiveTab(tab.id as 'general' | 'branding'); setStatus(null); }}
                             className={`tab-trigger${isActive ? ' active' : ''}`}
                             style={{
                                 display: 'flex',
@@ -108,41 +185,217 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
                 })}
             </div>
 
-            {/* Content */}
+            {/* TAB 1: ACADEMY PROFILE & LOCATION (Registration Data) */}
             {activeTab === 'general' && (
-                <div className="cs-card" style={{ padding: '20px' }}>
-                    <div className="section-title" style={{ marginBottom: '4px' }}>General Settings</div>
-                    <div className="section-subtitle" style={{ marginBottom: '24px' }}>Your academy&apos;s basic profile and configuration</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', maxWidth: '560px' }}>
-                        {generalFields.map(field => (
-                            <div key={field.key}>
-                                <label className="cs-label">{field.label}</label>
-                                <input className="cs-input" value={general[field.key]} onChange={e => setGeneral({ ...general, [field.key]: e.target.value })} />
+                <div className="cs-card" style={{ padding: '24px', maxWidth: '780px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        
+                        {/* Section 1: Administrator Contact */}
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--cs-text-primary)', marginBottom: '4px' }}>
+                                Administrator Contact
                             </div>
-                        ))}
-                        <SaveButton status={status} label="Save Changes" onClick={() => save({
-                            name: general.name,
-                            timezone: general.timezone,
-                            currency: general.currency.toUpperCase(),
-                            settings: { category: general.category, email: general.email, phone: general.phone, city: general.city },
-                        })} />
+                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginBottom: '14px' }}>
+                                Contact details of the primary academy administrator
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                                <div>
+                                    <label className="cs-label">Administrator Full Name</label>
+                                    <input
+                                        className="cs-input"
+                                        value={form.contactName}
+                                        onChange={e => setForm({ ...form, contactName: e.target.value })}
+                                        placeholder="e.g. Aakansha Dhake"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="cs-label">Email Address</label>
+                                    <input
+                                        type="email"
+                                        className="cs-input"
+                                        value={form.email}
+                                        onChange={e => setForm({ ...form, email: e.target.value })}
+                                        placeholder="admin@academy.com"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="cs-label">Mobile Number</label>
+                                    <input
+                                        type="tel"
+                                        className="cs-input"
+                                        value={form.phone}
+                                        onChange={e => setForm({ ...form, phone: e.target.value })}
+                                        placeholder="10-digit mobile number"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ height: '1px', background: 'var(--cs-border)' }} />
+
+                        {/* Section 2: Academy Profile */}
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--cs-text-primary)', marginBottom: '4px' }}>
+                                Academy Profile
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginBottom: '14px' }}>
+                                Core organization name and instructional category
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                                <div>
+                                    <label className="cs-label">Academy Name *</label>
+                                    <input
+                                        className="cs-input"
+                                        value={form.name}
+                                        onChange={e => setForm({ ...form, name: e.target.value })}
+                                        placeholder="e.g. Apex Music Academy"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="cs-label">Class Category</label>
+                                    <select
+                                        className="cs-input"
+                                        value={form.category}
+                                        onChange={e => setForm({ ...form, category: e.target.value })}
+                                    >
+                                        {CATEGORIES.map(c => (
+                                            <option key={c} value={c}>{c}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ height: '1px', background: 'var(--cs-border)' }} />
+
+                        {/* Section 3: Campus & Branch Location */}
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--cs-text-primary)', marginBottom: '4px' }}>
+                                Campus & Branch Location
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginBottom: '14px' }}>
+                                Physical location and campus address registered for your academy
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                                <div>
+                                    <label className="cs-label">Country</label>
+                                    <CountrySelect
+                                        value={form.country}
+                                        onChange={val => {
+                                            setForm({ ...form, country: val });
+                                            if (val !== 'Other Country') setCustomCountry('');
+                                        }}
+                                    />
+                                    {form.country === 'Other Country' && (
+                                        <div style={{ marginTop: '8px' }}>
+                                            <input
+                                                className="cs-input"
+                                                placeholder="Enter country name"
+                                                value={customCountry}
+                                                onChange={e => setCustomCountry(e.target.value)}
+                                                autoFocus
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="cs-label">State</label>
+                                    <input
+                                        className="cs-input"
+                                        value={form.state}
+                                        onChange={e => setForm({ ...form, state: e.target.value })}
+                                        placeholder="e.g. Maharashtra"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="cs-label">City</label>
+                                    <input
+                                        className="cs-input"
+                                        value={form.city}
+                                        onChange={e => setForm({ ...form, city: e.target.value })}
+                                        placeholder="e.g. Pune"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="cs-label">Location / Area / Landmark</label>
+                                    <input
+                                        className="cs-input"
+                                        value={form.location}
+                                        onChange={e => setForm({ ...form, location: e.target.value })}
+                                        placeholder="e.g. Hinjewadi Phase 1"
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ marginTop: '14px' }}>
+                                <label className="cs-label">Full Street Address</label>
+                                <textarea
+                                    className="cs-input"
+                                    rows={2}
+                                    value={form.address}
+                                    onChange={e => setForm({ ...form, address: e.target.value })}
+                                    placeholder="e.g. 402 Crystal Plaza, Main Road"
+                                    style={{ resize: 'vertical' }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingTop: '10px' }}>
+                            <button
+                                className="btn-primary"
+                                onClick={saveProfile}
+                                disabled={saving}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                            >
+                                <Save size={15} />
+                                {saving ? 'Saving…' : 'Save Changes'}
+                            </button>
+                            {status && (
+                                <div style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontSize: '13px',
+                                    fontWeight: 500,
+                                    color: isSuccess ? '#059669' : '#DC2626'
+                                }}>
+                                    {isSuccess ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                                    <span>{status}</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
 
+            {/* TAB 2: BRANDING */}
             {activeTab === 'branding' && (
-                <div className="cs-card" style={{ padding: '20px' }}>
-                    <div className="section-title" style={{ marginBottom: '4px' }}>Branding</div>
-                    <div className="section-subtitle" style={{ marginBottom: '24px' }}>Your logo and colors appear on the parent portal and academy workspace</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', maxWidth: '560px' }}>
+                <div className="cs-card" style={{ padding: '24px', maxWidth: '640px' }}>
+                    <div className="section-title" style={{ marginBottom: '4px' }}>Academy Branding</div>
+                    <div className="section-subtitle" style={{ marginBottom: '24px' }}>Your logo, colors and tagline appear across parent portals and receipts</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
                             <label className="cs-label">Academy Logo</label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                <div style={{ width: 96, height: 96, borderRadius: '12px', border: '2px dashed var(--cs-border)', background: 'var(--cs-surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                                    {branding.logoUrl
-                                        // eslint-disable-next-line @next/next/no-img-element -- logo is a data URL
-                                        ? <img src={branding.logoUrl} alt="Academy logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                                        : <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>No logo</span>}
+                                <div style={{
+                                    width: 96,
+                                    height: 96,
+                                    borderRadius: '12px',
+                                    border: '2px dashed var(--cs-border)',
+                                    background: 'var(--cs-surface-2)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    overflow: 'hidden',
+                                    flexShrink: 0
+                                }}>
+                                    {branding.logoUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={branding.logoUrl} alt="Academy logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                    ) : (
+                                        <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>No logo</span>
+                                    )}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     <label className="btn-secondary" style={{ fontSize: '13px', cursor: 'pointer' }}>
@@ -150,75 +403,70 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
                                         <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" style={{ display: 'none' }} onChange={pickLogo} />
                                     </label>
                                     {branding.logoUrl && (
-                                        <button className="btn-ghost" style={{ fontSize: '12px' }} onClick={() => setBranding({ ...branding, logoUrl: '' })}>Remove logo</button>
+                                        <button className="btn-ghost" style={{ fontSize: '12px' }} onClick={() => setBranding({ ...branding, logoUrl: '' })}>
+                                            Remove logo
+                                        </button>
                                     )}
                                     <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>PNG, JPG, WEBP or SVG, up to 512 KB</span>
                                 </div>
                             </div>
                         </div>
+
                         <div>
-                            <label className="cs-label">Primary Color</label>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <input type="color" value={branding.primaryColor || '#1E3A8A'} onChange={e => setBranding({ ...branding, primaryColor: e.target.value })} />
-                                <input className="cs-input" value={branding.primaryColor} onChange={e => setBranding({ ...branding, primaryColor: e.target.value })} />
+                            <label className="cs-label">Primary Brand Color</label>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                <input
+                                    type="color"
+                                    value={branding.primaryColor || '#4F46E5'}
+                                    onChange={e => setBranding({ ...branding, primaryColor: e.target.value })}
+                                    style={{ width: '40px', height: '36px', padding: '2px', borderRadius: '8px', border: '1px solid var(--cs-border)', cursor: 'pointer' }}
+                                />
+                                <input
+                                    className="cs-input"
+                                    value={branding.primaryColor}
+                                    onChange={e => setBranding({ ...branding, primaryColor: e.target.value })}
+                                    style={{ width: '120px' }}
+                                />
                             </div>
                         </div>
+
                         <div>
                             <label className="cs-label">Academy Tagline</label>
-                            <input className="cs-input" value={branding.tagline} onChange={e => setBranding({ ...branding, tagline: e.target.value })} />
+                            <input
+                                className="cs-input"
+                                value={branding.tagline}
+                                onChange={e => setBranding({ ...branding, tagline: e.target.value })}
+                                placeholder="e.g. Empowering Excellence in Education"
+                            />
                         </div>
-                        <SaveButton status={status} label="Save Branding" onClick={() => save({ branding })} />
-                    </div>
-                </div>
-            )}
 
-            {activeTab === 'notifications' && (
-                <div className="cs-card" style={{ padding: '20px' }}>
-                    <div className="section-title" style={{ marginBottom: '4px' }}>Notification Settings</div>
-                    <div className="section-subtitle" style={{ marginBottom: '24px' }}>Configure channels and triggers for automated messages</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {triggers.length === 0 && <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>No notification triggers configured.</div>}
-                        {triggers.map((n, i) => (
-                            <div key={n.key} style={{ background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div>
-                                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--cs-text-primary)' }}>{n.label}</div>
-                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>{n.description}</div>
-                                    <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
-                                        {n.channels.map(c => <span key={c} className="badge badge-secondary" style={{ fontSize: '10px' }}>{c}</span>)}
-                                    </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingTop: '6px' }}>
+                            <button
+                                className="btn-primary"
+                                onClick={saveBranding}
+                                disabled={saving}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                            >
+                                <Save size={15} />
+                                {saving ? 'Saving…' : 'Save Branding'}
+                            </button>
+                            {status && (
+                                <div style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontSize: '13px',
+                                    fontWeight: 500,
+                                    color: isSuccess ? '#059669' : '#DC2626'
+                                }}>
+                                    {isSuccess ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                                    <span>{status}</span>
                                 </div>
-                                <button
-                                    aria-label={`Toggle ${n.label}`}
-                                    onClick={() => setTriggers(triggers.map((t, j) => (j === i ? { ...t, enabled: !t.enabled } : t)))}
-                                    style={{ width: 48, height: 26, borderRadius: '13px', border: 'none', background: n.enabled ? '#10B981' : 'var(--cs-surface-3)', cursor: 'pointer', position: 'relative', flexShrink: 0 }}
-                                >
-                                    <div style={{ position: 'absolute', top: 3, left: n.enabled ? 25 : 3, width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left 0.2s' }} />
-                                </button>
-                            </div>
-                        ))}
-                        {triggers.length > 0 && <SaveButton status={status} label="Save Notifications" onClick={() => save({ settings: { notificationTriggers: triggers } })} />}
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
-
-            {(activeTab === 'payments' || activeTab === 'security') && (
-                <div className="cs-card" style={{ padding: '60px 28px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '32px', marginBottom: '12px' }}>{activeTab === 'payments' ? '💳' : '🔐'}</div>
-                    <div className="section-title" style={{ marginBottom: '8px' }}>
-                        {activeTab === 'payments' ? 'Payment Gateway Settings' : 'Security Settings'}
-                    </div>
-                    <div className="section-subtitle">Coming soon — configure {activeTab === 'payments' ? 'Razorpay/PayU integration, fee convenience charge settings' : 'MFA, session policy, login history, and audit retention'}</div>
-                </div>
-            )}
-        </>
-    );
-}
-
-function SaveButton({ status, label, onClick }: { status: string | null; label: string; onClick: () => void }) {
-    return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-            <button className="btn-primary" onClick={onClick}><Save size={15} /> {label}</button>
-            {status && <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>{status}</span>}
         </div>
     );
 }

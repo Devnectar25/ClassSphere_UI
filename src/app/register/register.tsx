@@ -9,6 +9,7 @@ import {
 import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
 import AuthBrandPanel from '@/components/AuthBrandPanel';
+import CountrySelect from '@/components/CountrySelect';
 
 const steps = ['Account', 'Plan', 'Ready'];
 
@@ -24,7 +25,7 @@ const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?
 const NAME_REGEX = /^[a-zA-Z]+(?:[ '.-][a-zA-Z]*)*$/;
 // Academy names: letters, spaces and common punctuation (no digits)
 const ACADEMY_NAME_REGEX = /^[a-zA-Z][a-zA-Z &'.,()\-/]*$/;
-const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName', 'customCategory', 'state', 'city'];
+const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName', 'customCategory', 'customCountry', 'state', 'city'];
 const CATEGORY_VALUES = CATEGORIES.map(([value]) => value);
 const iconLeft: React.CSSProperties = { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' };
 const MAX = { academyName: 100, firstName: 50, lastName: 50, email: 254, phone: 10, password: 64 };
@@ -87,6 +88,7 @@ export default function RegisterPage() {
         academyType: 'Tuition',
         customCategory: '',
         country: 'India',
+        customCountry: '',
         state: '',
         city: '',
         location: '',
@@ -274,6 +276,17 @@ export default function RegisterPage() {
                 if (!value) return 'Please confirm your password.';
                 if (value !== form.password) return 'Passwords do not match.';
                 return '';
+            case 'country':
+                if (!val) return 'Please select your country.';
+                return '';
+            case 'customCountry':
+                if (form.country === 'Other Country') {
+                    if (!val) return 'Please specify your country name.';
+                    if (val.length < 2) return 'Country name must be at least 2 characters.';
+                    if (val.length > 60) return 'Country name cannot exceed 60 characters.';
+                    if (/\d/.test(val)) return 'Country name cannot contain numbers.';
+                }
+                return '';
             default:
                 return '';
         }
@@ -334,7 +347,9 @@ export default function RegisterPage() {
             'firstName', 'lastName', 'email', 'phone',
             'academyName', 'academyType',
             ...(form.academyType === 'Other' ? ['customCategory' as const] : []),
-            'country', 'state', 'city', 'location', 'address',
+            'country',
+            ...(form.country === 'Other Country' ? ['customCountry' as const] : []),
+            'state', 'city', 'location', 'address',
             'password', 'confirmPassword'
         ] as const;
         setTouched(Object.fromEntries(fields.map(f => [f, true])));
@@ -416,12 +431,17 @@ export default function RegisterPage() {
             const effectiveAcademyType = form.academyType === 'Other' && form.customCategory.trim()
                 ? form.customCategory.trim()
                 : form.academyType;
+            const effectiveCountry = form.country === 'Other Country' && form.customCountry.trim()
+                ? form.customCountry.trim()
+                : form.country;
             const payload: Record<string, unknown> = {
                 ...form,
                 academyType: effectiveAcademyType,
+                country: effectiveCountry,
             };
             delete payload.confirmPassword;
             delete payload.customCategory;
+            delete payload.customCountry;
 
             // 3. Create server-side Razorpay Autopay Subscription & Order
             const orderRes = await api<{
@@ -824,29 +844,53 @@ export default function RegisterPage() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                 <div>
                                     <label className="cs-label">Country <span className="reg-req">*</span></label>
-                                    <div style={{ position: 'relative' }}>
-                                        <Globe size={17} style={iconLeft} />
-                                        <select
-                                            className="cs-input reg-native-select"
-                                            value={form.country}
-                                            onChange={handleFieldChange('country')}
-                                            onBlur={handleBlur('country')}
-                                            style={{ paddingLeft: '42px', ...getInputStyle('country') }}
-                                        >
-                                            <option value="India">India</option>
-                                            <option value="United States">United States</option>
-                                            <option value="United Kingdom">United Kingdom</option>
-                                            <option value="Canada">Canada</option>
-                                            <option value="Australia">Australia</option>
-                                            <option value="United Arab Emirates">United Arab Emirates</option>
-                                            <option value="Singapore">Singapore</option>
-                                            <option value="Other">Other Country</option>
-                                        </select>
-                                    </div>
+                                    <CountrySelect
+                                        value={form.country}
+                                        onChange={val => {
+                                            setForm(f => ({
+                                                ...f,
+                                                country: val,
+                                                customCountry: val === 'Other Country' ? f.customCountry : '',
+                                            }));
+                                            if (touched.country) {
+                                                setFieldErrors(errs => ({ ...errs, country: validateField('country', val) }));
+                                            }
+                                        }}
+                                        onBlur={handleBlur('country')}
+                                        hasError={Boolean(touched.country && fieldErrors.country)}
+                                    />
                                     {touched.country && fieldErrors.country && (
                                         <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
                                             {fieldErrors.country}
                                         </p>
+                                    )}
+
+                                    {form.country === 'Other Country' && (
+                                        <div style={{ marginTop: '8px' }}>
+                                            <label className="cs-label" style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
+                                                Specify Country Name <span className="reg-req">*</span>
+                                            </label>
+                                            <div style={{ position: 'relative' }}>
+                                                <Globe size={16} style={iconLeft} />
+                                                <input
+                                                    className="cs-input reg-input"
+                                                    type="text"
+                                                    placeholder="Enter your country name"
+                                                    maxLength={60}
+                                                    value={form.customCountry}
+                                                    onChange={handleFieldChange('customCountry')}
+                                                    onBlur={handleBlur('customCountry')}
+                                                    style={{ paddingLeft: '42px', ...getInputStyle('customCountry') }}
+                                                    autoFocus
+                                                    required
+                                                />
+                                            </div>
+                                            {touched.customCountry && fieldErrors.customCountry && (
+                                                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
+                                                    {fieldErrors.customCountry}
+                                                </p>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
 

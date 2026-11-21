@@ -263,9 +263,9 @@ export default function PlatformAdminOverview() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
                     {/* Timeframe selector */}
-                    <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-2xs text-xs font-semibold">
+                    <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-2xs text-xs font-semibold shrink-0">
                         {(['today', 'week', 'month', 'year'] as const).map((t) => (
                             <button
                                 key={t}
@@ -283,17 +283,21 @@ export default function PlatformAdminOverview() {
                     <button
                         onClick={handleRefresh}
                         disabled={refreshing}
-                        className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs hover:border-slate-300 cursor-pointer disabled:opacity-70"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold transition-colors shadow-2xs hover:border-slate-300 cursor-pointer disabled:opacity-70 whitespace-nowrap shrink-0"
                         title="Refresh live metrics from database"
                     >
                         <RefreshCw size={14} className={refreshing ? 'animate-spin text-indigo-600' : ''} />
                         <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
                     </button>
                     <button
+                        type="button"
                         onClick={() => setShowOnboardModal(true)}
-                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-indigo-600/30 transition-all cursor-pointer"
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold tracking-wide shadow-sm shadow-indigo-600/30 hover:shadow-md hover:shadow-indigo-600/40 active:scale-[0.98] transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                        title="Provision a new academy workspace"
                     >
-                        <Plus size={15} />
+                        <span className="w-4 h-4 rounded-md bg-white/20 flex items-center justify-center shrink-0">
+                            <Plus size={12} strokeWidth={3} className="text-white" />
+                        </span>
                         <span>Create Academy</span>
                     </button>
                 </div>
@@ -603,9 +607,14 @@ export default function PlatformAdminOverview() {
                             <button
                                 type="submit"
                                 disabled={submitting}
-                                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-600/25 transition-all cursor-pointer flex items-center gap-1.5"
+                                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-sm shadow-indigo-600/25 hover:shadow-md hover:shadow-indigo-600/35 transition-all cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
                             >
-                                {submitting ? <>Provisioning… <RefreshCw size={13} className="animate-spin" /></> : 'Create Academy'}
+                                {submitting ? <>Provisioning… <RefreshCw size={13} className="animate-spin" /></> : (
+                                    <>
+                                        <Plus size={14} strokeWidth={2.5} />
+                                        <span>Create Academy</span>
+                                    </>
+                                )}
                             </button>
                         </div>
                     </form>
