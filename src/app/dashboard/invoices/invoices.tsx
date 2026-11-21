@@ -27,7 +27,12 @@ interface Invoice {
     paidAmount?: number;
     balanceAmount: number;
     dueDate: string;
-    status: 'paid' | 'pending' | 'overdue' | 'void' | 'partially_paid';
+    status: 'paid' | 'pending' | 'overdue' | 'void' | 'partially_paid' | 'waived';
+    overdue_status?: 'upcoming' | 'due' | 'in_grace' | 'overdue' | 'paid' | 'waived' | 'cancelled';
+    late_fee_amount?: number;
+    days_overdue?: number;
+    waived_reason?: string | null;
+    waived_at?: string | null;
     paidOn: string | null;
     payments?: PaymentTerm[];
 }
@@ -58,6 +63,8 @@ const statusConfig: Record<string, { label: string; cls: string; icon: React.Ele
     paid: { label: 'Paid', cls: 'badge-success', icon: CheckCircle },
     partially_paid: { label: 'Partially Paid', cls: 'badge-primary', icon: Clock },
     overdue: { label: 'Overdue', cls: 'badge-danger', icon: AlertCircle },
+    in_grace: { label: 'In Grace', cls: 'badge-warning', icon: Clock },
+    waived: { label: 'Waived', cls: 'badge-secondary', icon: CheckCircle },
     pending: { label: 'Pending', cls: 'badge-warning', icon: Clock },
     void: { label: 'Voided', cls: 'badge-secondary', icon: XCircle },
 };
@@ -79,7 +86,41 @@ export default function InvoicesPage() {
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
+    // Waive Late Fee Dialog state
+    const [waivingInvoice, setWaivingInvoice] = useState<Invoice | null>(null);
+    const [waiveReason, setWaiveReason] = useState('');
+    const [waiveError, setWaiveError] = useState<string | null>(null);
+    const [waiving, setWaiving] = useState(false);
+
     const money = (v: number) => formatMoney(v, currency);
+
+    const handleWaiveSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!waivingInvoice) return;
+        if (!waiveReason.trim()) {
+            setWaiveError('Please enter a reason for waiving the late fee.');
+            return;
+        }
+        setWaiving(true);
+        setWaiveError(null);
+        try {
+            await api('/billing/invoices/waive-late-fee', {
+                method: 'POST',
+                body: JSON.stringify({
+                    invoiceId: waivingInvoice.invoiceId,
+                    reason: waiveReason.trim(),
+                }),
+            });
+            setNotice(`Late fee for Invoice ${waivingInvoice.invoiceNumber} has been waived.`);
+            setWaivingInvoice(null);
+            setWaiveReason('');
+            reload();
+        } catch (err) {
+            setWaiveError((err as Error).message);
+        } finally {
+            setWaiving(false);
+        }
+    };
 
     
     const downloadInvoice = async (inv: Invoice) => {
@@ -682,11 +723,16 @@ export default function InvoicesPage() {
         }
     };
 
-    const filtered = data?.invoices.filter(inv =>
-        (activeTab === 'all' || inv.status === activeTab) &&
-        (inv.studentName.toLowerCase().includes(search.toLowerCase()) ||
-            inv.invoiceNumber.toLowerCase().includes(search.toLowerCase()))
-    ) ?? [];
+    const filtered = data?.invoices.filter(inv => {
+        const matchesSearch = inv.studentName.toLowerCase().includes(search.toLowerCase()) ||
+            inv.invoiceNumber.toLowerCase().includes(search.toLowerCase());
+        if (!matchesSearch) return false;
+        if (activeTab === 'all') return true;
+        if (activeTab === 'overdue') {
+            return inv.status === 'overdue' || inv.overdue_status === 'overdue' || inv.overdue_status === 'in_grace' || inv.overdue_status === 'waived';
+        }
+        return inv.status === activeTab;
+    }) ?? [];
 
     const total = filtered.length;
     const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
@@ -735,6 +781,66 @@ export default function InvoicesPage() {
                                 </div>
                             ))}
                         </div>
+
+                        {/* Overdue Banner when in Overdue tab */}
+                        {activeTab === 'overdue' && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.05)',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                borderRadius: '12px',
+                                padding: '16px 20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                flexWrap: 'wrap',
+                                gap: '12px'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <div style={{
+                                        width: 40,
+                                        height: 40,
+                                        borderRadius: '10px',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#EF4444'
+                                    }}>
+                                        <AlertCircle size={22} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: 700, fontSize: '16px', color: '#EF4444' }}>
+                                            Total Overdue: {money(filtered.reduce((acc, i) => acc + (i.balanceAmount || 0), 0))}
+                                        </div>
+                                        <div style={{ fontSize: '12.5px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>
+                                            {filtered.length} overdue invoice(s) • {money(filtered.reduce((acc, i) => acc + (i.late_fee_amount || 0), 0))} in assessed late fees
+                                        </div>
+                                    </div>
+                                </div>
+                                {canCollect && (
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        style={{ fontSize: '12px', padding: '6px 14px', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
+                                        onClick={async () => {
+                                            try {
+                                                setBusy(true);
+                                                await api('/billing/overdue/recalculate', { method: 'POST' });
+                                                setNotice('Overdue recalculation executed successfully.');
+                                                reload();
+                                            } catch (err) {
+                                                setNotice((err as Error).message);
+                                            } finally {
+                                                setBusy(false);
+                                            }
+                                        }}
+                                        disabled={busy}
+                                    >
+                                        Recalculate Late Fees
+                                    </button>
+                                )}
+                            </div>
+                        )}
 
                         {/* Main table */}
                         <div className="cs-card">
@@ -843,7 +949,12 @@ export default function InvoicesPage() {
                                                         <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', color: inv.status === 'paid' ? '#10B981' : inv.status === 'overdue' ? '#EF4444' : 'var(--cs-text-primary)' }}>
                                                             {money(inv.totalAmount)}
                                                         </div>
-                                                        {inv.balanceAmount > 0 && inv.balanceAmount < inv.totalAmount && (
+                                                        {Number(inv.late_fee_amount || 0) > 0 && (
+                                                            <div style={{ fontSize: '11px', color: '#EF4444', fontWeight: 600, whiteSpace: 'nowrap', marginTop: '1px' }}>
+                                                                + {money(inv.late_fee_amount || 0)} late fee
+                                                            </div>
+                                                        )}
+                                                        {inv.balanceAmount > 0 && inv.balanceAmount < (inv.totalAmount + Number(inv.late_fee_amount || 0)) && (
                                                             <div style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap', marginTop: '1px' }}>
                                                                 Balance {money(inv.balanceAmount)}
                                                             </div>
@@ -851,6 +962,11 @@ export default function InvoicesPage() {
                                                     </td>
                                                     <td style={{ padding: '9px 6px', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '11.5px', color: 'var(--cs-text-muted)' }}>
                                                         <div>{formatDate(inv.dueDate)}</div>
+                                                        {Number(inv.days_overdue || 0) > 0 && inv.status !== 'paid' && (
+                                                            <div style={{ color: '#EF4444', fontWeight: 600, fontSize: '10.5px', marginTop: '1px' }}>
+                                                                {inv.days_overdue} days overdue
+                                                            </div>
+                                                        )}
                                                         {inv.paidOn && inv.status === 'paid' && (
                                                             <div style={{ color: '#10B981', fontSize: '10.5px', marginTop: '1px' }}>
                                                                 Paid: {formatDate(inv.paidOn)}
@@ -858,12 +974,48 @@ export default function InvoicesPage() {
                                                         )}
                                                     </td>
                                                     <td style={{ padding: '9px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                                        <span className={`badge ${sc.cls}`} style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }}>
-                                                            <sc.icon size={10} /> {sc.label}
-                                                        </span>
+                                                        {inv.overdue_status === 'waived' ? (
+                                                            <span className="badge badge-secondary" style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }} title={inv.waived_reason ? `Waived: ${inv.waived_reason}` : 'Late fee waived'}>
+                                                                <CheckCircle size={10} /> Waived
+                                                            </span>
+                                                        ) : inv.overdue_status === 'in_grace' ? (
+                                                            <span className="badge badge-warning" style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }}>
+                                                                <Clock size={10} /> In Grace
+                                                            </span>
+                                                        ) : (
+                                                            <span className={`badge ${sc.cls}`} style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }}>
+                                                                <sc.icon size={10} /> {sc.label}
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td style={{ padding: '9px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                                            {canCollect && Number(inv.late_fee_amount || 0) > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn-secondary cell-nowrap"
+                                                                    style={{
+                                                                        padding: '4px 8px',
+                                                                        height: '28px',
+                                                                        fontSize: '11px',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                        gap: '3px',
+                                                                        borderRadius: '6px',
+                                                                        color: '#EF4444',
+                                                                        borderColor: 'rgba(239, 68, 68, 0.3)'
+                                                                    }}
+                                                                    onClick={() => {
+                                                                        setWaivingInvoice(inv);
+                                                                        setWaiveReason('');
+                                                                        setWaiveError(null);
+                                                                    }}
+                                                                    title={`Waive late fee of ${money(inv.late_fee_amount || 0)}`}
+                                                                >
+                                                                    Waive
+                                                                </button>
+                                                            )}
                                                             {canCollect && inv.balanceAmount > 0 && (
                                                                 <button
                                                                     type="button"
@@ -1083,6 +1235,67 @@ export default function InvoicesPage() {
                             </span>
                             <button className="btn-primary" type="submit" disabled={busy}>
                                 {busy ? 'Recording…' : 'Record Term Payment'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {waivingInvoice && (
+                <Modal title={`Waive Late Fee — ${waivingInvoice.invoiceNumber}`} onClose={() => setWaivingInvoice(null)}>
+                    <form onSubmit={handleWaiveSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ background: 'var(--cs-surface-2)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--cs-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Student:</span>
+                                <span style={{ fontSize: '13px', fontWeight: 600 }}>{waivingInvoice.studentName}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Late Fee Amount:</span>
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: '#EF4444' }}>{money(waivingInvoice.late_fee_amount || 0)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Current Balance:</span>
+                                <span style={{ fontSize: '13px', fontWeight: 600 }}>{money(waivingInvoice.balanceAmount)}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="cs-label" style={{ display: 'block', marginBottom: '6px' }}>
+                                Reason for Waiving <span style={{ color: '#EF4444' }}>*</span>
+                            </label>
+                            <textarea
+                                className="cs-input"
+                                rows={3}
+                                placeholder="Provide a mandatory reason for waiving this late fee (e.g. medical leave, verified banking delay, executive exception)..."
+                                value={waiveReason}
+                                onChange={e => setWaiveReason(e.target.value)}
+                                required
+                                style={{ width: '100%', resize: 'vertical' }}
+                            />
+                        </div>
+
+                        {waiveError && (
+                            <div className="alert alert-danger" style={{ fontSize: '12px', padding: '8px 12px' }}>
+                                {waiveError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => setWaivingInvoice(null)}
+                                disabled={waiving}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="btn-primary"
+                                disabled={waiving || !waiveReason.trim()}
+                                style={{ background: '#EF4444', borderColor: '#EF4444' }}
+                            >
+                                {waiving ? 'Waiving...' : 'Confirm Waive'}
                             </button>
                         </div>
                     </form>

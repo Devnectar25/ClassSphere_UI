@@ -3,8 +3,8 @@ import { useState, useRef } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { Percent, Tag, Pencil, Users, Check, ChevronLeft, ChevronRight, Plus, Layers, Calendar, DollarSign } from 'lucide-react';
-import { api, useApi, formatMoney } from '@/lib/api';
+import { Percent, Tag, Pencil, Users, Check, ChevronLeft, ChevronRight, Plus, Layers, Calendar, DollarSign, AlertCircle, Search, RefreshCw, Shield } from 'lucide-react';
+import { api, useApi, formatMoney, formatDate, initials } from '@/lib/api';
 import { useWorkspace } from '@/lib/workspace';
 import { can, useSession } from '@/lib/session';
 
@@ -32,12 +32,115 @@ interface FeeStructure {
     feePlans: FeePlan[];
 }
 
+interface OverdueItem {
+    invoice_id: string;
+    invoice_number: string;
+    student_id: string;
+    student_name: string;
+    student_email?: string;
+    student_phone?: string;
+    branch_id?: string;
+    branch_name?: string;
+    course_id?: string;
+    course_name?: string;
+    batch_id?: string;
+    batch_name?: string;
+    billing_period: string;
+    designation: string;
+    original_amount: number;
+    late_fee_amount: number;
+    paid_amount: number;
+    balance_amount: number;
+    due_date: string;
+    days_overdue: number;
+    overdue_status: 'upcoming' | 'due' | 'in_grace' | 'overdue' | 'paid' | 'waived' | 'cancelled';
+    status: string;
+    waived_reason?: string | null;
+    waived_at?: string | null;
+}
+
+interface OverdueData {
+    items: OverdueItem[];
+    summary: {
+        total_overdue_count: number;
+        total_overdue_amount: number;
+        total_late_fees: number;
+        total_waived_count?: number;
+        total_in_grace_count?: number;
+    };
+}
+
 export default function FeesPage() {
     const session = useSession();
     const canEdit = can(session, 'billing.write');
     const { currency } = useWorkspace();
     const { data, error, reload } = useApi<FeeStructure>('/fees');
     const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string }>>('/courses');
+
+    const [activeTab, setActiveTab] = useState<'plans' | 'overdue'>('plans');
+
+    // Overdue tab state & API hooks
+    const { data: overdueData, error: overdueError, reload: reloadOverdue } = useApi<OverdueData>('/billing/overdue');
+    const { data: branches } = useApi<Array<{ branchId: string; name: string }>>('/branches');
+    const { data: batches } = useApi<Array<{ batchId: string; name: string; courseId?: string }>>('/batches');
+
+    const [overdueSearch, setOverdueSearch] = useState('');
+    const [selectedBranch, setSelectedBranch] = useState('');
+    const [selectedCourse, setSelectedCourse] = useState('');
+    const [selectedBatch, setSelectedBatch] = useState('');
+    const [minDaysFilter, setMinDaysFilter] = useState('');
+
+    // Waive Late Fee dialog state
+    const [waivingInvoice, setWaivingInvoice] = useState<OverdueItem | null>(null);
+    const [waiveReason, setWaiveReason] = useState('');
+    const [waiveError, setWaiveError] = useState<string | null>(null);
+    const [waiving, setWaiving] = useState(false);
+    const [recalculating, setRecalculating] = useState(false);
+    const [overdueNotice, setOverdueNotice] = useState<string | null>(null);
+
+    const handleWaiveSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!waivingInvoice) return;
+        if (!waiveReason.trim()) {
+            setWaiveError('Please provide a reason for waiving this late fee.');
+            return;
+        }
+        setWaiving(true);
+        setWaiveError(null);
+        try {
+            await api('/billing/invoices/waive-late-fee', {
+                method: 'POST',
+                body: JSON.stringify({
+                    invoiceId: waivingInvoice.invoice_id,
+                    reason: waiveReason.trim(),
+                }),
+            });
+            setOverdueNotice(`Late fee for Invoice ${waivingInvoice.invoice_number} waived successfully.`);
+            setWaivingInvoice(null);
+            setWaiveReason('');
+            reloadOverdue();
+            reload();
+        } catch (err) {
+            setWaiveError((err as Error).message);
+        } finally {
+            setWaiving(false);
+        }
+    };
+
+    const handleRecalculate = async () => {
+        setRecalculating(true);
+        setOverdueNotice(null);
+        try {
+            await api('/billing/overdue/recalculate', { method: 'POST' });
+            setOverdueNotice('Overdue recalculation executed successfully.');
+            reloadOverdue();
+            reload();
+        } catch (err) {
+            setOverdueNotice((err as Error).message);
+        } finally {
+            setRecalculating(false);
+        }
+    };
 
     // Edit Plan modal state
     const [editingPlan, setEditingPlan] = useState<FeePlan | null>(null);
@@ -269,11 +372,45 @@ export default function FeesPage() {
 
     return (
         <>
-            <Topbar title="Fee Heads & Plans" subtitle="Configure recurring and one-time fee structures" />
+            <Topbar title="Fee Management" subtitle="Configure fee structures, rules, and manage overdue collections" />
             <div className="page-body">
+                {overdueNotice && (
+                    <div className="cs-card" style={{ padding: '12px 16px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                        <span>{overdueNotice}</span>
+                        <button className="btn-ghost" style={{ padding: '2px 8px', fontSize: '12px' }} onClick={() => setOverdueNotice(null)}>Dismiss</button>
+                    </div>
+                )}
+
+                {/* Top Tabs */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                    <button
+                        type="button"
+                        className={`tab-trigger${activeTab === 'plans' ? ' active' : ''}`}
+                        onClick={() => setActiveTab('plans')}
+                        style={{ padding: '8px 18px', fontSize: '13px', fontWeight: 600, borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        <Layers size={14} /> Fee Heads & Plans
+                    </button>
+                    <button
+                        type="button"
+                        className={`tab-trigger${activeTab === 'overdue' ? ' active' : ''}`}
+                        onClick={() => setActiveTab('overdue')}
+                        style={{ padding: '8px 18px', fontSize: '13px', fontWeight: 600, borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        <AlertCircle size={14} color="#EF4444" /> Overdue Fees
+                        {overdueData?.items && overdueData.items.length > 0 && (
+                            <span className="badge badge-danger" style={{ fontSize: '10.5px', padding: '1px 6px' }}>
+                                {overdueData.items.length}
+                            </span>
+                        )}
+                    </button>
+                </div>
+
                 {!data ? <PageState error={error} /> : (
                     <>
-                        {/* 1. Fee Heads Section */}
+                        {activeTab === 'plans' && (
+                            <>
+                                {/* 1. Fee Heads Section */}
                         <div className="cs-card" style={{ marginBottom: '24px' }}>
                             <div style={{
                                 padding: '16px 20px',
@@ -781,6 +918,284 @@ export default function FeesPage() {
                         </div>
                     </>
                 )}
+
+                {activeTab === 'overdue' && (
+                    <div>
+                        {/* Overdue KPI Cards */}
+                        {(() => {
+                            const overdueList = (overdueData?.items || []).filter(item => {
+                                if (selectedBranch && item.branch_id !== selectedBranch) return false;
+                                if (selectedCourse && item.course_id !== selectedCourse) return false;
+                                if (selectedBatch && item.batch_id !== selectedBatch) return false;
+                                if (minDaysFilter && item.days_overdue < Number(minDaysFilter)) return false;
+                                if (overdueSearch.trim()) {
+                                    const q = overdueSearch.toLowerCase();
+                                    return item.student_name.toLowerCase().includes(q) ||
+                                        item.invoice_number.toLowerCase().includes(q) ||
+                                        Boolean(item.student_phone && item.student_phone.includes(q));
+                                }
+                                return true;
+                            });
+
+                            const totalOverdue = overdueList.reduce((acc, i) => acc + (Number(i.balance_amount) || 0), 0);
+                            const totalLateFees = overdueList.reduce((acc, i) => acc + (Number(i.late_fee_amount) || 0), 0);
+                            const inGraceCount = overdueList.filter(i => i.overdue_status === 'in_grace').length;
+                            const waivedCount = overdueList.filter(i => i.overdue_status === 'waived').length;
+
+                            return (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
+                                        <div className="cs-card" style={{ padding: '20px' }}>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: '#EF4444', fontFamily: "'Plus Jakarta Sans', sans-serif", marginBottom: '4px' }}>
+                                                {formatMoney(totalOverdue, currency)}
+                                            </div>
+                                            <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 600 }}>Total Overdue Amount</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>Across {overdueList.length} overdue invoice(s)</div>
+                                        </div>
+
+                                        <div className="cs-card" style={{ padding: '20px' }}>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: '#6C63FF', fontFamily: "'Plus Jakarta Sans', sans-serif", marginBottom: '4px' }}>
+                                                {overdueList.length}
+                                            </div>
+                                            <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 600 }}>Overdue Invoices</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>Requiring follow-up or collection</div>
+                                        </div>
+
+                                        <div className="cs-card" style={{ padding: '20px' }}>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: '#F59E0B', fontFamily: "'Plus Jakarta Sans', sans-serif", marginBottom: '4px' }}>
+                                                {formatMoney(totalLateFees, currency)}
+                                            </div>
+                                            <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 600 }}>Assessed Late Fees</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>Applied past grace periods</div>
+                                        </div>
+
+                                        <div className="cs-card" style={{ padding: '20px' }}>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: '#10B981', fontFamily: "'Plus Jakarta Sans', sans-serif", marginBottom: '4px' }}>
+                                                {inGraceCount}
+                                            </div>
+                                            <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 600 }}>In Grace Period</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>{waivedCount} late fee(s) waived</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Filter Bar & Action Card */}
+                                    <div className="cs-card" style={{ marginBottom: '20px' }}>
+                                        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)', borderRadius: '10px', padding: '6px 12px', minWidth: '220px' }}>
+                                                    <Search size={14} color="var(--cs-text-muted)" />
+                                                    <input
+                                                        className="cs-input"
+                                                        placeholder="Search student, invoice, phone..."
+                                                        style={{ background: 'none', border: 'none', padding: 0, boxShadow: 'none', fontSize: '12.5px' }}
+                                                        value={overdueSearch}
+                                                        onChange={e => setOverdueSearch(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                {branches && branches.length > 1 && (
+                                                    <select
+                                                        className="cs-input"
+                                                        style={{ width: 'auto', padding: '6px 12px', fontSize: '12.5px', height: '36px' }}
+                                                        value={selectedBranch}
+                                                        onChange={e => setSelectedBranch(e.target.value)}
+                                                    >
+                                                        <option value="">All Branches</option>
+                                                        {branches.map(b => (
+                                                            <option key={b.branchId} value={b.branchId}>{b.name}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+
+                                                {courses && courses.length > 0 && (
+                                                    <select
+                                                        className="cs-input"
+                                                        style={{ width: 'auto', padding: '6px 12px', fontSize: '12.5px', height: '36px' }}
+                                                        value={selectedCourse}
+                                                        onChange={e => setSelectedCourse(e.target.value)}
+                                                    >
+                                                        <option value="">All Courses</option>
+                                                        {courses.map(c => (
+                                                            <option key={c.courseId} value={c.courseId}>{c.title}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+
+                                                {batches && batches.length > 0 && (
+                                                    <select
+                                                        className="cs-input"
+                                                        style={{ width: 'auto', padding: '6px 12px', fontSize: '12.5px', height: '36px' }}
+                                                        value={selectedBatch}
+                                                        onChange={e => setSelectedBatch(e.target.value)}
+                                                    >
+                                                        <option value="">All Batches</option>
+                                                        {batches
+                                                            .filter(b => !selectedCourse || b.courseId === selectedCourse)
+                                                            .map(b => (
+                                                                <option key={b.batchId} value={b.batchId}>{b.name}</option>
+                                                            ))}
+                                                    </select>
+                                                )}
+
+                                                <select
+                                                    className="cs-input"
+                                                    style={{ width: 'auto', padding: '6px 12px', fontSize: '12.5px', height: '36px' }}
+                                                    value={minDaysFilter}
+                                                    onChange={e => setMinDaysFilter(e.target.value)}
+                                                >
+                                                    <option value="">Any Overdue Days</option>
+                                                    <option value="1">1+ days</option>
+                                                    <option value="7">7+ days</option>
+                                                    <option value="15">15+ days</option>
+                                                    <option value="30">30+ days</option>
+                                                    <option value="60">60+ days</option>
+                                                </select>
+                                            </div>
+
+                                            {canEdit && (
+                                                <button
+                                                    type="button"
+                                                    className="btn-secondary"
+                                                    onClick={handleRecalculate}
+                                                    disabled={recalculating}
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '6px 14px' }}
+                                                >
+                                                    <RefreshCw size={13} className={recalculating ? 'spin' : ''} />
+                                                    {recalculating ? 'Recalculating...' : 'Recalculate Late Fees'}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Overdue Invoices Table */}
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table className="cs-table">
+                                                <thead>
+                                                    <tr style={{ background: 'var(--cs-surface-2)' }}>
+                                                        <th style={{ padding: '12px 16px' }}>Invoice #</th>
+                                                        <th style={{ padding: '12px 16px' }}>Student</th>
+                                                        <th style={{ padding: '12px 16px' }}>Branch / Batch</th>
+                                                        <th style={{ padding: '12px 16px' }}>Due Date</th>
+                                                        <th style={{ padding: '12px 16px' }}>Days Overdue</th>
+                                                        <th style={{ padding: '12px 16px' }}>Tuition Fee</th>
+                                                        <th style={{ padding: '12px 16px' }}>Late Fee</th>
+                                                        <th style={{ padding: '12px 16px' }}>Balance Due</th>
+                                                        <th style={{ padding: '12px 16px', textAlign: 'center' }}>Overdue Status</th>
+                                                        {canEdit && <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {overdueList.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={canEdit ? 10 : 9} style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--cs-text-muted)' }}>
+                                                                <AlertCircle size={32} style={{ opacity: 0.4, marginBottom: '8px', color: '#10B981' }} />
+                                                                <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>No overdue fee invoices</p>
+                                                                <p style={{ margin: '4px 0 0', fontSize: '12px' }}>All active student tuition invoices are settled or within their payment grace periods.</p>
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        overdueList.map(inv => {
+                                                            const hasLateFee = Number(inv.late_fee_amount || 0) > 0;
+                                                            return (
+                                                                <tr key={inv.invoice_id}>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                                        <code style={{ fontSize: '11px', background: 'var(--cs-surface-2)', padding: '2px 6px', borderRadius: '4px', color: '#8B85FF' }}>
+                                                                            {inv.invoice_number}
+                                                                        </code>
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                            <div className="avatar-placeholder" style={{ width: 28, height: 28, fontSize: '11px' }}>
+                                                                                {initials(inv.student_name)}
+                                                                            </div>
+                                                                            <div>
+                                                                                <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--cs-text-primary)' }}>{inv.student_name}</div>
+                                                                                {inv.student_phone && (
+                                                                                    <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{inv.student_phone}</div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle' }}>
+                                                                        <div style={{ fontSize: '12px', fontWeight: 500 }}>{inv.branch_name || '—'}</div>
+                                                                        <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>
+                                                                            {inv.course_name ? `${inv.course_name}${inv.batch_name ? ` • ${inv.batch_name}` : ''}` : inv.designation}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '12px' }}>
+                                                                        {formatDate(inv.due_date)}
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                                        {inv.days_overdue > 0 ? (
+                                                                            <span style={{ fontWeight: 700, color: '#EF4444', fontSize: '12px' }}>
+                                                                                {inv.days_overdue} days
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span style={{ color: 'var(--cs-text-muted)', fontSize: '12px' }}>0 days</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle', fontSize: '12.5px', fontWeight: 600 }}>
+                                                                        {formatMoney(inv.original_amount, currency)}
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle', fontSize: '12.5px' }}>
+                                                                        {hasLateFee ? (
+                                                                            <span style={{ color: '#EF4444', fontWeight: 700 }}>
+                                                                                +{formatMoney(inv.late_fee_amount, currency)}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span style={{ color: 'var(--cs-text-muted)' }}>₹0</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', verticalAlign: 'middle', fontSize: '13px', fontWeight: 800, color: '#EF4444' }}>
+                                                                        {formatMoney(inv.balance_amount, currency)}
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 16px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                                        {inv.overdue_status === 'waived' ? (
+                                                                            <span className="badge badge-secondary" title={inv.waived_reason ? `Reason: ${inv.waived_reason}` : 'Waived'}>
+                                                                                Waived
+                                                                            </span>
+                                                                        ) : inv.overdue_status === 'in_grace' ? (
+                                                                            <span className="badge badge-warning">
+                                                                                In Grace
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="badge badge-danger">
+                                                                                Overdue
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    {canEdit && (
+                                                                        <td style={{ padding: '10px 16px', textAlign: 'right', verticalAlign: 'middle' }}>
+                                                                            {hasLateFee && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="btn-secondary"
+                                                                                    onClick={() => {
+                                                                                        setWaivingInvoice(inv);
+                                                                                        setWaiveReason('');
+                                                                                        setWaiveError(null);
+                                                                                    }}
+                                                                                    style={{ fontSize: '11px', padding: '4px 10px', color: '#EF4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                                                                                >
+                                                                                    Waive Late Fee
+                                                                                </button>
+                                                                            )}
+                                                                        </td>
+                                                                    )}
+                                                                </tr>
+                                                            );
+                                                        })
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div>
+                )}
+                    </>
+                )}
             </div>
 
             {/* --- Modals --- */}
@@ -1231,6 +1646,68 @@ export default function FeesPage() {
                             >
                                 <Check size={14} />
                                 {saving ? 'Saving Changes…' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {/* 3. Waive Late Fee Modal Dialog */}
+            {waivingInvoice && (
+                <Modal title={`Waive Late Fee — ${waivingInvoice.invoice_number}`} onClose={() => setWaivingInvoice(null)}>
+                    <form onSubmit={handleWaiveSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ background: 'var(--cs-surface-2)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--cs-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Student:</span>
+                                <span style={{ fontSize: '13px', fontWeight: 600 }}>{waivingInvoice.student_name}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Late Fee Amount:</span>
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: '#EF4444' }}>{formatMoney(waivingInvoice.late_fee_amount, currency)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>Total Balance Due:</span>
+                                <span style={{ fontSize: '13px', fontWeight: 600 }}>{formatMoney(waivingInvoice.balance_amount, currency)}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="cs-label" style={{ display: 'block', marginBottom: '6px' }}>
+                                Reason for Waiving <span style={{ color: '#EF4444' }}>*</span>
+                            </label>
+                            <textarea
+                                className="cs-input"
+                                rows={3}
+                                placeholder="State the mandatory reason for waiving this fee (e.g. sickness with medical note, bank clearing delay)..."
+                                value={waiveReason}
+                                onChange={e => setWaiveReason(e.target.value)}
+                                required
+                                style={{ width: '100%', resize: 'vertical' }}
+                            />
+                        </div>
+
+                        {waiveError && (
+                            <div className="alert alert-danger" style={{ fontSize: '12px', padding: '8px 12px' }}>
+                                {waiveError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => setWaivingInvoice(null)}
+                                disabled={waiving}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="btn-primary"
+                                disabled={waiving || !waiveReason.trim()}
+                                style={{ background: '#EF4444', borderColor: '#EF4444' }}
+                            >
+                                {waiving ? 'Waiving...' : 'Confirm Waive'}
                             </button>
                         </div>
                     </form>

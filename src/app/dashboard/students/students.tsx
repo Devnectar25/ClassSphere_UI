@@ -4,8 +4,8 @@ import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
-import { useState, useRef } from 'react';
-import { Search, Phone, Users, UserCheck, UserX, Clock, ChevronLeft, ChevronRight, Plus, Pencil, Upload, Camera } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Search, Phone, Users, UserCheck, UserX, Clock, ChevronLeft, ChevronRight, Plus, Pencil, Upload, Camera, ArrowRight, ArrowLeft, Check, Copy, Send, UserPlus } from 'lucide-react';
 import { api, useApi, formatDate, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -54,6 +54,28 @@ const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
 
 const emptyForm = { firstName: '', lastName: '', email: '', phone: '', photo: '', dateOfBirth: '', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' };
 
+interface GuardianFormData {
+    mode: 'new' | 'existing';
+    existingGuardianId: string;
+    firstName: string;
+    lastName: string;
+    relationship: string;
+    email: string;
+    phone: string;
+    createLogin: boolean;
+}
+
+const emptyGuardianForm: GuardianFormData = {
+    mode: 'new',
+    existingGuardianId: '',
+    firstName: '',
+    lastName: '',
+    relationship: 'Parent',
+    email: '',
+    phone: '',
+    createLogin: true,
+};
+
 export default function StudentsPage() {
     const session = useSession();
     const { workspace } = useWorkspace();
@@ -71,6 +93,28 @@ export default function StudentsPage() {
     const [touched, setTouched] = useState<Record<string, boolean>>({});
     const [formError, setFormError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+
+    // 2-Step Registration state
+    const [step, setStep] = useState<1 | 2>(1);
+    const [guardianForm, setGuardianForm] = useState<GuardianFormData>(emptyGuardianForm);
+    const [guardianCountry, setGuardianCountry] = useState<CountryOption>(COUNTRIES[0]);
+    const [guardianFieldErrors, setGuardianFieldErrors] = useState<Record<string, string>>({});
+    const [guardianTouched, setGuardianTouched] = useState<Record<string, boolean>>({});
+    const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password?: string } | null>(null);
+    const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    // Guardian OTP Verification state
+    const [guardianOtp, setGuardianOtp] = useState<{ code: string; phone: string; expiresAt: number } | null>(null);
+    const [guardianOtpInput, setGuardianOtpInput] = useState('');
+    const [guardianOtpError, setGuardianOtpError] = useState<string | null>(null);
+    const [guardianVerifiedPhone, setGuardianVerifiedPhone] = useState<string | null>(null);
+    const [guardianResendIn, setGuardianResendIn] = useState(0);
+
+    useEffect(() => {
+        if (guardianResendIn <= 0) return;
+        const timer = setTimeout(() => setGuardianResendIn(s => s - 1), 1000);
+        return () => clearTimeout(timer);
+    }, [guardianResendIn]);
 
     // Edit student state
     const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -172,14 +216,162 @@ export default function StudentsPage() {
         };
     };
 
+    const validateGuardianField = (name: string, value: string, country: CountryOption = guardianCountry): string => {
+        const val = value.trim();
+        switch (name) {
+            case 'firstName':
+                if (!val) return 'Guardian first name is required.';
+                if (val.length < 2) return 'Guardian first name must be at least 2 characters.';
+                if (!NAME_REGEX.test(val)) return 'First name can only contain letters.';
+                return '';
+            case 'lastName':
+                if (!val) return 'Guardian last name is required.';
+                if (val.length < 2) return 'Guardian last name must be at least 2 characters.';
+                if (!NAME_REGEX.test(val)) return 'Last name can only contain letters.';
+                return '';
+            case 'email':
+                if (!val) return 'Guardian email address is required.';
+                if (!EMAIL_REGEX.test(val)) return 'Please enter a valid email address.';
+                return '';
+            case 'phone':
+                return validatePhoneNumber(val, country, true);
+            default:
+                return '';
+        }
+    };
+
+    const handleGuardianFieldChange = (key: keyof GuardianFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const val = e.target.value;
+        setGuardianForm(g => ({ ...g, [key]: val }));
+        if (guardianTouched[key]) {
+            setGuardianFieldErrors(errs => ({ ...errs, [key]: validateGuardianField(key, val) }));
+        }
+        if (formError) setFormError(null);
+    };
+
+    const handleGuardianBlur = (key: keyof GuardianFormData) => () => {
+        setGuardianTouched(t => ({ ...t, [key]: true }));
+        setGuardianFieldErrors(errs => ({ ...errs, [key]: validateGuardianField(key, String(guardianForm[key])) }));
+    };
+
+    const handleGuardianPhoneChange = (digits: string, country: CountryOption) => {
+        setGuardianForm(g => ({ ...g, phone: digits }));
+        setGuardianCountry(country);
+        if (guardianVerifiedPhone && guardianVerifiedPhone !== digits) {
+            setGuardianVerifiedPhone(null);
+            setGuardianOtp(null);
+            setGuardianOtpInput('');
+            setGuardianOtpError(null);
+        }
+        if (guardianTouched.phone) {
+            setGuardianFieldErrors(errs => ({ ...errs, phone: validatePhoneNumber(digits, country, true) }));
+        }
+        if (formError) setFormError(null);
+    };
+
+    const sendGuardianOtp = () => {
+        setGuardianTouched(t => ({ ...t, phone: true }));
+        const phoneErr = validatePhoneNumber(guardianForm.phone, guardianCountry, true);
+        if (phoneErr) {
+            setGuardianFieldErrors(errs => ({ ...errs, phone: phoneErr }));
+            return;
+        }
+        const digits = guardianForm.phone.replace(/\D/g, '');
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        setGuardianOtp({ code, phone: digits, expiresAt: Date.now() + 5 * 60 * 1000 });
+        setGuardianOtpInput('');
+        setGuardianOtpError(null);
+        setGuardianResendIn(30);
+    };
+
+    const verifyGuardianOtp = () => {
+        if (!guardianOtp) return;
+        const digits = guardianForm.phone.replace(/\D/g, '');
+        if (guardianOtp.phone !== digits) {
+            setGuardianOtpError('The mobile number was changed. Please send a new OTP.');
+            return;
+        }
+        if (Date.now() > guardianOtp.expiresAt) {
+            setGuardianOtpError('This OTP has expired. Please resend.');
+            return;
+        }
+        if (guardianOtpInput.trim() !== guardianOtp.code) {
+            setGuardianOtpError('Incorrect OTP. Please enter the valid 6-digit code.');
+            return;
+        }
+        setGuardianVerifiedPhone(digits);
+        setGuardianOtp(null);
+        setGuardianOtpInput('');
+        setGuardianOtpError(null);
+        setGuardianFieldErrors(errs => {
+            const copy = { ...errs };
+            delete copy.phone;
+            return copy;
+        });
+        if (formError) setFormError(null);
+    };
+
+    const getGuardianInputStyle = (fieldName: string) => {
+        const hasError = guardianTouched[fieldName] && Boolean(guardianFieldErrors[fieldName]);
+        return {
+            borderColor: hasError ? '#EF4444' : undefined,
+            background: hasError ? '#FEF2F2' : undefined,
+        };
+    };
+
+    const handleNextStep = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const allTouched = { firstName: true, lastName: true, email: true, phone: true, dateOfBirth: true };
+        setTouched(allTouched);
+
+        const errors: Record<string, string> = {
+            firstName: validateField('firstName', form.firstName),
+            lastName: validateField('lastName', form.lastName),
+            email: validateField('email', form.email),
+            phone: validateField('phone', form.phone, selectedCountry),
+            dateOfBirth: validateField('dateOfBirth', form.dateOfBirth),
+        };
+
+        if (form.feeStatus !== 'none' && (!form.feeAmount || Number(form.feeAmount) <= 0)) {
+            setFormError('Please enter a valid tuition fee amount.');
+            return;
+        }
+
+        const activeErrors = Object.fromEntries(Object.entries(errors).filter(([_, msg]) => Boolean(msg)));
+        setFieldErrors(activeErrors);
+
+        if (Object.keys(activeErrors).length > 0) {
+            setFormError('Please correct the highlighted student errors before proceeding.');
+            return;
+        }
+
+        setFormError(null);
+        setStep(2);
+    };
+
+    const handlePreviousStep = () => {
+        setFormError(null);
+        setStep(1);
+    };
+
     const closeAddModal = () => {
         setShowAdd(false);
+        setStep(1);
         setForm(emptyForm);
         setPhotoPreview(null);
         setPhotoError(null);
         setFieldErrors({});
         setTouched({});
         setFormError(null);
+        setGuardianForm(emptyGuardianForm);
+        setGuardianFieldErrors({});
+        setGuardianTouched({});
+        setGuardianCountry(COUNTRIES[0]);
+        setGuardianVerifiedPhone(null);
+        setGuardianOtp(null);
+        setGuardianOtpInput('');
+        setGuardianOtpError(null);
+        setGuardianResendIn(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -187,7 +379,8 @@ export default function StudentsPage() {
     if (search) query.set('q', search);
     if (statusFilter !== 'all') query.set('status', statusFilter);
     const { data, error, reload } = useApi<StudentSearch>(`/students?${query}`);
-    const { data: batches } = useApi<Array<{ batchId: string; name: string; courseTitle?: string; tuitionAmount?: number }>>(showAdd || !!editingStudent ? '/batches' : null);
+    const { data: batches } = useApi<Array<{ batchId: string; name: string; courseTitle?: string; tuitionAmount?: number; branchId?: string }>>(showAdd || !!editingStudent ? '/batches' : null);
+    const { data: rawGuardians } = useApi<Array<{ guardianId: string; firstName: string; lastName: string; phone: string; email: string; relationship: string; householdCode?: string }>>(showAdd ? '/guardians' : null);
 
     const counts = data?.statusCounts ?? {};
     const totalStudents = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -215,30 +408,53 @@ export default function StudentsPage() {
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const allTouched = { firstName: true, lastName: true, email: true, phone: true, dateOfBirth: true };
-        setTouched(allTouched);
-
-        const errors: Record<string, string> = {
-            firstName: validateField('firstName', form.firstName),
-            lastName: validateField('lastName', form.lastName),
-            email: validateField('email', form.email),
-            phone: validateField('phone', form.phone, selectedCountry),
-            dateOfBirth: validateField('dateOfBirth', form.dateOfBirth),
-        };
-
-        const activeErrors = Object.fromEntries(Object.entries(errors).filter(([_, msg]) => Boolean(msg)));
-        setFieldErrors(activeErrors);
-
-        if (Object.keys(activeErrors).length > 0) {
-            setFormError('Please correct the highlighted errors before submitting.');
+        if (step === 1) {
+            handleNextStep(e);
             return;
+        }
+
+        // Validate step 2: Guardian Registration
+        if (guardianForm.mode === 'new') {
+            const allGTouched = { firstName: true, lastName: true, email: true, phone: true };
+            setGuardianTouched(allGTouched);
+
+            const gErrors: Record<string, string> = {
+                firstName: validateGuardianField('firstName', guardianForm.firstName),
+                lastName: validateGuardianField('lastName', guardianForm.lastName),
+                email: validateGuardianField('email', guardianForm.email),
+                phone: validateGuardianField('phone', guardianForm.phone, guardianCountry),
+            };
+
+            const guardianDigits = guardianForm.phone.replace(/\D/g, '');
+            if (!gErrors.phone && (!guardianVerifiedPhone || guardianVerifiedPhone !== guardianDigits)) {
+                gErrors.phone = 'Please verify the guardian mobile number with OTP.';
+            }
+
+            const activeGErrors = Object.fromEntries(Object.entries(gErrors).filter(([_, msg]) => Boolean(msg)));
+            setGuardianFieldErrors(activeGErrors);
+
+            if (Object.keys(activeGErrors).length > 0) {
+                if (!guardianVerifiedPhone || guardianVerifiedPhone !== guardianDigits) {
+                    setFormError('Please verify the guardian mobile number with OTP before completing registration.');
+                } else {
+                    setFormError('Please correct the highlighted guardian errors before submitting.');
+                }
+                return;
+            }
+        } else {
+            if (!guardianForm.existingGuardianId) {
+                setFormError('Please select an existing guardian to link to this student.');
+                return;
+            }
         }
 
         setSaving(true);
         setFormError(null);
         try {
             const formattedPhone = form.phone ? `${selectedCountry.dialCode} ${form.phone}`.trim() : undefined;
-            await api('/students', {
+            const formattedGuardianPhone = guardianForm.phone ? `${guardianCountry.dialCode} ${guardianForm.phone}`.trim() : undefined;
+
+            const res = await api<{ studentId: string; enrollmentNumber: string; credentials?: { name: string; email: string; password?: string } }>('/students', {
                 method: 'POST',
                 body: JSON.stringify({
                     ...form,
@@ -248,10 +464,29 @@ export default function StudentsPage() {
                     branchId: form.branchId || session?.selectedBranchId || undefined,
                     feeStatus: form.feeStatus,
                     feeAmount: form.feeAmount || undefined,
+                    guardian: guardianForm.mode === 'existing' ? {
+                        mode: 'existing',
+                        guardianId: guardianForm.existingGuardianId,
+                    } : {
+                        mode: 'new',
+                        firstName: guardianForm.firstName.trim(),
+                        lastName: guardianForm.lastName.trim(),
+                        relationship: guardianForm.relationship || 'Parent',
+                        email: guardianForm.email.trim().toLowerCase(),
+                        phone: formattedGuardianPhone,
+                        countryCode: guardianCountry.dialCode,
+                        createLogin: guardianForm.createLogin,
+                    },
                 }),
             });
+
             closeAddModal();
             reload();
+            if (res?.credentials?.password) {
+                setCreatedCredentials(res.credentials);
+            }
+            setActionBanner({ type: 'success', text: `Student ${form.firstName} ${form.lastName} registered successfully with guardian.` });
+            setTimeout(() => setActionBanner(null), 6000);
         } catch (err) {
             setFormError((err as Error).message);
         } finally {
@@ -314,7 +549,7 @@ export default function StudentsPage() {
             phone: parsedDigits,
             status: s.status,
             batchId: '',
-            branchId: s.branchId || '',
+            branchId: s.branchId || workspace?.branches.find(b => b.isPrimary)?.branchId || '',
             feeStatus: s.feeStatus || 'none',
             feeAmount: '',
         });
@@ -389,6 +624,32 @@ export default function StudentsPage() {
                         </div>
                     ))}
                 </div>
+
+                {/* Action Banner */}
+                {actionBanner && (
+                    <div style={{
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        marginBottom: '16px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: actionBanner.type === 'success' ? '#ECFDF5' : '#FEF2F2',
+                        color: actionBanner.type === 'success' ? '#065F46' : '#991B1B',
+                        border: `1px solid ${actionBanner.type === 'success' ? '#A7F3D0' : '#FECACA'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                    }}>
+                        <span>{actionBanner.text}</span>
+                        <button
+                            type="button"
+                            onClick={() => setActionBanner(null)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
 
                 {/* Table card */}
                 <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
@@ -690,256 +951,736 @@ export default function StudentsPage() {
                 </div>
             </div>
 
-            {/* Add Student Modal */}
+            {/* Add Student Modal (2-Step Registration) */}
             {showAdd && (
-                <Modal title="Add Student" onClose={closeAddModal} maxWidth="660px">
-                    <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        {/* Student Photo Upload */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                            <div style={{ position: 'relative', width: 56, height: 56, borderRadius: '50%', overflow: 'hidden', background: '#FFFFFF', border: '2px dashed #CBD5E1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                {photoPreview ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={photoPreview} alt="Student preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Modal title="Add Student" onClose={closeAddModal} maxWidth="660px" style={{ padding: '18px 24px' }}>
+                    {/* 2-Step Progress Indicator */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '14px' }}>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            padding: '4px 12px', borderRadius: '16px',
+                            background: step === 1 ? '#EEF2FF' : '#ECFDF5',
+                            color: step === 1 ? '#4F46E5' : '#059669',
+                            fontSize: '12px', fontWeight: 600,
+                            border: step === 1 ? '1px solid #C7D2FE' : '1px solid #A7F3D0'
+                        }}>
+                            <span style={{
+                                width: 18, height: 18, borderRadius: '50%',
+                                background: step > 1 ? '#059669' : '#4F46E5',
+                                color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px'
+                            }}>
+                                {step > 1 ? '✓' : '1'}
+                            </span>
+                            Step 1: Student Details
+                        </div>
+
+                        <div style={{ width: 24, height: 2, background: step > 1 ? '#059669' : '#E2E8F0' }} />
+
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            padding: '4px 12px', borderRadius: '16px',
+                            background: step === 2 ? '#EEF2FF' : '#F1F5F9',
+                            color: step === 2 ? '#4F46E5' : '#64748B',
+                            fontSize: '12px', fontWeight: 600,
+                            border: step === 2 ? '1px solid #C7D2FE' : '1px solid transparent'
+                        }}>
+                            <span style={{
+                                width: 18, height: 18, borderRadius: '50%',
+                                background: step === 2 ? '#4F46E5' : '#94A3B8',
+                                color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px'
+                            }}>
+                                2
+                            </span>
+                            Step 2: Guardian Registration
+                        </div>
+                    </div>
+
+                    <form onSubmit={step === 1 ? handleNextStep : submit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
+                        {step === 1 ? (
+                            <>
+                                {/* Student Photo Upload */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                                    <div style={{ position: 'relative', width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: '#FFFFFF', border: '2px dashed #CBD5E1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        {photoPreview ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={photoPreview} alt="Student preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>
+                                                <Camera size={18} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label
+                                                className="btn-secondary"
+                                                style={{
+                                                    height: '28px',
+                                                    padding: '0 10px',
+                                                    fontSize: '12px',
+                                                    cursor: 'pointer',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                }}
+                                            >
+                                                <Upload size={12} /> {photoPreview ? 'Change Photo' : 'Upload Photo'}
+                                                <input
+                                                    ref={fileInputRef}
+                                                    type="file"
+                                                    accept="image/png,image/jpeg,image/webp"
+                                                    style={{ display: 'none' }}
+                                                    onChange={handlePhotoSelect}
+                                                />
+                                            </label>
+                                            {photoPreview && (
+                                                <button
+                                                    type="button"
+                                                    className="btn-ghost"
+                                                    onClick={handleRemovePhoto}
+                                                    style={{ height: '28px', padding: '0 6px', fontSize: '11px', color: '#EF4444' }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
+                                        </div>
+                                        {photoError ? (
+                                            <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 500 }}>{photoError}</span>
+                                        ) : (
+                                            <span style={{ fontSize: '11px', color: '#64748B' }}>
+                                                Student photo (PNG, JPG, WebP up to 2 MB)
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label">First Name <span style={{ color: '#EF4444' }}>*</span></label>
+                                        <input
+                                            className="cs-input"
+                                            placeholder="First name"
+                                            value={form.firstName}
+                                            onChange={handleFieldChange('firstName')}
+                                            onBlur={handleBlur('firstName')}
+                                            style={getInputStyle('firstName')}
+                                        />
+                                        {touched.firstName && fieldErrors.firstName && (
+                                            <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                {fieldErrors.firstName}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="cs-label">Last Name <span style={{ color: '#EF4444' }}>*</span></label>
+                                        <input
+                                            className="cs-input"
+                                            placeholder="Last name"
+                                            value={form.lastName}
+                                            onChange={handleFieldChange('lastName')}
+                                            onBlur={handleBlur('lastName')}
+                                            style={getInputStyle('lastName')}
+                                        />
+                                        {touched.lastName && fieldErrors.lastName && (
+                                            <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                {fieldErrors.lastName}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="cs-label">Email <span style={{ color: '#EF4444' }}>*</span></label>
+                                    <input
+                                        className="cs-input"
+                                        type="email"
+                                        placeholder="student@example.com"
+                                        value={form.email}
+                                        onChange={handleFieldChange('email')}
+                                        onBlur={handleBlur('email')}
+                                        style={getInputStyle('email')}
+                                    />
+                                    {touched.email && fieldErrors.email && (
+                                        <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                            {fieldErrors.email}
+                                        </p>
+                                    )}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label">Mobile Number <span style={{ color: '#EF4444' }}>*</span></label>
+                                        <CountryPhoneInput
+                                            value={form.phone}
+                                            selectedCountry={selectedCountry}
+                                            onCountryChange={setSelectedCountry}
+                                            onChange={handlePhoneChange}
+                                            onBlur={handleBlur('phone')}
+                                            touched={touched.phone}
+                                            error={fieldErrors.phone}
+                                            required={true}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="cs-label">Date of Birth</label>
+                                        <input
+                                            className="cs-input"
+                                            type="date"
+                                            max={new Date().toISOString().split('T')[0]}
+                                            value={form.dateOfBirth}
+                                            onChange={handleFieldChange('dateOfBirth')}
+                                            onBlur={handleBlur('dateOfBirth')}
+                                            style={getInputStyle('dateOfBirth')}
+                                        />
+                                        {touched.dateOfBirth && fieldErrors.dateOfBirth && (
+                                            <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                {fieldErrors.dateOfBirth}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                {!branchScoped && (workspace?.branches.length ?? 0) > 1 ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                        <div>
+                                            <label className="cs-label">Home Branch</label>
+                                            <select
+                                                className="cs-input"
+                                                value={form.branchId || session?.selectedBranchId || workspace?.branches.find(b => b.isPrimary)?.branchId || ''}
+                                                onChange={e => setForm({ ...form, branchId: e.target.value, batchId: '' })}
+                                            >
+                                                {workspace?.branches.map(b => (
+                                                    <option key={b.branchId} value={b.branchId}>
+                                                        {b.name}{b.isPrimary ? ' (Primary)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="cs-label">Enroll in Batch (optional)</label>
+                                            <select
+                                                className="cs-input"
+                                                value={form.batchId}
+                                                onChange={e => {
+                                                    const bId = e.target.value;
+                                                    const selected = batches?.find(b => b.batchId === bId);
+                                                    setForm(f => ({
+                                                        ...f,
+                                                        batchId: bId,
+                                                        feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : (bId ? f.feeAmount : ''),
+                                                        feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
+                                                    }));
+                                                }}
+                                            >
+                                                {(() => {
+                                                    const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
+                                                    const branchBatches = batches?.filter(b => !activeBranch || !b.branchId || b.branchId === activeBranch) || [];
+                                                    const placeholder = !batches
+                                                        ? 'Loading batches…'
+                                                        : branchBatches.length > 0
+                                                            ? '— Select a batch (optional) —'
+                                                            : '— No batches available for this branch —';
+                                                    return (
+                                                        <>
+                                                            <option value="">{placeholder}</option>
+                                                            {branchBatches.map(b => (
+                                                                <option key={b.batchId} value={b.batchId}>
+                                                                    {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
+                                                                </option>
+                                                            ))}
+                                                        </>
+                                                    );
+                                                })()}
+                                            </select>
+                                        </div>
+                                    </div>
                                 ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>
-                                        <Camera size={20} />
+                                    <div>
+                                        <label className="cs-label">Enroll in Batch (optional)</label>
+                                        <select
+                                            className="cs-input"
+                                            value={form.batchId}
+                                            onChange={e => {
+                                                const bId = e.target.value;
+                                                const selected = batches?.find(b => b.batchId === bId);
+                                                setForm(f => ({
+                                                    ...f,
+                                                    batchId: bId,
+                                                    feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : (bId ? f.feeAmount : ''),
+                                                    feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
+                                                }));
+                                            }}
+                                        >
+                                            {(() => {
+                                                const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
+                                                const branchBatches = batches?.filter(b => !activeBranch || !b.branchId || b.branchId === activeBranch) || [];
+                                                const placeholder = !batches
+                                                    ? 'Loading batches…'
+                                                    : branchBatches.length > 0
+                                                        ? '— Select a batch (optional) —'
+                                                        : '— No batches available for this branch —';
+                                                return (
+                                                    <>
+                                                        <option value="">{placeholder}</option>
+                                                        {branchBatches.map(b => (
+                                                            <option key={b.batchId} value={b.batchId}>
+                                                                {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
+                                                            </option>
+                                                        ))}
+                                                    </>
+                                                );
+                                            })()}
+                                        </select>
                                     </div>
                                 )}
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <label
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label">Fee Status</label>
+                                        <select
+                                            className="cs-input"
+                                            value={form.feeStatus}
+                                            onChange={e => {
+                                                const status = e.target.value;
+                                                setForm(f => ({
+                                                    ...f,
+                                                    feeStatus: status,
+                                                    feeAmount: status === 'none' ? '' : f.feeAmount
+                                                }));
+                                            }}
+                                        >
+                                            <option value="none">— No Fee (Exempt) —</option>
+                                            <option value="pending">Pending (Fee Due)</option>
+                                            <option value="paid">Paid (Paid Upfront)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="cs-label">
+                                            Fee / Tuition Amount {form.feeStatus !== 'none' && <span style={{ color: '#EF4444' }}>*</span>}
+                                        </label>
+                                        <input
+                                            className="cs-input"
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            placeholder={form.feeStatus === 'none' ? '—' : 'e.g. 5000'}
+                                            disabled={form.feeStatus === 'none'}
+                                            value={form.feeAmount}
+                                            onChange={e => setForm({ ...form, feeAmount: e.target.value })}
+                                            style={{
+                                                opacity: form.feeStatus === 'none' ? 0.6 : 1,
+                                                cursor: form.feeStatus === 'none' ? 'not-allowed' : 'text'
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                {formError && (
+                                    <div style={{
+                                        color: '#B91C1C',
+                                        background: '#FEF2F2',
+                                        border: '1px solid #FECACA',
+                                        padding: '10px 12px',
+                                        borderRadius: '6px',
+                                        fontSize: '13px',
+                                        fontWeight: 500,
+                                    }}>
+                                        {formError}
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                                    <button
+                                        type="button"
                                         className="btn-secondary"
+                                        onClick={closeAddModal}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn-primary"
+                                        onClick={handleNextStep}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                    >
+                                        Next: Guardian Details <ArrowRight size={14} />
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* Mode Selector: New Guardian vs Existing Guardian */}
+                                <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', borderBottom: '1px solid #E2E8F0', paddingBottom: '10px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setGuardianForm(g => ({ ...g, mode: 'new' }));
+                                            if (formError) setFormError(null);
+                                        }}
                                         style={{
-                                            height: '30px',
-                                            padding: '0 10px',
+                                            padding: '6px 14px',
                                             fontSize: '12px',
+                                            fontWeight: 600,
+                                            borderRadius: '6px',
+                                            border: 'none',
                                             cursor: 'pointer',
+                                            background: guardianForm.mode === 'new' ? '#4F46E5' : '#F1F5F9',
+                                            color: guardianForm.mode === 'new' ? '#FFFFFF' : '#64748B',
                                             display: 'inline-flex',
                                             alignItems: 'center',
                                             gap: '6px',
+                                            transition: 'all 0.15s ease'
                                         }}
                                     >
-                                        <Upload size={12} /> {photoPreview ? 'Change Photo' : 'Upload Photo'}
-                                        <input
-                                            ref={fileInputRef}
-                                            type="file"
-                                            accept="image/png,image/jpeg,image/webp"
-                                            style={{ display: 'none' }}
-                                            onChange={handlePhotoSelect}
-                                        />
-                                    </label>
-                                    {photoPreview && (
+                                        <UserPlus size={13} /> Add New Guardian
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setGuardianForm(g => ({ ...g, mode: 'existing' }));
+                                            if (formError) setFormError(null);
+                                        }}
+                                        style={{
+                                            padding: '6px 14px',
+                                            fontSize: '12px',
+                                            fontWeight: 600,
+                                            borderRadius: '6px',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            background: guardianForm.mode === 'existing' ? '#4F46E5' : '#F1F5F9',
+                                            color: guardianForm.mode === 'existing' ? '#FFFFFF' : '#64748B',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <Users size={13} /> Link Existing Guardian
+                                    </button>
+                                </div>
+
+                                {guardianForm.mode === 'new' ? (
+                                    <>
+                                        <div>
+                                            <label className="cs-label">Relationship to Student</label>
+                                            <select
+                                                className="cs-input"
+                                                value={guardianForm.relationship}
+                                                onChange={e => setGuardianForm(g => ({ ...g, relationship: e.target.value }))}
+                                            >
+                                                <option value="Mother">Mother</option>
+                                                <option value="Father">Father</option>
+                                                <option value="Parent">Parent</option>
+                                                <option value="Guardian">Legal Guardian</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                            <div>
+                                                <label className="cs-label">Guardian First Name <span style={{ color: '#EF4444' }}>*</span></label>
+                                                <input
+                                                    className="cs-input"
+                                                    placeholder="First name"
+                                                    value={guardianForm.firstName}
+                                                    onChange={handleGuardianFieldChange('firstName')}
+                                                    onBlur={handleGuardianBlur('firstName')}
+                                                    style={getGuardianInputStyle('firstName')}
+                                                />
+                                                {guardianTouched.firstName && guardianFieldErrors.firstName && (
+                                                    <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                        {guardianFieldErrors.firstName}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <label className="cs-label">Guardian Last Name <span style={{ color: '#EF4444' }}>*</span></label>
+                                                <input
+                                                    className="cs-input"
+                                                    placeholder="Last name"
+                                                    value={guardianForm.lastName}
+                                                    onChange={handleGuardianFieldChange('lastName')}
+                                                    onBlur={handleGuardianBlur('lastName')}
+                                                    style={getGuardianInputStyle('lastName')}
+                                                />
+                                                {guardianTouched.lastName && guardianFieldErrors.lastName && (
+                                                    <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                        {guardianFieldErrors.lastName}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="cs-label">Guardian Email <span style={{ color: '#EF4444' }}>*</span></label>
+                                            <input
+                                                className="cs-input"
+                                                type="email"
+                                                placeholder="parent@example.com"
+                                                value={guardianForm.email}
+                                                onChange={handleGuardianFieldChange('email')}
+                                                onBlur={handleGuardianBlur('email')}
+                                                style={getGuardianInputStyle('email')}
+                                            />
+                                            {guardianTouched.email && guardianFieldErrors.email && (
+                                                <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                    {guardianFieldErrors.email}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                <label className="cs-label" style={{ margin: 0 }}>
+                                                    Guardian Mobile Number <span style={{ color: '#EF4444' }}>*</span>
+                                                </label>
+                                                {guardianVerifiedPhone && guardianVerifiedPhone === guardianForm.phone.replace(/\D/g, '') && (
+                                                    <span style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        color: '#059669',
+                                                        background: '#ECFDF5',
+                                                        border: '1px solid #A7F3D0',
+                                                        padding: '1px 8px',
+                                                        borderRadius: '12px'
+                                                    }}>
+                                                        <Check size={12} /> Verified
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <CountryPhoneInput
+                                                        value={guardianForm.phone}
+                                                        selectedCountry={guardianCountry}
+                                                        onCountryChange={setGuardianCountry}
+                                                        onChange={handleGuardianPhoneChange}
+                                                        onBlur={handleGuardianBlur('phone')}
+                                                        touched={guardianTouched.phone}
+                                                        error={guardianFieldErrors.phone}
+                                                        required={true}
+                                                    />
+                                                </div>
+                                                {guardianVerifiedPhone && guardianVerifiedPhone === guardianForm.phone.replace(/\D/g, '') ? (
+                                                    <button
+                                                        type="button"
+                                                        disabled
+                                                        style={{
+                                                            height: '38px',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            padding: '0 12px',
+                                                            background: '#ECFDF5',
+                                                            color: '#059669',
+                                                            border: '1px solid #A7F3D0',
+                                                            borderRadius: '6px',
+                                                            fontSize: '12px',
+                                                            fontWeight: 600,
+                                                            whiteSpace: 'nowrap',
+                                                            flexShrink: 0,
+                                                            cursor: 'default'
+                                                        }}
+                                                    >
+                                                        <Check size={14} /> Verified
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-secondary"
+                                                        onClick={sendGuardianOtp}
+                                                        disabled={guardianResendIn > 0 || !guardianForm.phone.trim()}
+                                                        style={{
+                                                            height: '38px',
+                                                            whiteSpace: 'nowrap',
+                                                            fontSize: '12px',
+                                                            padding: '0 12px',
+                                                            flexShrink: 0,
+                                                            cursor: guardianResendIn > 0 || !guardianForm.phone.trim() ? 'not-allowed' : 'pointer',
+                                                            color: '#4F46E5',
+                                                            borderColor: '#C7D2FE',
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        {guardianResendIn > 0 ? `Resend in ${guardianResendIn}s` : guardianOtp ? 'Resend OTP' : 'Send OTP'}
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Guardian OTP Verification Card */}
+                                            {guardianOtp && (!guardianVerifiedPhone || guardianVerifiedPhone !== guardianForm.phone.replace(/\D/g, '')) && (
+                                                <div style={{
+                                                    marginTop: '8px',
+                                                    padding: '10px 12px',
+                                                    border: '1px solid #C7D2FE',
+                                                    background: '#EEF2FF',
+                                                    borderRadius: '8px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '8px'
+                                                }}>
+                                                    <p style={{ fontSize: '12px', color: '#4338CA', margin: 0, lineHeight: 1.4 }}>
+                                                        <strong>Demo mode:</strong> no SMS is sent. Your OTP is{' '}
+                                                        <span style={{ fontFamily: 'monospace', fontSize: '14px', fontWeight: 700, letterSpacing: '0.15em', background: '#FFFFFF', padding: '2px 6px', borderRadius: '4px', border: '1px solid #C7D2FE' }}>
+                                                            {guardianOtp.code}
+                                                        </span>
+                                                    </p>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <input
+                                                            className="cs-input"
+                                                            inputMode="numeric"
+                                                            autoComplete="one-time-code"
+                                                            maxLength={6}
+                                                            placeholder="Enter 6-digit OTP"
+                                                            value={guardianOtpInput}
+                                                            onChange={e => {
+                                                                setGuardianOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6));
+                                                                setGuardianOtpError(null);
+                                                            }}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    verifyGuardianOtp();
+                                                                }
+                                                            }}
+                                                            style={{ flex: 1, minWidth: 0, letterSpacing: '0.2em', background: '#FFFFFF', height: '36px', fontSize: '13px' }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="btn-primary"
+                                                            onClick={verifyGuardianOtp}
+                                                            disabled={guardianOtpInput.length !== 6}
+                                                            style={{ justifyContent: 'center', minWidth: '85px', height: '36px', fontSize: '12px', flexShrink: 0 }}
+                                                        >
+                                                            Verify
+                                                        </button>
+                                                    </div>
+                                                    {guardianOtpError && (
+                                                        <p style={{ color: '#EF4444', fontSize: '11px', margin: 0, fontWeight: 500 }}>
+                                                            {guardianOtpError}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ padding: '10px 12px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', marginTop: '2px' }}>
+                                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={guardianForm.createLogin}
+                                                    onChange={e => setGuardianForm(g => ({ ...g, createLogin: e.target.checked }))}
+                                                    style={{ marginTop: '2px', width: '16px', height: '16px', accentColor: '#4F46E5' }}
+                                                />
+                                                <div>
+                                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#1E293B' }}>
+                                                        Create Parent Portal Login
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: '#64748B', marginTop: '1px' }}>
+                                                        Generates portal sign-in credentials so the parent can track attendance, dues, and notices.
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        <div>
+                                            <label className="cs-label">Select Existing Guardian <span style={{ color: '#EF4444' }}>*</span></label>
+                                            <select
+                                                className="cs-input"
+                                                value={guardianForm.existingGuardianId}
+                                                onChange={e => {
+                                                    setGuardianForm(g => ({ ...g, existingGuardianId: e.target.value }));
+                                                    if (formError) setFormError(null);
+                                                }}
+                                            >
+                                                <option value="">— Select an existing guardian —</option>
+                                                {rawGuardians && rawGuardians.length > 0 ? (
+                                                    rawGuardians.map(g => (
+                                                        <option key={g.guardianId} value={g.guardianId}>
+                                                            {g.firstName} {g.lastName} ({g.relationship || 'Parent'}) • {g.phone}
+                                                        </option>
+                                                    ))
+                                                ) : (
+                                                    <option value="" disabled>No existing guardians found</option>
+                                                )}
+                                            </select>
+                                        </div>
+
+                                        {guardianForm.existingGuardianId && (() => {
+                                            const selected = rawGuardians?.find(g => g.guardianId === guardianForm.existingGuardianId);
+                                            if (!selected) return null;
+                                            return (
+                                                <div style={{ padding: '12px 14px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }}>
+                                                    <div style={{ fontWeight: 600, color: '#1E293B', marginBottom: '4px' }}>
+                                                        {selected.firstName} {selected.lastName} ({selected.relationship || 'Parent'})
+                                                    </div>
+                                                    <div style={{ color: '#64748B', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                                                        <span>Phone: <strong style={{ color: '#334155' }}>{selected.phone}</strong></span>
+                                                        <span>Email: <strong style={{ color: '#334155' }}>{selected.email}</strong></span>
+                                                        {selected.householdCode && <span>Household: <strong style={{ color: '#334155' }}>{selected.householdCode}</strong></span>}
+                                                    </div>
+                                                    <div style={{ marginTop: '8px', color: '#059669', fontWeight: 600, fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <Check size={12} /> This student will be linked to this guardian as their primary ward.
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                )}
+
+                                {formError && (
+                                    <div style={{
+                                        color: '#B91C1C',
+                                        background: '#FEF2F2',
+                                        border: '1px solid #FECACA',
+                                        padding: '10px 12px',
+                                        borderRadius: '6px',
+                                        fontSize: '13px',
+                                        fontWeight: 500,
+                                    }}>
+                                        {formError}
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        onClick={handlePreviousStep}
+                                        disabled={saving}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                    >
+                                        <ArrowLeft size={14} /> Back
+                                    </button>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
                                         <button
                                             type="button"
-                                            className="btn-ghost"
-                                            onClick={handleRemovePhoto}
-                                            style={{ height: '30px', padding: '0 6px', fontSize: '11px', color: '#EF4444' }}
+                                            className="btn-secondary"
+                                            onClick={closeAddModal}
+                                            disabled={saving}
                                         >
-                                            Remove
+                                            Cancel
                                         </button>
-                                    )}
+                                        <button
+                                            className="btn-primary"
+                                            type="submit"
+                                            disabled={saving}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            {saving ? 'Registering…' : 'Complete Registration'}
+                                        </button>
+                                    </div>
                                 </div>
-                                {photoError ? (
-                                    <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 500 }}>{photoError}</span>
-                                ) : (
-                                    <span style={{ fontSize: '11px', color: '#64748B' }}>
-                                        Student photo (PNG, JPG, WebP up to 2 MB)
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div>
-                                <label className="cs-label">First Name <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input
-                                    className="cs-input"
-                                    placeholder="First name"
-                                    value={form.firstName}
-                                    onChange={handleFieldChange('firstName')}
-                                    onBlur={handleBlur('firstName')}
-                                    style={getInputStyle('firstName')}
-                                />
-                                {touched.firstName && fieldErrors.firstName && (
-                                    <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
-                                        {fieldErrors.firstName}
-                                    </p>
-                                )}
-                            </div>
-                            <div>
-                                <label className="cs-label">Last Name <span style={{ color: '#EF4444' }}>*</span></label>
-                                <input
-                                    className="cs-input"
-                                    placeholder="Last name"
-                                    value={form.lastName}
-                                    onChange={handleFieldChange('lastName')}
-                                    onBlur={handleBlur('lastName')}
-                                    style={getInputStyle('lastName')}
-                                />
-                                {touched.lastName && fieldErrors.lastName && (
-                                    <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
-                                        {fieldErrors.lastName}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                        <div>
-                            <label className="cs-label">Email <span style={{ color: '#EF4444' }}>*</span></label>
-                            <input
-                                className="cs-input"
-                                type="email"
-                                placeholder="student@example.com"
-                                value={form.email}
-                                onChange={handleFieldChange('email')}
-                                onBlur={handleBlur('email')}
-                                style={getInputStyle('email')}
-                            />
-                            {touched.email && fieldErrors.email && (
-                                <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
-                                    {fieldErrors.email}
-                                </p>
-                            )}
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div>
-                                <label className="cs-label">Mobile Number <span style={{ color: '#EF4444' }}>*</span></label>
-                                <CountryPhoneInput
-                                    value={form.phone}
-                                    selectedCountry={selectedCountry}
-                                    onCountryChange={setSelectedCountry}
-                                    onChange={handlePhoneChange}
-                                    onBlur={handleBlur('phone')}
-                                    touched={touched.phone}
-                                    error={fieldErrors.phone}
-                                    required={true}
-                                />
-                            </div>
-                            <div>
-                                <label className="cs-label">Date of Birth</label>
-                                <input
-                                    className="cs-input"
-                                    type="date"
-                                    max={new Date().toISOString().split('T')[0]}
-                                    value={form.dateOfBirth}
-                                    onChange={handleFieldChange('dateOfBirth')}
-                                    onBlur={handleBlur('dateOfBirth')}
-                                    style={getInputStyle('dateOfBirth')}
-                                />
-                                {touched.dateOfBirth && fieldErrors.dateOfBirth && (
-                                    <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
-                                        {fieldErrors.dateOfBirth}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                        {!branchScoped && (workspace?.branches.length ?? 0) > 1 && (
-                            <div>
-                                <label className="cs-label">Home Branch</label>
-                                <select className="cs-input" value={form.branchId || session?.selectedBranchId || ''} onChange={e => setForm({ ...form, branchId: e.target.value })}>
-                                    <option value="">Primary branch</option>
-                                    {workspace?.branches.map(b => <option key={b.branchId} value={b.branchId}>{b.name}</option>)}
-                                </select>
-                            </div>
+                            </>
                         )}
-                        <div>
-                            <label className="cs-label">Enroll in Batch (optional)</label>
-                            <select
-                                className="cs-input"
-                                value={form.batchId}
-                                onChange={e => {
-                                    const bId = e.target.value;
-                                    const selected = batches?.find(b => b.batchId === bId);
-                                    setForm(f => ({
-                                        ...f,
-                                        batchId: bId,
-                                        feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : (bId ? f.feeAmount : ''),
-                                        feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
-                                    }));
-                                }}
-                            >
-                                <option value="">— No batch yet —</option>
-                                {batches?.map(b => (
-                                    <option key={b.batchId} value={b.batchId}>
-                                        {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div>
-                                <label className="cs-label">Fee Status</label>
-                                <select
-                                    className="cs-input"
-                                    value={form.feeStatus}
-                                    onChange={e => {
-                                        const status = e.target.value;
-                                        setForm(f => ({
-                                            ...f,
-                                            feeStatus: status,
-                                            feeAmount: status === 'none' ? '' : f.feeAmount
-                                        }));
-                                    }}
-                                >
-                                    <option value="none">— No Fee (Exempt) —</option>
-                                    <option value="pending">Pending (Fee Due)</option>
-                                    <option value="paid">Paid (Paid Upfront)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="cs-label">
-                                    Fee / Tuition Amount {form.feeStatus !== 'none' && <span style={{ color: '#EF4444' }}>*</span>}
-                                </label>
-                                <input
-                                    className="cs-input"
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    placeholder={form.feeStatus === 'none' ? '—' : 'e.g. 5000'}
-                                    disabled={form.feeStatus === 'none'}
-                                    value={form.feeAmount}
-                                    onChange={e => setForm({ ...form, feeAmount: e.target.value })}
-                                    style={{
-                                        opacity: form.feeStatus === 'none' ? 0.6 : 1,
-                                        cursor: form.feeStatus === 'none' ? 'not-allowed' : 'text'
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        {formError && (
-                            <div style={{
-                                color: '#B91C1C',
-                                background: '#FEF2F2',
-                                border: '1px solid #FECACA',
-                                padding: '10px 12px',
-                                borderRadius: '6px',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                            }}>
-                                {formError}
-                            </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={closeAddModal}
-                            >
-                                Cancel
-                            </button>
-                            <button className="btn-primary" type="submit" disabled={saving}>
-                                {saving ? 'Adding…' : 'Add Student'}
-                            </button>
-                        </div>
                     </form>
                 </Modal>
             )}
 
             {/* Edit Student Modal */}
             {editingStudent && (
-                <Modal title={`Edit Student: ${editingStudent.firstName} ${editingStudent.lastName}`} onClose={() => setEditingStudent(null)} maxWidth="660px">
-                    <form onSubmit={submitEdit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <Modal title={`Edit Student: ${editingStudent.firstName} ${editingStudent.lastName}`} onClose={() => setEditingStudent(null)} maxWidth="660px" style={{ padding: '20px 24px' }}>
+                    <form onSubmit={submitEdit} style={{ display: 'flex', flexDirection: 'column', gap: '11px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
                                 <label className="cs-label">First Name <span style={{ color: '#EF4444' }}>*</span></label>
@@ -1019,40 +1760,104 @@ export default function StudentsPage() {
                             </select>
                         </div>
 
-                        {!branchScoped && (workspace?.branches.length ?? 0) > 1 && (
+                        {!branchScoped && (workspace?.branches.length ?? 0) > 1 ? (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                    <label className="cs-label">Branch</label>
+                                    <select
+                                        className="cs-input"
+                                        value={editForm.branchId}
+                                        onChange={e => {
+                                            const newBranchId = e.target.value;
+                                            setEditForm(f => ({
+                                                ...f,
+                                                branchId: newBranchId,
+                                                batchId: '', // Reset batch selection when switching branch
+                                            }));
+                                        }}
+                                    >
+                                        {workspace?.branches.map(b => (
+                                            <option key={b.branchId} value={b.branchId}>
+                                                {b.name}{b.isPrimary ? ' (Primary)' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="cs-label">Change / Assign Batch</label>
+                                    <select
+                                        className="cs-input"
+                                        value={editForm.batchId}
+                                        onChange={e => {
+                                            const bId = e.target.value;
+                                            const selected = batches?.find(b => b.batchId === bId);
+                                            setEditForm(f => ({
+                                                ...f,
+                                                batchId: bId,
+                                                feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : f.feeAmount,
+                                                feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
+                                            }));
+                                        }}
+                                    >
+                                        {(() => {
+                                            const editBatches = batches?.filter(b => !editForm.branchId || !b.branchId || b.branchId === editForm.branchId) || [];
+                                            const editPlaceholder = !batches
+                                                ? 'Loading batches…'
+                                                : editBatches.length > 0
+                                                    ? '— Keep existing batch or unassigned —'
+                                                    : '— No batches available for this branch —';
+                                            return (
+                                                <>
+                                                    <option value="">{editPlaceholder}</option>
+                                                    {editBatches.map(b => (
+                                                        <option key={b.batchId} value={b.batchId}>
+                                                            {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
+                                                        </option>
+                                                    ))}
+                                                </>
+                                            );
+                                        })()}
+                                    </select>
+                                </div>
+                            </div>
+                        ) : (
                             <div>
-                                <label className="cs-label">Branch</label>
-                                <select className="cs-input" value={editForm.branchId} onChange={handleEditFieldChange('branchId')}>
-                                    <option value="">Primary branch</option>
-                                    {workspace?.branches.map(b => <option key={b.branchId} value={b.branchId}>{b.name}</option>)}
+                                <label className="cs-label">Change / Assign Batch</label>
+                                <select
+                                    className="cs-input"
+                                    value={editForm.batchId}
+                                    onChange={e => {
+                                        const bId = e.target.value;
+                                        const selected = batches?.find(b => b.batchId === bId);
+                                        setEditForm(f => ({
+                                            ...f,
+                                            batchId: bId,
+                                            feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : f.feeAmount,
+                                            feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
+                                        }));
+                                    }}
+                                >
+                                    {(() => {
+                                        const editBatches = batches?.filter(b => !editForm.branchId || !b.branchId || b.branchId === editForm.branchId) || [];
+                                        const editPlaceholder = !batches
+                                            ? 'Loading batches…'
+                                            : editBatches.length > 0
+                                                ? '— Keep existing batch or unassigned —'
+                                                : '— No batches available for this branch —';
+                                        return (
+                                            <>
+                                                <option value="">{editPlaceholder}</option>
+                                                {editBatches.map(b => (
+                                                    <option key={b.batchId} value={b.batchId}>
+                                                        {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
+                                                    </option>
+                                                ))}
+                                            </>
+                                        );
+                                    })()}
                                 </select>
                             </div>
                         )}
-
-                        <div>
-                            <label className="cs-label">Change / Assign Batch</label>
-                            <select
-                                className="cs-input"
-                                value={editForm.batchId}
-                                onChange={e => {
-                                    const bId = e.target.value;
-                                    const selected = batches?.find(b => b.batchId === bId);
-                                    setEditForm(f => ({
-                                        ...f,
-                                        batchId: bId,
-                                        feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : f.feeAmount,
-                                        feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
-                                    }));
-                                }}
-                            >
-                                <option value="">— Keep existing batch —</option>
-                                {batches?.map(b => (
-                                    <option key={b.batchId} value={b.batchId}>
-                                        {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             <div>
                                 <label className="cs-label">Fee Status</label>
@@ -1117,6 +1922,83 @@ export default function StudentsPage() {
                     </form>
                 </Modal>
             )}
+
+            {/* Credentials Dialog for new guardian portal login */}
+            {createdCredentials && (
+                <CredentialsDialog
+                    credentials={createdCredentials}
+                    onClose={() => setCreatedCredentials(null)}
+                />
+            )}
         </>
+    );
+}
+
+function CredentialsDialog({
+    credentials,
+    onClose,
+}: {
+    credentials: { name: string; email: string; password?: string };
+    onClose: () => void;
+}) {
+    const [copied, setCopied] = useState(false);
+    const { workspace } = useWorkspace();
+    const academy = workspace?.organization.name ?? 'our academy';
+    const portalUrl = typeof window !== 'undefined' ? `${window.location.origin}/login` : '/login';
+    const text = `Dear ${credentials.name},\n\nYour parent portal for ${academy} is ready. Sign in to see your child's attendance, fees, payment slips, test results and notices.\n\nPortal: ${portalUrl}\nEmail: ${credentials.email}\nTemporary password: ${credentials.password}\n\nRegards,\n${academy}`;
+
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2500);
+        } catch {
+            // fallback
+        }
+    };
+
+    return (
+        <Modal title="Parent Portal Login Credentials" onClose={onClose}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
+                    Share these details with {credentials.name}. The password is shown only once.
+                </div>
+                <div
+                    style={{
+                        background: 'var(--cs-surface-2)',
+                        border: '1px solid var(--cs-border)',
+                        borderRadius: '10px',
+                        padding: '12px',
+                        fontSize: '13px',
+                        display: 'grid',
+                        gridTemplateColumns: 'auto 1fr',
+                        gap: '6px 12px',
+                    }}
+                >
+                    <span style={{ color: 'var(--cs-text-muted)' }}>Portal</span>
+                    <span>{portalUrl}</span>
+                    <span style={{ color: 'var(--cs-text-muted)' }}>Email</span>
+                    <span style={{ fontWeight: 600 }}>{credentials.email}</span>
+                    <span style={{ color: 'var(--cs-text-muted)' }}>Password</span>
+                    <code style={{ fontWeight: 700, fontSize: '14px', color: 'var(--cs-primary)' }}>
+                        {credentials.password}
+                    </code>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                    <button type="button" className="btn-secondary" onClick={copy}>
+                        {copied ? <Check size={14} color="#10B981" /> : <Copy size={14} />}
+                        {copied ? 'Copied' : 'Copy message'}
+                    </button>
+                    <a
+                        className="btn-primary"
+                        href={`mailto:${credentials.email}?subject=${encodeURIComponent(
+                            `Your ${academy} parent portal login`
+                        )}&body=${encodeURIComponent(text)}`}
+                    >
+                        <Send size={14} /> Email to parent
+                    </a>
+                </div>
+            </div>
+        </Modal>
     );
 }
