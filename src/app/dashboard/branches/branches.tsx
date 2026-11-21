@@ -239,7 +239,8 @@ export default function BranchesPage() {
 
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                                         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
-                                            <MapPin size={14} style={{ marginTop: '1px', flexShrink: 0, color: 'var(--cs-text-muted)' }} /> {b.address ?? '—'}
+                                            <MapPin size={14} style={{ marginTop: '1px', flexShrink: 0, color: 'var(--cs-text-muted)' }} />
+                                            <span>{[b.address, b.location, b.city, b.state].filter(Boolean).join(', ') || b.address || '—'}</span>
                                         </div>
                                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
                                             <Phone size={13} color="var(--cs-text-muted)" /> {b.phone ?? '—'}
@@ -300,12 +301,50 @@ export default function BranchesPage() {
                                         )}
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
-                                        <MapPin size={14} style={{ marginTop: '1px', flexShrink: 0, color: 'var(--cs-text-muted)' }} />
-                                        <span>{[b.address, b.location, b.city, b.state].filter(Boolean).join(', ') || b.address || '—'}</span>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Manage Branch Modal */}
+            {managingBranch && (
+                <Modal
+                    title={`Manage Branch: ${managingBranch.name}`}
+                    onClose={() => setManagingBranch(null)}
+                    maxWidth="640px"
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                        {/* Branch Banner Card */}
+                        <div style={{
+                            background: 'var(--cs-surface-2)',
+                            border: '1px solid var(--cs-border)',
+                            borderRadius: '10px',
+                            padding: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '12px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: '12px',
+                                    background: 'rgba(108,99,255,0.15)',
+                                    border: '1px solid rgba(108,99,255,0.25)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <Building2 size={24} color="#6C63FF" />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
+                                        {managingBranch.name}
                                     </div>
-                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
                                         <code>{managingBranch.code}</code>
                                         {managingBranch.isPrimary && <span className="badge badge-primary">Primary Campus</span>}
                                         <span className={`badge ${managingBranch.isActive ? 'badge-success' : 'badge-secondary'}`}>

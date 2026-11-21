@@ -13,6 +13,7 @@ export interface Branch {
     location?: string | null;
     pincode?: string | null;
     phone: string | null;
+    email?: string | null;
     isPrimary: boolean;
     isActive: boolean;
     headName: string | null;

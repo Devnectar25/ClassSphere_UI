@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Search, RefreshCw, Sparkles, Eye, ShieldAlert, Download, CheckCircle2, XCircle, Copy,
+    Search, RefreshCw, Sparkles, Eye, ShieldAlert, Download, CheckCircle2, XCircle,
     User as UserIcon, ClipboardList, CreditCard, BookOpen, Activity, Ban,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -16,9 +16,11 @@ type StatusFilter = 'all' | 'active' | 'suspended';
 
 interface UserRecord {
     userId: string;
+    userCode?: string;
     fullName: string;
     email: string | null;
     phone: string | null;
+    academyName?: string | null;
     emailVerified: boolean;
     emailVerifiedAt: string | null;
     phoneVerified: boolean;
@@ -68,6 +70,18 @@ const formatMoney = (amount: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(amount || 0));
 const humanize = (value: string) => value.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
+const formatPhone = (value: string | null | undefined) => {
+    if (!value) return '—';
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 10) {
+        return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+    }
+    if (digits.length === 12 && digits.startsWith('91')) {
+        return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+    }
+    return value;
+};
+
 function StatusBadge({ status }: { status: AccountStatus }) {
     const styles: Record<AccountStatus, string> = {
         active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -76,9 +90,9 @@ function StatusBadge({ status }: { status: AccountStatus }) {
     };
     const dots: Record<AccountStatus, string> = { active: 'bg-emerald-500', suspended: 'bg-rose-500', inactive: 'bg-slate-400' };
     return (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold whitespace-nowrap capitalize ${styles[status]}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${dots[status]}`} />
-            {status}
+        <span className={`inline-flex items-center justify-center gap-1.5 w-[86px] py-0.5 rounded-full border text-[10px] font-bold whitespace-nowrap capitalize ${styles[status]}`}>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dots[status]}`} />
+            <span>{status}</span>
         </span>
     );
 }
@@ -125,6 +139,7 @@ export default function PlatformAdminUsersPage() {
     const [actionUser, setActionUser] = useState<{ user: Pick<UserRecord, 'userId' | 'fullName'>; action: 'suspend' | 'reactivate' } | null>(null);
     const [suspendReason, setSuspendReason] = useState('');
     const [actionBusy, setActionBusy] = useState(false);
+    const [verifying, setVerifying] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const suspendForm = useFormValidation(
         { reason: suspendReason },
@@ -237,6 +252,27 @@ export default function PlatformAdminUsersPage() {
         }
     };
 
+    const handleVerify = async (userId: string, type: 'email' | 'phone') => {
+        try {
+            setVerifying(true);
+            await api('/platform/users', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    userId,
+                    verifyEmail: type === 'email',
+                    verifyPhone: type === 'phone',
+                }),
+            });
+            showToast(`${type === 'email' ? 'Email' : 'Mobile number'} marked as verified.`);
+            if (detailUserId === userId) await loadDetail(userId);
+            reload();
+        } catch (err) {
+            showToast((err as Error).message || 'Failed to verify credential.');
+        } finally {
+            setVerifying(false);
+        }
+    };
+
     const handleExport = async () => {
         try {
             setExporting(true);
@@ -248,10 +284,10 @@ export default function PlatformAdminUsersPage() {
                 showToast('No user records match the current filters.');
                 return;
             }
-            const header = ['User ID', 'Full Name', 'Email', 'Mobile Number', 'Email Verified', 'Phone Verified',
+            const header = ['User ID', 'Full Name', 'Academy', 'Email', 'Mobile Number', 'Email Verified', 'Phone Verified',
                 'Registration Date', 'Last Login', 'Account Status', 'Suspension Reason', 'Enrollments', 'Academies'];
             const lines = rows.map(u => [
-                u.userId, u.fullName, u.email, u.phone,
+                u.userCode || u.userId, u.fullName, u.academyName || '', u.email, u.phone,
                 u.email ? (u.emailVerified ? 'Yes' : 'No') : '', u.phone ? (u.phoneVerified ? 'Yes' : 'No') : '',
                 u.createdAt ? new Date(u.createdAt).toISOString() : '', u.lastLoginAt ? new Date(u.lastLoginAt).toISOString() : '',
                 u.accountStatus, u.suspensionReason, u.enrollmentCount, u.academyMembershipCount,
@@ -271,19 +307,10 @@ export default function PlatformAdminUsersPage() {
         }
     };
 
-    const copyUserId = async (userId: string) => {
-        try {
-            await navigator.clipboard.writeText(userId);
-            showToast('User ID copied.');
-        } catch {
-            showToast(userId);
-        }
-    };
-
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
     const renderActionButton = (u: Pick<UserRecord, 'userId' | 'fullName' | 'isSuspended' | 'isPlatformAdmin'>, size: 'sm' | 'md' = 'sm') => {
-        const base = size === 'sm' ? 'px-2 py-1 text-[11px]' : 'px-3.5 py-2 text-xs';
+        const base = size === 'sm' ? 'w-[82px] py-1 text-[11px] justify-center inline-flex items-center text-center' : 'px-3.5 py-2 text-xs';
         if (u.isPlatformAdmin) {
             return (
                 <span className={`${base} rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold whitespace-nowrap`} title="Platform administrators are managed from Admin Roles">
@@ -293,14 +320,14 @@ export default function PlatformAdminUsersPage() {
         }
         return u.isSuspended ? (
             <button
-                onClick={() => setActionUser({ user: u, action: 'reactivate' })}
+                onClick={(e) => { e.stopPropagation(); setActionUser({ user: u, action: 'reactivate' }); }}
                 className={`${base} rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold transition-colors cursor-pointer whitespace-nowrap`}
             >
                 Reactivate
             </button>
         ) : (
             <button
-                onClick={() => setActionUser({ user: u, action: 'suspend' })}
+                onClick={(e) => { e.stopPropagation(); setActionUser({ user: u, action: 'suspend' }); }}
                 className={`${base} rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold transition-colors cursor-pointer whitespace-nowrap`}
             >
                 Suspend
@@ -328,7 +355,7 @@ export default function PlatformAdminUsersPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Users Management</h1>
                     <p className="text-xs text-slate-500 mt-1">
-                        Registered learners, guardians, instructors and academy administrators across ClassShare.
+                        Registered academy administrators across ClassSphere. Staff, instructors, and guardians are managed in each academy's panel.
                     </p>
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -379,7 +406,7 @@ export default function PlatformAdminUsersPage() {
                         value={searchQuery}
                         maxLength={100}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by name, email, mobile or user ID..."
+                        placeholder="Search by name, email, mobile, academy or user ID..."
                         className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 shadow-2xs"
                     />
                 </div>
@@ -400,89 +427,80 @@ export default function PlatformAdminUsersPage() {
             {/* Table */}
             <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1260px] table-fixed text-left text-xs">
+                    <table className="w-full table-fixed text-left text-xs min-w-[860px]">
                         <colgroup>
-                            <col className="w-[7%]" />
-                            <col className="w-[13%]" />
-                            <col className="w-[16%]" />
-                            <col className="w-[11%]" />
-                            <col className="w-[9%]" />
-                            <col className="w-[9%]" />
-                            <col className="w-[9%]" />
-                            <col className="w-[9%]" />
-                            <col className="w-[7%]" />
                             <col className="w-[10%]" />
+                            <col className="w-[22%]" />
+                            <col className="w-[24%]" />
+                            <col className="w-[15%]" />
+                            <col className="w-[12%]" />
+                            <col className="w-[17%]" />
                         </colgroup>
                         <thead>
                             <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-200 [&>th]:align-middle whitespace-nowrap">
-                                <th className="py-3.5 px-3">User ID</th>
+                                <th className="py-3.5 pl-6 pr-3">User ID</th>
                                 <th className="py-3.5 px-3">Full Name</th>
                                 <th className="py-3.5 px-3">Email</th>
                                 <th className="py-3.5 px-3">Mobile</th>
-                                <th className="py-3.5 px-3">Email Verif.</th>
-                                <th className="py-3.5 px-3">Phone Verif.</th>
-                                <th className="py-3.5 px-3">Registered</th>
-                                <th className="py-3.5 px-3">Last Login</th>
-                                <th className="py-3.5 px-3">Status</th>
-                                <th className="py-3.5 pl-3 pr-4 text-right">Actions</th>
+                                <th className="py-3.5 px-3 text-center">Status</th>
+                                <th className="py-3.5 pl-3 pr-6 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading && users.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="py-10 text-center text-slate-400">
+                                    <td colSpan={6} className="py-10 text-center text-slate-400">
                                         <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-indigo-600" />
                                         Loading user accounts...
                                     </td>
                                 </tr>
                             ) : loadError ? (
                                 <tr>
-                                    <td colSpan={10} className="py-10 text-center text-rose-600 font-semibold">{loadError}</td>
+                                    <td colSpan={6} className="py-10 text-center text-rose-600 font-semibold">{loadError}</td>
                                 </tr>
                             ) : users.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="py-10 text-center text-slate-500">
+                                    <td colSpan={6} className="py-10 text-center text-slate-500">
                                         No user accounts match the current filters.
                                     </td>
                                 </tr>
                             ) : (
-                                users.map((u) => (
-                                    <tr key={u.userId} className="hover:bg-slate-50/70 transition-colors [&>td]:align-middle">
-                                        <td className="py-3.5 px-3 whitespace-nowrap">
-                                            <button
-                                                onClick={() => copyUserId(u.userId)}
-                                                title={`${u.userId} — click to copy`}
-                                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
-                                            >
-                                                <span>{u.userId.slice(0, 8)}</span>
-                                                <Copy size={11} className="shrink-0 opacity-50 hover:opacity-100" />
-                                            </button>
+                                users.map((u) => {
+                                    const displayId = u.userCode || `USR-${u.userId.slice(0, 8)}`;
+                                    return (
+                                    <tr
+                                        key={u.userId}
+                                        onClick={() => openDetail(u.userId)}
+                                        className="hover:bg-indigo-50/30 transition-colors [&>td]:align-middle cursor-pointer"
+                                        title="Click to view full user details"
+                                    >
+                                        <td className="py-3.5 pl-6 pr-3 whitespace-nowrap">
+                                            <span className="inline-flex font-mono text-[11px] font-semibold text-indigo-700 bg-indigo-50/70 border border-indigo-100/60 px-2 py-0.5 rounded">
+                                                {displayId}
+                                            </span>
                                         </td>
                                         <td className="py-3.5 px-3">
                                             <div className="font-semibold text-slate-900 truncate" title={u.fullName}>{u.fullName || 'Unnamed User'}</div>
+                                            {u.academyName && (
+                                                <div className="text-[11px] text-indigo-600 font-medium truncate mt-0.5" title={u.academyName}>{u.academyName}</div>
+                                            )}
                                         </td>
                                         <td className="py-3.5 px-3 text-slate-600">
-                                            <div className="truncate" title={u.email || undefined}>{u.email || '—'}</div>
+                                            <div className="truncate font-normal" title={u.email || undefined}>{u.email || '—'}</div>
                                         </td>
-                                        <td className="py-3.5 px-3 text-slate-600 whitespace-nowrap font-mono text-[11px]">{u.phone || '—'}</td>
-                                        <td className="py-3.5 px-3 whitespace-nowrap"><VerificationBadge hasValue={!!u.email} verified={u.emailVerified} at={u.emailVerifiedAt} /></td>
-                                        <td className="py-3.5 px-3 whitespace-nowrap"><VerificationBadge hasValue={!!u.phone} verified={u.phoneVerified} at={u.phoneVerifiedAt} /></td>
-                                        <td className="py-3.5 px-3 text-slate-600 whitespace-nowrap">{formatDate(u.createdAt)}</td>
-                                        <td className="py-3.5 px-3 text-slate-600 whitespace-nowrap">
-                                            {u.lastLoginAt ? (
-                                                <div className="leading-tight">
-                                                    <div className="font-medium text-slate-700">{formatDate(u.lastLoginAt)}</div>
-                                                    <div className="text-[10px] text-slate-400 mt-0.5">{formatTime(u.lastLoginAt)}</div>
-                                                </div>
-                                            ) : <span className="text-slate-400">Never</span>}
+                                        <td className="py-3.5 px-3 text-slate-600 whitespace-nowrap text-xs font-medium">{formatPhone(u.phone)}</td>
+                                        <td className="py-3.5 px-3 whitespace-nowrap text-center">
+                                            <StatusBadge status={u.accountStatus} />
                                         </td>
-                                        <td className="py-3.5 px-3 whitespace-nowrap"><StatusBadge status={u.accountStatus} /></td>
-                                        <td className="py-3.5 pl-3 pr-4 whitespace-nowrap text-right">
-                                            <div className="flex items-center justify-end gap-1.5">
+                                        <td className="py-3.5 pl-3 pr-6 whitespace-nowrap text-right">
+                                            <div className="flex items-center justify-end gap-2">
                                                 <button
-                                                    onClick={() => openDetail(u.userId)}
-                                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors inline-flex items-center cursor-pointer shrink-0"
-                                                    title="View details"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openDetail(u.userId);
+                                                    }}
+                                                    className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors inline-flex items-center justify-center cursor-pointer shrink-0"
+                                                    title="View full details"
                                                 >
                                                     <Eye size={13} />
                                                 </button>
@@ -490,7 +508,8 @@ export default function PlatformAdminUsersPage() {
                                             </div>
                                         </td>
                                     </tr>
-                                ))
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -526,7 +545,8 @@ export default function PlatformAdminUsersPage() {
                             tab={detailTab}
                             onTabChange={setDetailTab}
                             actionButton={renderActionButton(detail.user, 'md')}
-                            onCopyId={() => copyUserId(detail.user.userId)}
+                            onVerify={handleVerify}
+                            verifying={verifying}
                         />
                     ) : null}
                 </Modal>
@@ -643,13 +663,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function UserDetailView({
-    detail, tab, onTabChange, actionButton, onCopyId,
+    detail, tab, onTabChange, actionButton, onVerify, verifying,
 }: {
     detail: UserDetail;
     tab: DetailTab;
     onTabChange: (tab: DetailTab) => void;
     actionButton: React.ReactNode;
-    onCopyId: () => void;
+    onVerify?: (userId: string, type: 'email' | 'phone') => Promise<void>;
+    verifying?: boolean;
 }) {
     const u = detail.user;
     const tabs: Array<{ key: DetailTab; label: string; icon: React.ReactNode; count?: number }> = [
@@ -674,9 +695,10 @@ function UserDetailView({
                         <StatusBadge status={u.accountStatus} />
                         {u.isPlatformAdmin && <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">Platform Admin</span>}
                     </div>
-                    <button onClick={onCopyId} className="mt-1 inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-indigo-600 cursor-pointer" title="Copy user ID">
-                        {u.userId} <Copy size={10} />
-                    </button>
+                    <div className="mt-1 inline-flex items-center gap-1.5 font-mono text-[11px]">
+                        <span className="font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">{u.userCode || `USR-${u.userId.slice(0, 8)}`}</span>
+                        <span className="text-slate-400 text-[10px]">({u.userId})</span>
+                    </div>
                 </div>
                 <div className="shrink-0">{actionButton}</div>
             </div>
@@ -726,24 +748,30 @@ function UserDetailView({
                         </section>
                         <section>
                             <h4 className="text-xs font-bold text-slate-900 mb-2.5">Account Verification</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {[
-                                    { label: 'Email', has: !!u.email, ok: detail.verification.emailVerified, at: detail.verification.emailVerifiedAt },
-                                    { label: 'Mobile', has: !!u.phone, ok: detail.verification.phoneVerified, at: detail.verification.phoneVerifiedAt },
+                                    { label: 'Email Address', type: 'email' as const, has: !!u.email, ok: detail.verification.emailVerified, at: detail.verification.emailVerifiedAt },
+                                    { label: 'Mobile Number', type: 'phone' as const, has: !!u.phone, ok: detail.verification.phoneVerified, at: detail.verification.phoneVerifiedAt },
                                 ].map(v => (
-                                    <div key={v.label} className="p-3.5 border border-slate-200 rounded-xl">
-                                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{v.label}</div>
-                                        <div className="mt-1"><VerificationBadge hasValue={v.has} verified={v.ok} at={v.at} /></div>
-                                        {v.ok && v.at && <div className="text-[10px] text-slate-400 mt-0.5">{formatDateTime(v.at)}</div>}
-                                        {!v.has && <div className="text-[10px] text-slate-400 mt-0.5">Not provided</div>}
+                                    <div key={v.label} className="p-3.5 border border-slate-200 rounded-xl flex flex-col justify-between">
+                                        <div>
+                                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{v.label}</div>
+                                            <div className="mt-1"><VerificationBadge hasValue={v.has} verified={v.ok} at={v.at} /></div>
+                                            {v.ok && v.at && <div className="text-[10px] text-slate-400 mt-0.5">{formatDateTime(v.at)}</div>}
+                                            {!v.has && <div className="text-[10px] text-slate-400 mt-0.5">Not provided</div>}
+                                        </div>
+                                        {!v.ok && v.has && onVerify && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onVerify(u.userId, v.type)}
+                                                disabled={verifying}
+                                                className="mt-2 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 self-start cursor-pointer hover:underline disabled:opacity-50"
+                                            >
+                                                {verifying ? 'Verifying...' : 'Mark as Verified'}
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
-                                <div className="p-3.5 border border-slate-200 rounded-xl">
-                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Two-factor</div>
-                                    <div className={`mt-1 text-[11px] font-semibold ${detail.verification.mfaEnabled ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                        {detail.verification.mfaEnabled ? 'Enabled' : 'Not enabled'}
-                                    </div>
-                                </div>
                             </div>
                         </section>
                         <section>

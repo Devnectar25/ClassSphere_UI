@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
     Search, RefreshCw, Sparkles, LogIn, CheckCircle, XCircle,
     ShieldAlert, Percent, Eye, Building2, FileText, Download,
-    Copy, CheckCircle2, User, BookOpen, Layers, Users, CreditCard,
+    CheckCircle2, User, BookOpen, Layers, Users, CreditCard,
     DollarSign, Activity, AlertTriangle, ExternalLink, Calendar,
     MapPin, Mail, Phone, Clock
 } from 'lucide-react';
@@ -22,6 +22,7 @@ type StatusFilter = 'all' | 'pending' | 'verified' | 'rejected' | 'suspended';
 
 interface AcademyRecord {
     tenantId: string;
+    academyCode?: string;
     name: string;
     slug: string;
     category: string;
@@ -60,6 +61,7 @@ interface AcademiesApiResponse {
 interface AcademyDetail {
     overview: {
         tenantId: string;
+        academyCode?: string;
         name: string;
         slug: string;
         category: string;
@@ -85,6 +87,7 @@ interface AcademyDetail {
     };
     owner: {
         userId: string;
+        userCode?: string;
         fullName: string;
         email: string | null;
         phone: string | null;
@@ -284,15 +287,6 @@ export default function PlatformAdminTenantsPage() {
         setTimeout(() => setToastMessage(null), 4500);
     };
 
-    const copyToClipboard = async (text: string, label: string) => {
-        try {
-            await navigator.clipboard.writeText(text);
-            showToast(`Copied ${label} to clipboard.`);
-        } catch {
-            showToast(`Failed to copy ${label}.`);
-        }
-    };
-
     // Load academies listing
     const loadAcademies = useCallback(async () => {
         setLoading(true);
@@ -374,7 +368,7 @@ export default function PlatformAdminTenantsPage() {
             const csvRows = [
                 headers.join(','),
                 ...rows.map(r => [
-                    csvCell(r.tenantId),
+                    csvCell(r.academyCode || r.tenantId),
                     csvCell(r.name),
                     csvCell(r.slug),
                     csvCell(r.category),
@@ -664,18 +658,11 @@ export default function PlatformAdminTenantsPage() {
                             ) : (
                                 academies.map((academy) => (
                                     <tr key={academy.tenantId} className="hover:bg-slate-50/70 transition-colors">
-                                        {/* Academy ID with copy */}
-                                        <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500">
-                                            <div className="flex items-center gap-1.5">
-                                                <span>{academy.tenantId.slice(0, 8)}</span>
-                                                <button
-                                                    onClick={() => copyToClipboard(academy.tenantId, 'Academy ID')}
-                                                    className="p-1 hover:text-indigo-600 text-slate-400 rounded transition-colors cursor-pointer"
-                                                    title={`Full UUID: ${academy.tenantId}`}
-                                                >
-                                                    <Copy size={12} />
-                                                </button>
-                                            </div>
+                                        {/* Academy ID */}
+                                        <td className="py-3.5 px-4 font-mono text-[11px] whitespace-nowrap">
+                                            <span className="font-semibold text-indigo-700 bg-indigo-50/70 border border-indigo-100/60 px-2 py-0.5 rounded">
+                                                {academy.academyCode || `AC-${academy.tenantId.slice(0, 8)}`}
+                                            </span>
                                         </td>
 
                                         {/* Academy Name */}
@@ -898,7 +885,8 @@ export default function PlatformAdminTenantsPage() {
                                         <div className="flex items-center gap-3 text-slate-500 text-[11px] mt-0.5">
                                             <span>{detail.overview.category}</span>
                                             <span>•</span>
-                                            <span className="font-mono text-[10px]">{detail.overview.tenantId}</span>
+                                            <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">{detail.overview.academyCode || `AC-${detail.overview.tenantId.slice(0, 8)}`}</span>
+                                            <span className="font-mono text-[10px] text-slate-400">({detail.overview.tenantId})</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1058,13 +1046,10 @@ export default function PlatformAdminTenantsPage() {
                                             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                                                 <span className="text-[10px] uppercase font-bold text-slate-400 block">User ID</span>
                                                 <div className="flex items-center justify-between font-mono text-xs text-slate-700">
-                                                    <span>{detail.owner.userId}</span>
-                                                    <button
-                                                        onClick={() => copyToClipboard(detail.owner.userId, 'Owner User ID')}
-                                                        className="p-1 text-slate-400 hover:text-indigo-600 cursor-pointer"
-                                                    >
-                                                        <Copy size={12} />
-                                                    </button>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">{detail.owner.userCode || `USR-${detail.owner.userId.slice(0, 8)}`}</span>
+                                                        <span className="text-[10px] text-slate-400">({detail.owner.userId})</span>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -1510,7 +1495,7 @@ export default function PlatformAdminTenantsPage() {
                             {/* Modal Footer */}
                             <div className="pt-4 flex justify-between items-center border-t border-slate-100">
                                 <span className="text-[10px] text-slate-400 font-mono">
-                                    ClassShare Control Plane • ID: {detail.overview.tenantId}
+                                    ClassSphere Control Plane • ID: {detail.overview.academyCode || detail.overview.tenantId}
                                 </span>
                                 <button
                                     onClick={closeDossier}
