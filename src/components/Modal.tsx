@@ -1,18 +1,23 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
     title: string;
     onClose: () => void;
     children: React.ReactNode;
+    isOpen?: boolean;
     maxWidth?: string | number;
     style?: React.CSSProperties;
     className?: string;
 }
 
-export default function Modal({ title, onClose, children, maxWidth, style, className = '' }: ModalProps) {
+export default function Modal({ title, onClose, children, isOpen, maxWidth, style, className = '' }: ModalProps) {
+    const [mounted, setMounted] = useState(false);
+
     useEffect(() => {
+        setMounted(true);
         const originalOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
 
@@ -27,8 +32,10 @@ export default function Modal({ title, onClose, children, maxWidth, style, class
         };
     }, [onClose]);
 
-    return (
-        <div className="modal-overlay" onClick={onClose}>
+    if (!mounted || isOpen === false) return null;
+
+    return createPortal(
+        <div className="modal-overlay !fixed !inset-0 !z-[9999]" onClick={onClose}>
             <div
                 className={`modal-content ${className}`.trim()}
                 onClick={e => e.stopPropagation()}
@@ -40,6 +47,7 @@ export default function Modal({ title, onClose, children, maxWidth, style, class
                 </div>
                 {children}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

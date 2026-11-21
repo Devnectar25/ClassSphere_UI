@@ -1,1 +1,1 @@
-export { default } from './sitemap';
+export { default } from './sitemap-view';

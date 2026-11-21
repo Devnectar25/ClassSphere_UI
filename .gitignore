@@ -62,12 +62,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-
 # additional temporary, backup, and scratch files
 *.temp
-*.orig
-*.swp
-*.swo
+*.sql.bak
+*.seed.sql
+*.test.sql
+*.test.log
+*.dump
 tmp/
 temp/
 scratch/

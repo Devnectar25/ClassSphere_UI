@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import Modal from '@/components/Modal';
+import Pagination from '@/components/Pagination';
+
+const PAGE_SIZE = 10;
 
 interface ComplianceLog {
     logId: string;
@@ -23,6 +26,9 @@ export default function PlatformAdminAuditPage() {
     const [logs, setLogs] = useState<ComplianceLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionFilter, setActionFilter] = useState('');
+    const [appliedFilter, setAppliedFilter] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalRecords, setTotalRecords] = useState(0);
     const [selectedLog, setSelectedLog] = useState<ComplianceLog | null>(null);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -31,13 +37,25 @@ export default function PlatformAdminAuditPage() {
         setTimeout(() => setToastMessage(null), 4000);
     };
 
-    const fetchLogs = useCallback(async () => {
+    const fetchLogs = useCallback(async (targetPage = 1, filter = actionFilter) => {
         try {
             setLoading(true);
-            const url = actionFilter
-                ? `/reports?type=audit&action=${encodeURIComponent(actionFilter)}`
-                : '/reports?type=audit';
-            setLogs((await api<{ logs: ComplianceLog[] }>(url)).logs);
+            const offset = (targetPage - 1) * PAGE_SIZE;
+            const params = new URLSearchParams({
+                type: 'audit',
+                limit: PAGE_SIZE.toString(),
+                offset: offset.toString(),
+            });
+            if (filter.trim()) {
+                params.set('action', filter.trim());
+            }
+            const data = await api<{ logs: ComplianceLog[]; total?: number; limit?: number; offset?: number }>(
+                `/reports?${params.toString()}`
+            );
+            setLogs(data.logs || []);
+            setTotalRecords(typeof data.total === 'number' ? data.total : (data.logs?.length || 0));
+            setCurrentPage(targetPage);
+            setAppliedFilter(filter.trim());
         } catch {
             showToast('Unable to fetch compliance audit records.');
         } finally {
@@ -46,30 +64,15 @@ export default function PlatformAdminAuditPage() {
     }, [actionFilter]);
 
     useEffect(() => {
-        let isMounted = true;
-        api<{ logs: ComplianceLog[] }>('/reports?type=audit')
-            .then((data) => {
-                if (isMounted) {
-                    setLogs(data.logs);
-                    setLoading(false);
-                }
-            })
-            .catch(() => {
-                if (isMounted) {
-                    showToast('Unable to fetch compliance audit records.');
-                    setLoading(false);
-                }
-            });
+        fetchLogs(1, '');
+    }, [fetchLogs]);
 
-        return () => {
-            isMounted = false;
-        };
-    }, []);
+    const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
 
     return (
         <div className="space-y-6">
             {toastMessage && (
-                <div className="fixed bottom-6 right-6 z-50 bg-white border border-slate-200 text-slate-900 px-5 py-3.5 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold">
+                <div className="fixed bottom-6 right-6 z-[10000] bg-white border border-slate-200 text-slate-900 px-5 py-3.5 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold">
                     <Sparkles size={16} className="text-amber-500" />
                     <span>{toastMessage}</span>
                 </div>
@@ -77,7 +80,7 @@ export default function PlatformAdminAuditPage() {
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
                 <div>
-                    <h1 className="text-2xl font-bold font-serif text-slate-900 tracking-tight">Immutable Compliance Audit Trail</h1>
+                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Immutable Compliance Audit Trail</h1>
                     <p className="text-xs text-slate-500 mt-1">
                         Cryptographically verifiable log of all administrative, financial, and security lifecycle mutations.
                     </p>
@@ -85,7 +88,7 @@ export default function PlatformAdminAuditPage() {
 
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={fetchLogs}
+                        onClick={() => fetchLogs(currentPage, appliedFilter)}
                         className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs hover:border-slate-300 cursor-pointer"
                     >
                         <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -95,7 +98,7 @@ export default function PlatformAdminAuditPage() {
             </div>
 
             {/* Filter Search */}
-            <div className="flex items-center gap-3">
+            <form onSubmit={(e) => { e.preventDefault(); fetchLogs(1, actionFilter); }} className="flex items-center gap-3">
                 <div className="relative flex-1 max-w-md">
                     <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
@@ -107,17 +110,24 @@ export default function PlatformAdminAuditPage() {
                     />
                 </div>
                 <button
-                    onClick={fetchLogs}
+                    type="submit"
                     className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
                 >
                     Apply Filter
                 </button>
-            </div>
+            </form>
 
             {/* Audit Log Table */}
             <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs font-mono">
+                <div>
+                    <table className="w-full table-fixed text-left text-xs font-mono">
+                        <colgroup>
+                            <col className="w-[18%]" />
+                            <col className="w-[26%]" />
+                            <col className="w-[16%]" />
+                            <col className="w-[28%]" />
+                            <col className="w-[12%]" />
+                        </colgroup>
                         <thead>
                             <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-200 font-sans">
                                 <th className="py-3 px-4">Timestamp (UTC)</th>
@@ -136,17 +146,20 @@ export default function PlatformAdminAuditPage() {
                                 </tr>
                             ) : (
                                 logs.map((log) => (
-                                    <tr key={log.logId} className="hover:bg-slate-50/70 transition-colors">
-                                        <td className="py-4 px-4 text-slate-600 font-medium whitespace-nowrap">
-                                            {new Date(log.createdAt).toISOString().replace('T', ' ').slice(0, 19)}
+                                    <tr key={log.logId} className="hover:bg-slate-50/70 transition-colors [&>td]:align-middle">
+                                        <td className="py-4 px-4 text-slate-600 font-medium">
+                                            <div className="whitespace-nowrap">{new Date(log.createdAt).toISOString().slice(0, 10)}</div>
+                                            <div className="text-[11px] text-slate-400 whitespace-nowrap">{new Date(log.createdAt).toISOString().slice(11, 19)}</div>
                                         </td>
-                                        <td className="py-4 px-4 whitespace-nowrap">
-                                            <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/70 font-bold text-[11px]">
+                                        <td className="py-4 px-4">
+                                            <span title={log.action} className="inline-block max-w-full break-all line-clamp-2 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/70 font-bold text-[11px]">
                                                 {log.action}
                                             </span>
                                         </td>
-                                        <td className="py-4 px-4 text-slate-600 font-sans font-medium whitespace-nowrap">{log.entityType}</td>
-                                        <td className="py-4 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">{log.correlationId}</td>
+                                        <td className="py-4 px-4 text-slate-600 font-sans font-medium break-words">{log.entityType}</td>
+                                        <td className="py-4 px-4 text-slate-400 font-mono text-[11px]">
+                                            <div className="break-all line-clamp-2" title={log.correlationId}>{log.correlationId}</div>
+                                        </td>
                                         <td className="py-4 px-4 text-right whitespace-nowrap">
                                             <button
                                                 onClick={() => setSelectedLog(log)}
@@ -162,6 +175,16 @@ export default function PlatformAdminAuditPage() {
                         </tbody>
                     </table>
                 </div>
+
+                <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalRecords={totalRecords}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={(page) => fetchLogs(page, appliedFilter)}
+                    recordLabel="audit logs"
+                    loading={loading}
+                />
             </div>
 
             {/* Modal: JSON Payload Inspector */}
@@ -183,7 +206,7 @@ export default function PlatformAdminAuditPage() {
 
                         <div>
                             <span className="text-slate-700 block font-semibold mb-1 text-xs">Raw Payload Details:</span>
-                            <pre className="p-3.5 rounded-xl bg-slate-900 text-emerald-400 font-mono overflow-x-auto text-[11px] max-h-60 leading-relaxed border border-slate-800">
+                            <pre className="p-3.5 rounded-xl bg-slate-900 text-emerald-400 font-mono whitespace-pre-wrap break-all overflow-y-auto no-scrollbar text-[11px] max-h-60 leading-relaxed border border-slate-800">
                                 {JSON.stringify(selectedLog.details, null, 2)}
                             </pre>
                         </div>
