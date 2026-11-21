@@ -77,6 +77,24 @@ export function can(session: SessionState | null, permission: string) {
     return false;
 }
 
+export function isSuperAdmin(session: SessionState | null): boolean {
+    if (!session) return false;
+    const r = session.session?.role;
+    return r === 'SuperAdmin' || r === 'PlatformAdmin' || Boolean(session.user?.isPlatformAdmin);
+}
+
+export function isFinanceAdmin(session: SessionState | null): boolean {
+    if (!session) return false;
+    const r = session.session?.role;
+    return isSuperAdmin(session) || r === 'FinanceAdmin' || r === 'Finance';
+}
+
+export function isSupportAdmin(session: SessionState | null): boolean {
+    if (!session) return false;
+    const r = session.session?.role;
+    return isSuperAdmin(session) || r === 'SupportAdmin';
+}
+
 /** Where a user lands after signing in. */
 export function homePath(session: SessionState) {
     if (!session.session.tenantId) return '/admin';

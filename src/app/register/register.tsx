@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-    CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff, BadgeCheck, Circle, Building2, Phone, Mail, X,
+    CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff, BadgeCheck, Circle, Building2, Phone, Mail, X, AlertCircle, RefreshCw,
 } from 'lucide-react';
 import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
@@ -55,6 +55,25 @@ const EMAIL_TAKEN = 'An account already exists with this email address. Please s
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 const otpExpiry = () => Date.now() + OTP_TTL_MS;
 
+function loadRazorpayScript(): Promise<boolean> {
+    return new Promise((resolve) => {
+        if (typeof window === 'undefined') return resolve(false);
+        if ((window as any).Razorpay) return resolve(true);
+        const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+        if (existing) {
+            existing.addEventListener('load', () => resolve(true));
+            existing.addEventListener('error', () => resolve(false));
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+}
+
 export default function RegisterPage() {
     const router = useRouter();
     const [step, setStep] = useState(0);
@@ -81,6 +100,8 @@ export default function RegisterPage() {
     const [termsTouched, setTermsTouched] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [busyState, setBusyState] = useState<'idle' | 'opening' | 'verifying'>('idle');
+    const [paymentStatus, setPaymentStatus] = useState<'idle' | 'cancelled' | 'failed' | 'success'>('idle');
     const [session, setSession] = useState<SessionState | null>(null);
 
     // Demo OTP: the code is generated in the browser and shown on screen — no SMS is sent.
@@ -332,11 +353,39 @@ export default function RegisterPage() {
         };
     };
 
+    const handleRegisterError = (err: unknown) => {
+        const message = (err as Error).message || 'Registration failed.';
+        // Duplicate caught by the server at create time: send the user back to the field to fix
+        if (/mobile number already exists/i.test(message) || /email already exists/i.test(message)) {
+            const isPhone = /mobile/i.test(message);
+            if (isPhone) { setTakenPhones(l => [...l, phoneDigits]); setVerifiedPhone(null); }
+            else setTakenEmails(l => [...l, form.email.trim().toLowerCase()]);
+            setTouched(t => ({ ...t, [isPhone ? 'phone' : 'email']: true }));
+            setFieldErrors(errs => ({ ...errs, [isPhone ? 'phone' : 'email']: isPhone ? PHONE_TAKEN : EMAIL_TAKEN }));
+            setError(isPhone ? PHONE_TAKEN : EMAIL_TAKEN);
+            setStep(0);
+        } else {
+            setError(message);
+        }
+    };
+
     const createAcademy = async () => {
         setBusy(true);
+        setBusyState('opening');
         setError(null);
+        setPaymentStatus('idle');
+
         try {
-            // The confirmation is checked client-side only
+            // 1. Ensure Razorpay Checkout SDK is ready
+            const loaded = await loadRazorpayScript();
+            if (!loaded) {
+                setError('Failed to connect to Razorpay payment gateway. Please check your internet connection.');
+                setBusy(false);
+                setBusyState('idle');
+                return;
+            }
+
+            // 2. Prepare payload
             const effectiveAcademyType = form.academyType === 'Other' && form.customCategory.trim()
                 ? form.customCategory.trim()
                 : form.academyType;
@@ -346,28 +395,128 @@ export default function RegisterPage() {
             };
             delete payload.confirmPassword;
             delete payload.customCategory;
-            const created = await api<SessionState>('/auth/register', {
-                method: 'POST', body: JSON.stringify({ ...payload, planTier: selectedPlan, acceptTerms }),
+
+            // 3. Create server-side Razorpay Autopay Subscription & Order
+            const orderRes = await api<{
+                orderId: string;
+                subscriptionId?: string | null;
+                amount: number;
+                currency: string;
+                keyId: string;
+                planTier: string;
+                planName: string;
+                priceMonthly: number;
+                academyName: string;
+                isAutopay?: boolean;
+            }>('/auth/register/order', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ...payload,
+                    planTier: selectedPlan,
+                    acceptTerms,
+                }),
             });
-            saveSession({ ...created, selectedBranchId: null });
-            setSession(created);
-            setStep(2);
-        } catch (err) {
-            const message = (err as Error).message;
-            // Duplicate caught by the server at create time: send the user back to the field to fix
-            if (/mobile number already exists/i.test(message) || /email already exists/i.test(message)) {
-                const isPhone = /mobile/i.test(message);
-                if (isPhone) { setTakenPhones(l => [...l, phoneDigits]); setVerifiedPhone(null); }
-                else setTakenEmails(l => [...l, form.email.trim().toLowerCase()]);
-                setTouched(t => ({ ...t, [isPhone ? 'phone' : 'email']: true }));
-                setFieldErrors(errs => ({ ...errs, [isPhone ? 'phone' : 'email']: isPhone ? PHONE_TAKEN : EMAIL_TAKEN }));
-                setError(isPhone ? PHONE_TAKEN : EMAIL_TAKEN);
-                setStep(0);
+
+            // 4. Configure Razorpay checkout options (Autopay Subscription or standard Order)
+            const options: Record<string, unknown> = {
+                key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+                name: 'ClassSphere',
+                description: `${orderRes.planName || selectedPlan} — Autopay Monthly`,
+                prefill: {
+                    name: `${form.firstName} ${form.lastName}`.trim(),
+                    email: form.email.trim(),
+                    contact: form.phone.trim(),
+                },
+                notes: {
+                    academyName: form.academyName,
+                    planTier: selectedPlan,
+                },
+                theme: {
+                    color: '#4F46E5', // ClassSphere signature indigo
+                },
+                modal: {
+                    ondismiss: () => {
+                        api('/auth/register/cancel', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                orderId: orderRes.orderId || orderRes.subscriptionId,
+                                reason: 'Modal closed by user'
+                            }),
+                        }).catch(() => {});
+                        setPaymentStatus('cancelled');
+                        setBusyState('idle');
+                        setBusy(false);
+                    },
+                },
+                handler: async function (response: {
+                    razorpay_payment_id: string;
+                    razorpay_order_id?: string;
+                    razorpay_subscription_id?: string;
+                    razorpay_signature: string;
+                }) {
+                    try {
+                        setBusy(true);
+                        setBusyState('verifying');
+                        setError(null);
+
+                        // 5. Verify payment signature on backend and activate academy
+                        const verifyRes = await api<{
+                            session: SessionState;
+                            tenantId: string;
+                            planTier: string;
+                            paymentStatus: string;
+                        }>('/auth/register/verify', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                orderId: response.razorpay_order_id || orderRes.orderId,
+                                subscriptionId: response.razorpay_subscription_id || orderRes.subscriptionId,
+                                paymentId: response.razorpay_payment_id,
+                                signature: response.razorpay_signature,
+                            }),
+                        });
+
+                        setPaymentStatus('success');
+                        saveSession({ ...verifyRes.session, selectedBranchId: null });
+                        setSession(verifyRes.session);
+                        setStep(2);
+                    } catch (verifyErr) {
+                        setPaymentStatus('failed');
+                        handleRegisterError(verifyErr);
+                    } finally {
+                        setBusy(false);
+                        setBusyState('idle');
+                    }
+                },
+            };
+
+            // If an Autopay subscription exists, use subscription_id; otherwise fall back to order_id & amount
+            if (orderRes.subscriptionId) {
+                options.subscription_id = orderRes.subscriptionId;
             } else {
-                setError(message);
+                options.order_id = orderRes.orderId;
+                options.amount = orderRes.amount;
+                options.currency = orderRes.currency || 'INR';
             }
-        } finally {
+
+            const rzp = new (window as any).Razorpay(options);
+            rzp.on('payment.failed', function (resp: any) {
+                api('/auth/register/cancel', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        orderId: orderRes.orderId || orderRes.subscriptionId,
+                        reason: resp.error?.description || 'Payment failed'
+                    }),
+                }).catch(() => {});
+                setPaymentStatus('failed');
+                setError(resp.error?.description || 'Payment was unsuccessful. Your account was not charged. Please retry.');
+                setBusyState('idle');
+                setBusy(false);
+            });
+            rzp.open();
+        } catch (err) {
+            handleRegisterError(err);
             setBusy(false);
+            setBusyState('idle');
         }
     };
 
@@ -808,13 +957,59 @@ export default function RegisterPage() {
                                 );
                             })}
                         </div>
-                        {error && <div role="alert" style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
+                        {paymentStatus === 'cancelled' && (
+                            <div style={{
+                                padding: '12px 14px', borderRadius: '10px', background: '#FFFBEB',
+                                border: '1px solid #FDE68A', color: '#92400E', fontSize: '13px',
+                                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px',
+                            }}>
+                                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                                <span>Payment was cancelled. You can retry with the button below or change your selected plan.</span>
+                            </div>
+                        )}
+
+                        {paymentStatus === 'failed' && (
+                            <div style={{
+                                padding: '12px 14px', borderRadius: '10px', background: '#FEF2F2',
+                                border: '1px solid #FECACA', color: '#991B1B', fontSize: '13px',
+                                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px',
+                            }}>
+                                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                                <span>{error || 'Payment was unsuccessful. Your account was not charged. Please try again.'}</span>
+                            </div>
+                        )}
+
+                        {error && paymentStatus !== 'failed' && (
+                            <div role="alert" style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{error}</div>
+                        )}
+
                         <div style={{ display: 'flex', gap: '10px' }}>
-                            <button type="button" className="btn-secondary" style={{ height: '50px', borderRadius: '12px' }} disabled={busy} onClick={() => { setError(null); setStep(0); }}>
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ height: '50px', borderRadius: '12px' }}
+                                disabled={busy}
+                                onClick={() => { setError(null); setPaymentStatus('idle'); setStep(0); }}
+                            >
                                 <ArrowLeft size={16} /> Back
                             </button>
-                            <button className="btn-primary reg-cta" style={{ flex: 1 }} disabled={busy || !selectedPlan} onClick={createAcademy}>
-                                {busy ? 'Creating your academy…' : <>Create Academy <ArrowRight size={16} /></>}
+                            <button
+                                className="btn-primary reg-cta"
+                                style={{ flex: 1 }}
+                                disabled={busy || !selectedPlan}
+                                onClick={createAcademy}
+                            >
+                                {busy ? (
+                                    busyState === 'verifying' ? (
+                                        <>Verifying Payment… <RefreshCw size={16} className="animate-spin" /></>
+                                    ) : (
+                                        <>Opening Razorpay… <RefreshCw size={16} className="animate-spin" /></>
+                                    )
+                                ) : paymentStatus === 'failed' || paymentStatus === 'cancelled' ? (
+                                    <>Retry Payment <ArrowRight size={16} /></>
+                                ) : (
+                                    <>Create Academy <ArrowRight size={16} /></>
+                                )}
                             </button>
                         </div>
                     </>

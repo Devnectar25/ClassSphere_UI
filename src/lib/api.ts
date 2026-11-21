@@ -14,6 +14,7 @@ export interface Plan {
     maxBranches: number;
     features: string[];
     isPopular: boolean;
+    razorpayPlanId?: string | null;
 }
 
 /**
