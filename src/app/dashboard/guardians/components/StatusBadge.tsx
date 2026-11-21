@@ -33,22 +33,13 @@ export default function StatusBadge(props: StatusBadgeProps) {
         switch (status) {
             case 'active':
                 return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                color: '#16A34A',
-                                fontSize: '13px',
-                                fontWeight: 600,
-                            }}
-                        >
-                            <CheckCircle2 size={13} aria-hidden="true" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                        <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={11} aria-hidden="true" />
                             <span>Active</span>
-                        </div>
+                        </span>
                         {relativeLogin && (
-                            <span style={{ fontSize: '12px', color: '#6B7280' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>
                                 {relativeLogin}
                             </span>
                         )}
@@ -57,20 +48,11 @@ export default function StatusBadge(props: StatusBadgeProps) {
 
             case 'invited':
                 return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                color: '#D97706',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                            }}
-                        >
-                            <Clock size={13} aria-hidden="true" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                        <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={11} aria-hidden="true" />
                             <span>Invite sent</span>
-                        </div>
+                        </span>
                         {canManage && onActionClick ? (
                             <button
                                 type="button"
@@ -78,59 +60,39 @@ export default function StatusBadge(props: StatusBadgeProps) {
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    padding: 0,
-                                    fontSize: '12px',
-                                    color: '#2563EB',
+                                    padding: '2px 0 0 0',
+                                    fontSize: '11px',
+                                    color: 'var(--cs-primary)',
                                     cursor: 'pointer',
                                     textAlign: 'left',
-                                    width: 'fit-content',
-                                    textDecoration: 'none',
+                                    textDecoration: 'underline',
                                 }}
                             >
                                 Resend
                             </button>
                         ) : (
-                            <span style={{ fontSize: '12px', color: '#6B7280' }}>Pending</span>
+                            <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>Pending</span>
                         )}
                     </div>
                 );
 
             case 'disabled':
                 return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                color: '#DC2626',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                            }}
-                        >
-                            <Ban size={13} aria-hidden="true" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                        <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Ban size={11} aria-hidden="true" />
                             <span>Disabled</span>
-                        </div>
+                        </span>
                     </div>
                 );
 
-            case 'none':
             default:
                 return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                color: '#6B7280',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                            }}
-                        >
-                            <UserX size={13} aria-hidden="true" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                        <span className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <UserX size={11} aria-hidden="true" />
                             <span>No login</span>
-                        </div>
+                        </span>
                         {canManage && onActionClick ? (
                             <button
                                 type="button"
@@ -138,13 +100,12 @@ export default function StatusBadge(props: StatusBadgeProps) {
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    padding: 0,
-                                    fontSize: '12px',
-                                    color: '#2563EB',
+                                    padding: '2px 0 0 0',
+                                    fontSize: '11px',
+                                    color: 'var(--cs-primary)',
                                     cursor: 'pointer',
                                     textAlign: 'left',
-                                    width: 'fit-content',
-                                    textDecoration: 'none',
+                                    textDecoration: 'underline',
                                 }}
                             >
                                 Create login
@@ -163,23 +124,11 @@ export default function StatusBadge(props: StatusBadgeProps) {
         const amt = dueAmount || 4500;
         const days = overdueDays || 12;
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                <span
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '3px 12px',
-                        borderRadius: '20px',
-                        background: '#FDE8E8',
-                        color: '#9B1C1C',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        width: 'fit-content',
-                    }}
-                >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                <span className="badge badge-danger">
                     ₹{amt.toLocaleString('en-IN')} overdue
                 </span>
-                <span style={{ fontSize: '12px', color: '#6B7280' }}>
+                <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>
                     {days} days
                 </span>
             </div>
@@ -187,20 +136,8 @@ export default function StatusBadge(props: StatusBadgeProps) {
     }
 
     return (
-        <span
-            style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '3px 12px',
-                borderRadius: '20px',
-                background: '#DEF7EC',
-                color: '#03543F',
-                fontSize: '12px',
-                fontWeight: 600,
-                width: 'fit-content',
-            }}
-        >
-            Paid up
+        <span className="badge badge-success">
+            ● Paid up
         </span>
     );
 }

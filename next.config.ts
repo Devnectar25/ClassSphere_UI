@@ -10,12 +10,27 @@ const nextConfig: NextConfig = {
     instantInsights: { validationLevel: "manual-warning" },
   },
   turbopack: {
+    resolveAlias: {
+      canvg: "./src/lib/empty.ts",
+      html2canvas: "./src/lib/empty.ts",
+      dompurify: "./src/lib/empty.ts",
+    },
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
         as: "*.css",
       },
     },
+  },
+  webpack: (config) => {
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      canvg: false,
+      html2canvas: false,
+      dompurify: false,
+    };
+    return config;
   },
 };
 
