@@ -207,7 +207,13 @@ export default function NoticesPage() {
             </div>
 
             {composing && (
-                <Modal title={form.status === 'scheduled' ? 'Schedule Notice' : 'Compose Notice'} onClose={() => setComposing(false)}>
+                <Modal
+                    title={form.status === 'scheduled' ? 'Schedule Notice' : 'Compose Notice'}
+                    onClose={() => setComposing(false)}
+                    maxWidth="700px"
+                    className="no-scrollbar"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div>
                             <label className="cs-label">Title</label>
@@ -215,7 +221,7 @@ export default function NoticesPage() {
                         </div>
                         <div>
                             <label className="cs-label">Message</label>
-                            <textarea className="cs-input" required rows={4} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
+                            <textarea className="cs-input" required rows={3} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} style={{ resize: 'vertical' }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                             <div>

@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useCallback, Suspense } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import Topbar from '@/components/Topbar';
 import Modal from '@/components/Modal';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import {
@@ -13,6 +14,11 @@ import {
     Copy,
     Check,
     KeyRound,
+    Users,
+    AlertCircle,
+    Clock,
+    GraduationCap,
+    Search,
 } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
@@ -24,99 +30,10 @@ import {
     PortalStatus,
     GuardianCredentials,
 } from './components/types';
-import StatCard from './components/StatCard';
-import FilterBar from './components/FilterBar';
 import DataTable from './components/DataTable';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
-
-// Seed sample records matching the reference design screenshot
-const SAMPLE_GUARDIANS: UIGuardian[] = [
-    {
-        guardianId: 'guard-101',
-        firstName: 'Dnyaneshwar',
-        lastName: 'Mahajan',
-        fullName: 'Dnyaneshwar Mahajan',
-        relationship: 'Guardian',
-        phone: '+91 83293 00932',
-        formattedPhone: '+91 83293 00932',
-        email: 'dnyaneshwar.m@example.com',
-        isPrimary: true,
-        hasPortalAccess: true,
-        portalEmail: 'dnyaneshwar.m@example.com',
-        portalLastLogin: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        portalStatus: 'active',
-        payerStatus: 'Active payer',
-        dueAmount: 0,
-        overdueDays: 0,
-        students: [{ studentId: 'stu-1', name: 'Kuldeep Mahajan' }],
-        batchIds: ['batch-1'],
-    },
-    {
-        guardianId: 'guard-102',
-        firstName: 'Meena',
-        lastName: 'Patel',
-        fullName: 'Meena Patel',
-        relationship: 'Mother',
-        phone: '+91 98765 43210',
-        formattedPhone: '+91 98765 43210',
-        email: 'meena.patel@example.com',
-        isPrimary: true,
-        hasPortalAccess: false,
-        portalEmail: 'meena.patel@example.com',
-        portalLastLogin: null,
-        portalStatus: 'invited',
-        payerStatus: 'Overdue',
-        dueAmount: 4500,
-        overdueDays: 12,
-        students: [{ studentId: 'stu-2', name: 'Priya Patel' }],
-        batchIds: ['batch-2'],
-    },
-    {
-        guardianId: 'guard-103',
-        firstName: 'Rajesh',
-        lastName: 'Sharma',
-        fullName: 'Rajesh Sharma',
-        relationship: 'Father',
-        phone: '+91 98200 11223',
-        formattedPhone: '+91 98200 11223',
-        email: 'rajesh.sharma@example.com',
-        isPrimary: true,
-        hasPortalAccess: false,
-        portalEmail: null,
-        portalLastLogin: null,
-        portalStatus: 'none',
-        payerStatus: 'Active payer',
-        dueAmount: 0,
-        overdueDays: 0,
-        students: [{ studentId: 'stu-3', name: 'Riya Sharma' }],
-        batchIds: ['batch-1'],
-    },
-    {
-        guardianId: 'guard-104',
-        firstName: 'Eleanor',
-        lastName: 'Thompson',
-        fullName: 'Eleanor Thompson',
-        relationship: 'Mother',
-        phone: '+91 99001 55667',
-        formattedPhone: '+91 99001 55667',
-        email: 'eleanor.t@example.com',
-        isPrimary: true,
-        hasPortalAccess: true,
-        portalEmail: 'eleanor.t@example.com',
-        portalLastLogin: new Date(Date.now() - 17 * 24 * 60 * 60 * 1000).toISOString(),
-        portalStatus: 'active',
-        payerStatus: 'Overdue',
-        dueAmount: 9000,
-        overdueDays: 5,
-        students: [
-            { studentId: 'stu-4a', name: 'Leo T.' },
-            { studentId: 'stu-4b', name: 'Maya T.' },
-        ],
-        batchIds: ['batch-3'],
-    },
-];
 
 const emptyParent = {
     firstName: '',
@@ -153,8 +70,8 @@ function GuardiansContent() {
     const [credentials, setCredentials] = useState<GuardianCredentials | null>(null);
     const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
 
-    // Initial selected state (Meena Patel selected as in reference image)
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(['guard-102']));
+    // Initial selected state (empty by default)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
     // URL Query Params state synchronization
     const searchQuery = searchParams.get('q') || '';
@@ -179,20 +96,15 @@ function GuardiansContent() {
         [searchParams, router, pathname]
     );
 
-    // Merge live data with sample guardians so UI matches screenshot perfectly
+    // Dynamic live guardians loaded from backend API
     const guardians: UIGuardian[] = useMemo(() => {
         if (!rawGuardians || rawGuardians.length === 0) {
-            return SAMPLE_GUARDIANS;
+            return [];
         }
 
-        const liveNormalized: UIGuardian[] = rawGuardians.map((g, index) => {
+        return rawGuardians.map((g) => {
             const fullName = `${g.firstName} ${g.lastName}`.trim();
-            let portalStatus: PortalStatus = 'none';
-            if (g.hasPortalAccess) {
-                portalStatus = 'active';
-            } else if (index % 3 === 1) {
-                portalStatus = 'invited';
-            }
+            const portalStatus: PortalStatus = g.hasPortalAccess ? 'active' : 'none';
 
             const isOverdue = g.payerStatus?.toLowerCase() === 'overdue';
             const dueAmount = isOverdue ? 4500 : 0;
@@ -208,27 +120,21 @@ function GuardiansContent() {
                 batchIds: [],
             };
         });
-
-        // Ensure screenshot examples are present if not already in list
-        const existingIds = new Set(liveNormalized.map(g => g.guardianId));
-        const combined = [...liveNormalized];
-        for (const sample of SAMPLE_GUARDIANS) {
-            if (!existingIds.has(sample.guardianId)) {
-                combined.push(sample);
-            }
-        }
-        return combined;
     }, [rawGuardians]);
 
-    // Stat card values (128, 14, 9, 11 as in screenshot)
+    // Stat card values computed dynamically from real-time live guardians
     const statCounts = useMemo(() => {
+        const all = guardians.length;
+        const overdue = guardians.filter(g => g.payerStatus?.toLowerCase() === 'overdue' || g.dueAmount > 0).length;
+        const invited = guardians.filter(g => g.portalStatus === 'invited' || !g.hasPortalAccess).length;
+        const multi_child = guardians.filter(g => g.students && g.students.length >= 2).length;
         return {
-            all: 128,
-            overdue: 14,
-            invited: 9,
-            multi_child: 11,
+            all,
+            overdue,
+            invited,
+            multi_child,
         };
-    }, []);
+    }, [guardians]);
 
     // Filter pipeline
     const filteredGuardians = useMemo(() => {
@@ -333,266 +239,309 @@ function GuardiansContent() {
         setSelectedIds(new Set());
     };
 
+    const stats = [
+        { label: 'All Guardians', value: statCounts.all, color: '#4F46E5', icon: Users, id: 'all' as const },
+        { label: 'Overdue Payers', value: statCounts.overdue, color: '#EF4444', icon: AlertCircle, id: 'overdue' as const },
+        { label: 'Invite Pending', value: statCounts.invited, color: '#F59E0B', icon: Clock, id: 'invited' as const },
+        { label: '2+ Children', value: statCounts.multi_child, color: '#10B981', icon: GraduationCap, id: 'multi_child' as const },
+    ];
+
     return (
-        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Action Feedback Banner */}
-            {actionBanner && (
-                <div
-                    style={{
-                        padding: '12px 18px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        background: actionBanner.type === 'error' ? '#FEE2E2' : '#DEF7EC',
-                        border: `1px solid ${actionBanner.type === 'error' ? '#F87171' : '#31C48D'}`,
-                        color: actionBanner.type === 'error' ? '#991B1B' : '#03543F',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                    }}
-                >
-                    <span>{actionBanner.text}</span>
-                    <button
-                        type="button"
-                        onClick={() => setActionBanner(null)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
-                    >
-                        <X size={16} />
-                    </button>
-                </div>
-            )}
+        <>
+            <Topbar title="Parents & Guardians" subtitle="Contacts, linked children and portal access" />
 
-            {/* 1. Header matching screenshot */}
-            <div
-                style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    gap: '16px',
-                    flexWrap: 'wrap',
-                }}
-            >
-                <div>
-                    <h1
+            <div className="page-body" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Action Feedback Banner */}
+                {actionBanner && (
+                    <div
+                        className="cs-card"
                         style={{
-                            fontSize: '24px',
-                            fontWeight: 700,
-                            color: '#111827',
-                            margin: 0,
-                            lineHeight: 1.2,
-                        }}
-                    >
-                        Parents and guardians
-                    </h1>
-                    <p
-                        style={{
-                            fontSize: '14px',
-                            color: '#6B7280',
-                            marginTop: '4px',
-                            marginBottom: 0,
-                        }}
-                    >
-                        Contacts, linked children and portal access
-                    </p>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <button
-                        type="button"
-                        onClick={() => alert('Import parents feature')}
-                        style={{
-                            display: 'inline-flex',
+                            padding: '12px 18px',
+                            display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            height: '38px',
-                            padding: '0 16px',
-                            background: '#FFFFFF',
-                            border: '1px solid #D1D5DB',
-                            borderRadius: '8px',
-                            color: '#111827',
+                            justifyContent: 'space-between',
+                            background: actionBanner.type === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                            border: `1px solid ${actionBanner.type === 'error' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                            color: actionBanner.type === 'error' ? '#DC2626' : '#059669',
                             fontSize: '13px',
                             fontWeight: 500,
-                            cursor: 'pointer',
                         }}
                     >
-                        <Upload size={14} color="#374151" />
-                        <span>Import</span>
-                    </button>
-
-                    {canManage && (
+                        <span>{actionBanner.text}</span>
                         <button
                             type="button"
-                            onClick={() => setAdding(true)}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                height: '38px',
-                                padding: '0 18px',
-                                background: '#000000',
-                                border: '1px solid #000000',
-                                borderRadius: '8px',
-                                color: '#FFFFFF',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                            }}
+                            onClick={() => setActionBanner(null)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
                         >
-                            <Plus size={15} />
-                            <span>Add parent</span>
+                            <X size={16} />
                         </button>
-                    )}
+                    </div>
+                )}
+
+                {/* 1. Four Stat Cards matching Students/Courses theme */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', width: '100%' }}>
+                    {stats.map(s => {
+                        const isActive = statParam === s.id;
+                        return (
+                            <div
+                                key={s.label}
+                                className="cs-card"
+                                onClick={() => handleStatCardClick(s.id)}
+                                style={{
+                                    padding: '14px 18px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    cursor: 'pointer',
+                                    border: isActive ? `1.5px solid ${s.color}` : '1px solid var(--cs-border)',
+                                    background: isActive ? `${s.color}08` : 'var(--cs-surface)',
+                                    transition: 'all 0.15s ease'
+                                }}
+                            >
+                                <div style={{
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: '10px',
+                                    background: `${s.color}20`,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    <s.icon size={18} color={s.color} />
+                                </div>
+                                <div>
+                                    <div style={{
+                                        fontSize: '22px',
+                                        fontWeight: 800,
+                                        color: 'var(--cs-text-primary)',
+                                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                                        lineHeight: 1.1
+                                    }}>
+                                        {s.value}
+                                    </div>
+                                    <div style={{
+                                        fontSize: '12px',
+                                        color: 'var(--cs-text-secondary)',
+                                        marginTop: '2px'
+                                    }}>
+                                        {s.label}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
-            </div>
 
-            {/* 2. Four Stat Cards matching screenshot colors */}
-            <div
-                style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-                    gap: '14px',
-                }}
-            >
-                <StatCard
-                    label="All guardians"
-                    value={statCounts.all}
-                    bgColor="#FFFFFF"
-                    borderColor="#E5E7EB"
-                    textColor="#111827"
-                    isActive={statParam === 'all' || !statParam}
-                    onClick={() => handleStatCardClick('all')}
-                />
-                <StatCard
-                    label="Overdue payers"
-                    value={statCounts.overdue}
-                    bgColor="#FDE8E8"
-                    borderColor="#FCA5A5"
-                    textColor="#991B1B"
-                    isActive={statParam === 'overdue'}
-                    onClick={() => handleStatCardClick('overdue')}
-                />
-                <StatCard
-                    label="Invite pending"
-                    value={statCounts.invited}
-                    bgColor="#FEF3C7"
-                    borderColor="#FDE68A"
-                    textColor="#92400E"
-                    isActive={statParam === 'invited'}
-                    onClick={() => handleStatCardClick('invited')}
-                />
-                <StatCard
-                    label="2+ children"
-                    value={statCounts.multi_child}
-                    bgColor="#FFFFFF"
-                    borderColor="#E5E7EB"
-                    textColor="#111827"
-                    isActive={statParam === 'multi_child'}
-                    onClick={() => handleStatCardClick('multi_child')}
-                />
-            </div>
-
-            {/* 3. Search and Dropdown Filter Bar */}
-            <FilterBar
-                search={searchQuery}
-                onSearchChange={val => updateQueryParams({ q: val || null })}
-                payerFilter={payerParam}
-                onPayerFilterChange={val => updateQueryParams({ payer: val })}
-                loginFilter={loginParam}
-                onLoginFilterChange={val => updateQueryParams({ login: val })}
-                batchFilter={batchParam}
-                onBatchFilterChange={val => updateQueryParams({ batch: val })}
-                batches={batches ?? []}
-                onReset={handleResetAllFilters}
-                totalResults={filteredGuardians.length}
-            />
-
-            {/* 4. Selection Action Bar matching screenshot */}
-            {selectedIds.size > 0 && (
-                <div
-                    style={{
-                        padding: '12px 18px',
-                        background: '#DBEAFE',
-                        border: '1px solid #BFDBFE',
-                        borderRadius: '10px',
+                {/* 2. Main Table Card with Toolbar, Selection Bar and DataTable */}
+                <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                    {/* Toolbar */}
+                    <div style={{
+                        padding: '12px 20px',
+                        borderBottom: '1px solid var(--cs-border)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: '12px',
-                        flexWrap: 'wrap',
-                    }}
-                >
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#1D4ED8' }}>
-                        {selectedIds.size} selected
+                        flexWrap: 'wrap'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1', minWidth: '280px' }}>
+                            {/* Search */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                background: 'var(--cs-surface-2)',
+                                border: '1px solid var(--cs-border)',
+                                borderRadius: '8px',
+                                padding: '0 10px',
+                                height: '32px',
+                                boxSizing: 'border-box',
+                                width: '280px',
+                                flexShrink: 0
+                            }}>
+                                <Search size={14} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
+                                <input
+                                    placeholder="Search parent, child or phone..."
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        outline: 'none',
+                                        padding: 0,
+                                        height: '100%',
+                                        fontSize: '12px',
+                                        width: '100%',
+                                        color: 'var(--cs-text-primary)'
+                                    }}
+                                    value={searchQuery}
+                                    onChange={e => updateQueryParams({ q: e.target.value || null })}
+                                />
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => updateQueryParams({ q: null })}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--cs-text-muted)', display: 'flex' }}
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Payer Filter Select */}
+                            <select
+                                className="cs-input"
+                                style={{ height: '32px', fontSize: '12px', padding: '0 8px', width: 'auto', borderRadius: '8px' }}
+                                value={payerParam}
+                                onChange={e => updateQueryParams({ payer: e.target.value })}
+                            >
+                                <option value="all">Payer: All</option>
+                                <option value="paid">Paid up</option>
+                                <option value="overdue">Overdue</option>
+                            </select>
+
+                            {/* Login Filter Select */}
+                            <select
+                                className="cs-input"
+                                style={{ height: '32px', fontSize: '12px', padding: '0 8px', width: 'auto', borderRadius: '8px' }}
+                                value={loginParam}
+                                onChange={e => updateQueryParams({ login: e.target.value })}
+                            >
+                                <option value="all">Login: All</option>
+                                <option value="active">Active</option>
+                                <option value="invited">Invite sent</option>
+                                <option value="none">No login</option>
+                            </select>
+
+                            {/* Batch Filter Select */}
+                            {batches && batches.length > 0 && (
+                                <select
+                                    className="cs-input"
+                                    style={{ height: '32px', fontSize: '12px', padding: '0 8px', width: 'auto', borderRadius: '8px' }}
+                                    value={batchParam}
+                                    onChange={e => updateQueryParams({ batch: e.target.value })}
+                                >
+                                    <option value="all">Batch: All</option>
+                                    {batches.map(b => (
+                                        <option key={b.batchId} value={b.batchId}>{b.name}</option>
+                                    ))}
+                                </select>
+                            )}
+
+                            {(searchQuery || payerParam !== 'all' || loginParam !== 'all' || batchParam !== 'all' || statParam !== 'all') && (
+                                <button
+                                    type="button"
+                                    onClick={handleResetAllFilters}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        fontSize: '11px',
+                                        color: 'var(--cs-primary)',
+                                        cursor: 'pointer',
+                                        textDecoration: 'underline'
+                                    }}
+                                >
+                                    Reset filters
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Action buttons on the right */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => alert('Import parents feature')}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    height: '32px',
+                                    fontSize: '12px',
+                                    padding: '0 12px',
+                                    borderRadius: '8px'
+                                }}
+                            >
+                                <Upload size={14} /> Import
+                            </button>
+                            {canManage && (
+                                <button
+                                    type="button"
+                                    className="btn-primary"
+                                    onClick={() => setAdding(true)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        height: '32px',
+                                        fontSize: '12px',
+                                        padding: '0 14px',
+                                        borderRadius: '8px',
+                                        fontWeight: 600
+                                    }}
+                                >
+                                    <Plus size={14} /> Add parent
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <button
-                            type="button"
-                            onClick={handleBulkReminder}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                height: '34px',
-                                padding: '0 14px',
-                                background: '#DBEAFE',
-                                border: '1px solid #93C5FD',
-                                borderRadius: '6px',
-                                color: '#1D4ED8',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            <Bell size={13} />
-                            <span>Send fee reminder</span>
-                        </button>
+                    {/* Bulk Selection Bar */}
+                    {selectedIds.size > 0 && (
+                        <div style={{
+                            padding: '10px 20px',
+                            background: 'rgba(79, 70, 229, 0.08)',
+                            borderBottom: '1px solid rgba(79, 70, 229, 0.2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px'
+                        }}>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-primary)' }}>
+                                {selectedIds.size} parent{selectedIds.size > 1 ? 's' : ''} selected
+                            </span>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    style={{ height: '28px', fontSize: '12px', padding: '0 10px', borderRadius: '6px' }}
+                                    onClick={handleBulkReminder}
+                                >
+                                    <Bell size={12} /> Send fee reminder
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn-primary"
+                                    style={{ height: '28px', fontSize: '12px', padding: '0 10px', borderRadius: '6px' }}
+                                    onClick={handleBulkInvite}
+                                >
+                                    <Send size={12} /> Send invite
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
-                        <button
-                            type="button"
-                            onClick={handleBulkInvite}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                height: '34px',
-                                padding: '0 14px',
-                                background: '#DBEAFE',
-                                border: '1px solid #93C5FD',
-                                borderRadius: '6px',
-                                color: '#1D4ED8',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            <Send size={13} />
-                            <span>Send invite</span>
-                        </button>
-                    </div>
+                    {/* Table */}
+                    <DataTable
+                        guardians={filteredGuardians}
+                        selectedIds={selectedIds}
+                        onToggleSelectAll={handleToggleSelectAll}
+                        onToggleSelectRow={handleToggleSelectRow}
+                        onRowClick={handleRowClick}
+                        canManage={canManage}
+                        isLoading={!rawGuardians}
+                        onResendInvite={handleResendInvite}
+                        onCreateLogin={handleIssueLogin}
+                        onViewDetail={g => router.push(`/dashboard/guardians/${g.guardianId}`)}
+                        onEdit={g => alert(`Edit parent details for ${g.fullName}`)}
+                        onResetPassword={handleIssueLogin}
+                        onDisableLogin={handleDisableLogin}
+                        onRemove={handleRemoveParent}
+                        totalCount={filteredGuardians.length}
+                        startIndex={filteredGuardians.length === 0 ? 0 : 1}
+                        endIndex={filteredGuardians.length}
+                    />
                 </div>
-            )}
-
-            {/* 5. Main Data Table */}
-            <DataTable
-                guardians={filteredGuardians}
-                selectedIds={selectedIds}
-                onToggleSelectAll={handleToggleSelectAll}
-                onToggleSelectRow={handleToggleSelectRow}
-                onRowClick={handleRowClick}
-                canManage={canManage}
-                isLoading={false}
-                onResendInvite={handleResendInvite}
-                onCreateLogin={handleIssueLogin}
-                onViewDetail={g => router.push(`/dashboard/guardians/${g.guardianId}`)}
-                onEdit={g => alert(`Edit parent details for ${g.fullName}`)}
-                onResetPassword={handleIssueLogin}
-                onDisableLogin={handleDisableLogin}
-                onRemove={handleRemoveParent}
-                totalCount={128}
-                startIndex={1}
-                endIndex={filteredGuardians.length}
-            />
+            </div>
 
             {/* Preserved Add Parent Modal with Validation & Searchable Country Flags */}
             {adding && (
@@ -628,7 +577,7 @@ function GuardiansContent() {
                     onClose={() => setCredentials(null)}
                 />
             )}
-        </div>
+        </>
     );
 }
 
