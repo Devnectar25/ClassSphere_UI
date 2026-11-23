@@ -58,37 +58,37 @@ export default function DataTable({
 
     return (
         <div style={{ width: '100%', overflow: 'hidden' }}>
-            <div className="cs-table-container">
-                <table className="cs-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+            <div className="cs-table-container" style={{ width: '100%', overflowX: 'auto' }}>
+                <table className="cs-table" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                     <thead>
-                        <tr style={{ background: 'var(--cs-surface-2)' }}>
-                            <th style={{ width: '44px', padding: '9px 8px 9px 18px', textAlign: 'center' }}>
+                        <tr style={{ background: 'var(--cs-surface-2)', borderBottom: '1px solid var(--cs-border)' }}>
+                            <th style={{ width: '48px', padding: '14px 8px 14px 18px', textAlign: 'center' }}>
                                 <input
                                     ref={selectAllCheckboxRef}
                                     type="checkbox"
                                     checked={allSelected}
                                     onChange={onToggleSelectAll}
                                     aria-label="Select all parents"
-                                    style={{ cursor: 'pointer' }}
+                                    style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--cs-primary)' }}
                                 />
                             </th>
-                            <th style={{ width: '28%', padding: '9px 12px' }}>Parent</th>
-                            <th style={{ width: '24%', padding: '9px 12px' }}>Children</th>
-                            <th style={{ width: '18%', padding: '9px 12px' }}>Dues</th>
-                            <th style={{ width: '22%', padding: '9px 12px' }}>Portal</th>
-                            <th style={{ width: '8%', padding: '9px 18px 9px 8px', textAlign: 'center' }}>Actions</th>
+                            <th style={{ width: '28%', padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Parent</th>
+                            <th style={{ width: '24%', padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Children</th>
+                            <th style={{ width: '18%', padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Dues</th>
+                            <th style={{ width: '22%', padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Portal</th>
+                            <th style={{ width: '8%', padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'center' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
                             <tr>
-                                <td colSpan={6} style={{ textAlign: 'center', padding: '40px 14px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
+                                <td colSpan={6} style={{ textAlign: 'center', padding: '48px 14px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
                                     Loading parents and guardians…
                                 </td>
                             </tr>
                         ) : guardians.length === 0 ? (
                             <tr>
-                                <td colSpan={6} style={{ textAlign: 'center', padding: '40px 14px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
+                                <td colSpan={6} style={{ textAlign: 'center', padding: '48px 14px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
                                     No parents or guardians found.
                                 </td>
                             </tr>
@@ -109,13 +109,14 @@ export default function DataTable({
                                         onClick={() => onRowClick(g.guardianId)}
                                         style={{
                                             cursor: 'pointer',
-                                            background: isSelected ? 'rgba(79, 70, 229, 0.05)' : undefined,
-                                            transition: 'background 0.15s',
+                                            background: isSelected ? 'rgba(108, 99, 255, 0.05)' : undefined,
+                                            borderBottom: '1px solid var(--cs-border)',
+                                            transition: 'background 0.15s ease',
                                         }}
                                     >
                                         {/* 1. Checkbox */}
                                         <td
-                                            style={{ padding: '9px 8px 9px 18px', textAlign: 'center', verticalAlign: 'middle' }}
+                                            style={{ padding: '14px 8px 14px 18px', textAlign: 'center', verticalAlign: 'middle' }}
                                             onClick={e => e.stopPropagation()}
                                         >
                                             <input
@@ -123,16 +124,28 @@ export default function DataTable({
                                                 checked={isSelected}
                                                 onChange={() => onToggleSelectRow(g.guardianId)}
                                                 aria-label={`Select ${g.fullName}`}
-                                                style={{ cursor: 'pointer' }}
+                                                style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--cs-primary)' }}
                                             />
                                         </td>
 
                                         {/* 2. Parent Avatar, Name, Relationship and Phone */}
-                                        <td style={{ padding: '9px 12px', verticalAlign: 'middle' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                 <div
-                                                    className="avatar-placeholder"
-                                                    style={{ width: 32, height: 32, fontSize: '11px', flexShrink: 0 }}
+                                                    style={{
+                                                        width: 38,
+                                                        height: 38,
+                                                        borderRadius: '50%',
+                                                        background: 'linear-gradient(135deg, #6C63FF 0%, #8B5CF6 100%)',
+                                                        color: '#ffffff',
+                                                        fontSize: '12px',
+                                                        fontWeight: 700,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        flexShrink: 0,
+                                                        boxShadow: '0 2px 4px rgba(108, 99, 255, 0.25)'
+                                                    }}
                                                     aria-hidden="true"
                                                 >
                                                     {initials(g.fullName)}
@@ -140,38 +153,56 @@ export default function DataTable({
                                                 <div style={{ minWidth: 0, overflow: 'hidden' }}>
                                                     <div
                                                         style={{
-                                                            fontSize: '13px',
-                                                            fontWeight: 600,
+                                                            fontSize: '14px',
+                                                            fontWeight: 800,
                                                             color: 'var(--cs-text-primary)',
-                                                            lineHeight: 1.3,
+                                                            letterSpacing: '-0.01em',
+                                                            lineHeight: 1.25,
                                                         }}
                                                     >
                                                         {g.fullName}
                                                     </div>
                                                     <div
                                                         style={{
-                                                            fontSize: '11px',
-                                                            color: 'var(--cs-text-muted)',
-                                                            marginTop: '2px',
-                                                            lineHeight: 1.25,
+                                                            fontSize: '11.5px',
+                                                            color: 'var(--cs-text-secondary)',
+                                                            marginTop: '3px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            flexWrap: 'wrap'
                                                         }}
                                                     >
-                                                        {g.relationship} · {g.formattedPhone}
+                                                        <span style={{
+                                                            fontSize: '11px',
+                                                            fontWeight: 600,
+                                                            padding: '1px 6px',
+                                                            borderRadius: '4px',
+                                                            background: 'var(--cs-surface-2)',
+                                                            border: '1px solid var(--cs-border)',
+                                                            color: 'var(--cs-text-secondary)'
+                                                        }}>
+                                                            {g.relationship}
+                                                        </span>
+                                                        <span>{g.formattedPhone}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         </td>
 
                                         {/* 3. Children Pills */}
-                                        <td style={{ padding: '9px 12px', verticalAlign: 'middle' }}>
+                                        <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                                 {g.students.map(s => (
                                                     <span
                                                         key={s.studentId}
-                                                        className="badge badge-primary"
                                                         style={{
-                                                            fontSize: '11px',
-                                                            padding: '3px 8px',
+                                                            background: 'rgba(108, 99, 255, 0.08)',
+                                                            color: 'var(--cs-primary)',
+                                                            border: '1px solid rgba(108, 99, 255, 0.22)',
+                                                            fontSize: '11.5px',
+                                                            fontWeight: 600,
+                                                            padding: '3px 9px',
                                                             borderRadius: '6px',
                                                             whiteSpace: 'nowrap',
                                                         }}
@@ -186,7 +217,7 @@ export default function DataTable({
                                         </td>
 
                                         {/* 4. Dues */}
-                                        <td style={{ padding: '9px 12px', verticalAlign: 'middle' }}>
+                                        <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
                                             <StatusBadge
                                                 type="dues"
                                                 payerStatus={g.payerStatus}
@@ -197,7 +228,7 @@ export default function DataTable({
 
                                         {/* 5. Portal */}
                                         <td
-                                            style={{ padding: '9px 12px', verticalAlign: 'middle' }}
+                                            style={{ padding: '14px 18px', verticalAlign: 'middle' }}
                                             onClick={e => e.stopPropagation()}
                                         >
                                             <StatusBadge
@@ -218,7 +249,7 @@ export default function DataTable({
 
                                         {/* 6. Action Menu */}
                                         <td
-                                            style={{ padding: '9px 18px 9px 8px', textAlign: 'center', verticalAlign: 'middle' }}
+                                            style={{ padding: '14px 18px', textAlign: 'center', verticalAlign: 'middle' }}
                                             onClick={e => e.stopPropagation()}
                                         >
                                             <RowActionsMenu
@@ -243,22 +274,22 @@ export default function DataTable({
             {/* Table Footer */}
             <div
                 style={{
-                    padding: '12px 20px',
+                    padding: '14px 20px',
                     borderTop: '1px solid var(--cs-border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     flexWrap: 'wrap',
                     gap: '12px',
-                    fontSize: '12px',
+                    fontSize: '12.5px',
                     color: 'var(--cs-text-secondary)',
-                    background: 'var(--cs-surface)',
+                    background: 'var(--cs-surface-1)',
                 }}
             >
                 <div>
-                    Showing {guardians.length === 0 ? 0 : startIndex} to {endIndex} of {totalCount}
+                    Showing <strong style={{ color: 'var(--cs-text-primary)' }}>{guardians.length === 0 ? 0 : startIndex} to {endIndex}</strong> of <strong style={{ color: 'var(--cs-text-primary)' }}>{totalCount}</strong>
                 </div>
-                <div style={{ color: 'var(--cs-text-muted)' }}>
+                <div style={{ color: 'var(--cs-text-muted)', fontSize: '11.5px' }}>
                     Row menu: View, Edit, Send invite, Reset password, Disable login, Remove
                 </div>
             </div>

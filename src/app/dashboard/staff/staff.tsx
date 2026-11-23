@@ -7,7 +7,8 @@ import Modal from '@/components/Modal';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import {
     Mail, Phone, Shield, Users, ShieldCheck, CheckCircle2, Eye, Lock,
-    MapPin, Plus, Trash2, RotateCcw, Search, Sliders, X, ChevronLeft, ChevronRight
+    MapPin, Plus, Trash2, RotateCcw, Search, Sliders, X, ChevronLeft, ChevronRight,
+    UserCheck, UserX, Loader2
 } from 'lucide-react';
 import { api, useApi, formatDate, initials } from '@/lib/api';
 import { can, ROLE_LABELS, useSession } from '@/lib/session';
@@ -605,6 +606,7 @@ export default function StaffPage() {
     const [phoneTouched, setPhoneTouched] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [togglingId, setTogglingId] = useState<string | null>(null);
     const canManage = can(session, 'staff.write');
 
     const stats = [
@@ -770,11 +772,23 @@ export default function StaffPage() {
     };
 
     const toggleActive = async (member: StaffMember) => {
+        const nextState = !member.isActive;
+        setTogglingId(member.membershipId);
         try {
-            await api('/staff', { method: 'PUT', body: JSON.stringify({ membershipId: member.membershipId, isActive: !member.isActive }) });
-            reload();
+            await api('/staff', {
+                method: 'PUT',
+                body: JSON.stringify({ membershipId: member.membershipId, isActive: nextState })
+            });
+            await reload();
+            setToastMessage({
+                text: `${member.fullName}'s account has been ${nextState ? 'activated' : 'deactivated'} successfully.`,
+                type: nextState ? 'success' : 'info'
+            });
+            setTimeout(() => setToastMessage(null), 4000);
         } catch (err) {
             setMessage((err as Error).message);
+        } finally {
+            setTogglingId(null);
         }
     };
 
@@ -787,9 +801,33 @@ export default function StaffPage() {
             <Topbar title="Users & Roles" subtitle="Role-based sign-ins for academy staff, per branch" />
             <div className="page-body">
                 {message && (
-                    <div className="cs-card" style={{ padding: '12px 16px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+                    <div className="cs-card" style={{ padding: '12px 16px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', borderLeft: '4px solid var(--cs-danger)' }}>
                         <span>{message}</span>
                         <button className="btn-ghost" style={{ padding: '2px 8px', fontSize: '12px' }} onClick={() => setMessage(null)}>Dismiss</button>
+                    </div>
+                )}
+
+                {toastMessage && (
+                    <div style={{
+                        padding: '12px 18px',
+                        borderRadius: '10px',
+                        background: toastMessage.type === 'danger' ? 'rgba(239, 68, 68, 0.12)' : toastMessage.type === 'info' ? 'rgba(79, 70, 229, 0.1)' : 'rgba(16, 185, 129, 0.12)',
+                        border: `1px solid ${toastMessage.type === 'danger' ? '#EF4444' : toastMessage.type === 'info' ? '#6366F1' : '#10B981'}40`,
+                        color: toastMessage.type === 'danger' ? '#EF4444' : toastMessage.type === 'info' ? '#4F46E5' : '#059669',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <CheckCircle2 size={16} />
+                            <span>{toastMessage.text}</span>
+                        </div>
+                        <button onClick={() => setToastMessage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}>
+                            <X size={14} />
+                        </button>
                     </div>
                 )}
 
@@ -886,10 +924,93 @@ export default function StaffPage() {
                                                         <div className="cell-nowrap" style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>Last login {formatDate(s.lastLoginAt)}</div>
                                                     </td>
                                                     {canManage && (
-                                                        <td>
-                                                            {s.email !== session?.user.email && (
-                                                                <button className="btn-ghost cell-nowrap" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => toggleActive(s)}>
-                                                                    {s.isActive ? 'Deactivate' : 'Activate'}
+                                                        <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                            {s.email === session?.user.email ? (
+                                                                <span style={{
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600,
+                                                                    color: 'var(--cs-text-muted)',
+                                                                    background: 'var(--cs-surface-2)',
+                                                                    padding: '4px 10px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid var(--cs-border)',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                }}>
+                                                                    <Shield size={11} /> You
+                                                                </span>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleActive(s)}
+                                                                    disabled={togglingId === s.membershipId}
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                        gap: '6px',
+                                                                        fontSize: '12px',
+                                                                        fontWeight: 600,
+                                                                        padding: '6px 14px',
+                                                                        borderRadius: '8px',
+                                                                        cursor: togglingId === s.membershipId ? 'not-allowed' : 'pointer',
+                                                                        transition: 'all 0.15s ease',
+                                                                        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                                                                        ...(s.isActive ? {
+                                                                            background: '#FEF2F2',
+                                                                            border: '1px solid #FECACA',
+                                                                            color: '#DC2626',
+                                                                        } : {
+                                                                            background: '#ECFDF5',
+                                                                            border: '1px solid #A7F3D0',
+                                                                            color: '#059669',
+                                                                        }),
+                                                                    }}
+                                                                    onMouseEnter={e => {
+                                                                        if (togglingId === s.membershipId) return;
+                                                                        if (s.isActive) {
+                                                                            e.currentTarget.style.background = '#FEE2E2';
+                                                                            e.currentTarget.style.borderColor = '#FCA5A5';
+                                                                            e.currentTarget.style.color = '#B91C1C';
+                                                                            e.currentTarget.style.transform = 'translateY(-1px)';
+                                                                        } else {
+                                                                            e.currentTarget.style.background = '#D1FAE5';
+                                                                            e.currentTarget.style.borderColor = '#6EE7B7';
+                                                                            e.currentTarget.style.color = '#047857';
+                                                                            e.currentTarget.style.transform = 'translateY(-1px)';
+                                                                        }
+                                                                    }}
+                                                                    onMouseLeave={e => {
+                                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                                        if (s.isActive) {
+                                                                            e.currentTarget.style.background = '#FEF2F2';
+                                                                            e.currentTarget.style.borderColor = '#FECACA';
+                                                                            e.currentTarget.style.color = '#DC2626';
+                                                                        } else {
+                                                                            e.currentTarget.style.background = '#ECFDF5';
+                                                                            e.currentTarget.style.borderColor = '#A7F3D0';
+                                                                            e.currentTarget.style.color = '#059669';
+                                                                        }
+                                                                    }}
+                                                                    title={s.isActive ? `Click to deactivate ${s.fullName}` : `Click to activate ${s.fullName}`}
+                                                                >
+                                                                    {togglingId === s.membershipId ? (
+                                                                        <>
+                                                                            <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                                                                            <span>{s.isActive ? 'Deactivating…' : 'Activating…'}</span>
+                                                                        </>
+                                                                    ) : s.isActive ? (
+                                                                        <>
+                                                                            <UserX size={13} />
+                                                                            <span>Deactivate</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <UserCheck size={13} />
+                                                                            <span>Activate</span>
+                                                                        </>
+                                                                    )}
                                                                 </button>
                                                             )}
                                                         </td>

@@ -23,23 +23,36 @@ export interface Plan {
  */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const session = getSession();
-    const res = await fetch(`${BASE_URL}${path}`, {
-        ...init,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
-            ...(session?.selectedBranchId ? { 'X-Branch-Id': session.selectedBranchId } : {}),
-            ...init?.headers,
-        },
-    });
-    const body = await res.json().catch(() => null);
-    // AuthGuard then returns the user to sign-in; a suspended or deactivated account is signed out the same way
-    const blocked = res.status === 403 && (body?.title === 'Account Suspended' || body?.title === 'Account Inactive');
-    if ((res.status === 401 || blocked) && session) clearSession();
-    if (!res.ok || !body?.success) {
-        throw new Error(body?.detail || body?.title || `Request failed (${res.status})`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    try {
+        const res = await fetch(`${BASE_URL}${path}`, {
+            ...init,
+            signal: init?.signal || controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+                ...(session?.selectedBranchId ? { 'X-Branch-Id': session.selectedBranchId } : {}),
+                ...init?.headers,
+            },
+        });
+        clearTimeout(timeoutId);
+        const body = await res.json().catch(() => null);
+        // AuthGuard then returns the user to sign-in; a suspended or deactivated account is signed out the same way
+        const blocked = res.status === 403 && (body?.title === 'Account Suspended' || body?.title === 'Account Inactive');
+        if ((res.status === 401 || blocked) && session) clearSession();
+        if (!res.ok || !body?.success) {
+            throw new Error(body?.detail || body?.title || `Request failed (${res.status})`);
+        }
+        return body.data as T;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if ((err as Error).name === 'AbortError') {
+            throw new Error('Server took too long to respond. Please check your connection and try again.');
+        }
+        throw err;
     }
-    return body.data as T;
 }
 
 /** Fetches on mount and whenever the path, signed-in session or branch view changes. */

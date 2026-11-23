@@ -5,7 +5,7 @@ import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
-import { api, useApi } from '@/lib/api';
+import { api, useApi, initials } from '@/lib/api';
 import { can, selectBranch, useSession } from '@/lib/session';
 import {
     Building2, MapPin, Phone, Users, BookOpen, Pencil, Check,
@@ -38,12 +38,36 @@ export default function BranchesPage() {
 
     // Add branch state
     const [adding, setAdding] = useState(false);
-    const [form, setForm] = useState({ name: '', code: '', address: '', phone: '' });
+    const [form, setForm] = useState({
+        name: '',
+        code: '',
+        address: '',
+        phone: '',
+        headUserId: '',
+        isPrimary: false,
+        isActive: true,
+    });
     const [phoneCountry, setPhoneCountry] = useState<CountryOption>(COUNTRIES[0]);
     const [phoneError, setPhoneError] = useState('');
     const [phoneTouched, setPhoneTouched] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    const resetAddForm = () => {
+        setForm({
+            name: '',
+            code: '',
+            address: '',
+            phone: '',
+            headUserId: '',
+            isPrimary: false,
+            isActive: true,
+        });
+        setPhoneCountry(COUNTRIES[0]);
+        setPhoneError('');
+        setPhoneTouched(false);
+        setError(null);
+    };
 
     // Edit branch state
     const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
@@ -114,16 +138,20 @@ export default function BranchesPage() {
             await api('/branches', {
                 method: 'POST',
                 body: JSON.stringify({
-                    ...form,
+                    name: form.name.trim(),
+                    code: form.code.trim().toUpperCase(),
+                    address: form.address.trim() || null,
                     phone: finalPhone,
+                    headUserId: form.headUserId || null,
+                    isPrimary: form.isPrimary,
+                    isActive: form.isActive,
                 }),
             });
+            const addedName = form.name.trim();
             setAdding(false);
-            setForm({ name: '', code: '', address: '', phone: '' });
-            setPhoneCountry(COUNTRIES[0]);
-            setPhoneError('');
-            setPhoneTouched(false);
+            resetAddForm();
             reload();
+            setActionBanner({ type: 'success', text: `Branch "${addedName}" has been successfully added.` });
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -215,7 +243,7 @@ export default function BranchesPage() {
             <Topbar
                 title="Branches"
                 subtitle={limits ? `${limits.current} of ${limits.maximum} branches used on your plan` : 'Manage branch locations, contacts, and capacity'}
-                action={canManage ? { label: 'Add Branch', onClick: () => setAdding(true) } : undefined}
+                action={canManage ? { label: 'Add Branch', onClick: () => { resetAddForm(); setAdding(true); } } : undefined}
             />
             <div className="page-body">
                 {/* Action Feedback Banner */}
@@ -251,7 +279,7 @@ export default function BranchesPage() {
                 )}
 
                 {!workspace ? <PageState error={null} /> : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '22px' }}>
                         {workspace.branches.map(b => {
                             const isCurrentScope = session?.selectedBranchId === b.branchId;
 
@@ -260,68 +288,180 @@ export default function BranchesPage() {
                                     key={b.branchId}
                                     className="cs-card"
                                     style={{
-                                        padding: '24px',
+                                        padding: '22px',
                                         position: 'relative',
+                                        borderRadius: '16px',
+                                        background: '#ffffff',
                                         border: isCurrentScope ? '2px solid var(--cs-primary)' : '1px solid var(--cs-border)',
-                                        boxShadow: isCurrentScope ? '0 4px 16px rgba(108, 99, 255, 0.12)' : 'none',
-                                        transition: 'all 0.2s ease'
+                                        boxShadow: isCurrentScope
+                                            ? '0 10px 25px -5px rgba(108, 99, 255, 0.16), 0 4px 10px -2px rgba(108, 99, 255, 0.08)'
+                                            : '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
                                     }}
                                 >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <div style={{
-                                                width: 44,
-                                                height: 44,
-                                                borderRadius: '12px',
-                                                background: isCurrentScope ? 'rgba(108,99,255,0.22)' : 'rgba(108,99,255,0.15)',
-                                                border: '1px solid rgba(108,99,255,0.25)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}>
-                                                <Building2 size={20} color="#8B85FF" />
+                                    <div>
+                                        {/* Top Header: Icon + Name + Badges */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                                                <div style={{
+                                                    width: 44,
+                                                    height: 44,
+                                                    borderRadius: '12px',
+                                                    background: isCurrentScope
+                                                        ? 'linear-gradient(135deg, rgba(108, 99, 255, 0.25) 0%, rgba(108, 99, 255, 0.1) 100%)'
+                                                        : 'var(--cs-surface-2)',
+                                                    border: isCurrentScope ? '1.5px solid rgba(108, 99, 255, 0.35)' : '1px solid var(--cs-border)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    flexShrink: 0
+                                                }}>
+                                                    <Building2 size={20} color={isCurrentScope ? 'var(--cs-primary)' : '#6B7280'} />
+                                                </div>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                        <span style={{ fontWeight: 800, fontSize: '16px', color: 'var(--cs-text-primary)', letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {b.name}
+                                                        </span>
+                                                        {b.isPrimary && (
+                                                            <span style={{
+                                                                fontSize: '10px',
+                                                                fontWeight: 700,
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.04em',
+                                                                padding: '2px 7px',
+                                                                borderRadius: '6px',
+                                                                background: '#FEF3C7',
+                                                                color: '#B45309',
+                                                                border: '1px solid #FDE68A',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '3px'
+                                                            }}>
+                                                                ★ Primary
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+                                                        <code style={{ fontSize: '11px', background: 'var(--cs-surface-2)', padding: '2px 6px', borderRadius: '4px', color: 'var(--cs-text-secondary)', fontWeight: 600 }}>
+                                                            {b.code}
+                                                        </code>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--cs-text-primary)' }}>{b.name}</div>
-                                                <code style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{b.code}{b.isPrimary ? ' • Primary' : ''}</code>
+
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', flexShrink: 0 }}>
+                                                {isCurrentScope ? (
+                                                    <span style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 700,
+                                                        padding: '3px 10px',
+                                                        borderRadius: '20px',
+                                                        background: 'rgba(108, 99, 255, 0.12)',
+                                                        color: 'var(--cs-primary)',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        border: '1px solid rgba(108, 99, 255, 0.25)'
+                                                    }}>
+                                                        <Check size={12} strokeWidth={3} /> Active View
+                                                    </span>
+                                                ) : (
+                                                    <span style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        padding: '3px 8px',
+                                                        borderRadius: '20px',
+                                                        background: b.isActive ? '#ECFDF5' : 'var(--cs-surface-2)',
+                                                        color: b.isActive ? '#059669' : 'var(--cs-text-muted)',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '5px',
+                                                        border: b.isActive ? '1px solid #A7F3D0' : '1px solid var(--cs-border)'
+                                                    }}>
+                                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.isActive ? '#10B981' : '#9CA3AF' }} />
+                                                        {b.isActive ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            {isCurrentScope && (
-                                                <span className="badge badge-primary" style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px' }}>
-                                                    <Check size={10} /> Active View
+
+                                        {/* Location & Contact Information */}
+                                        <div style={{
+                                            background: 'var(--cs-surface-2)',
+                                            borderRadius: '10px',
+                                            padding: '10px 12px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '6px',
+                                            marginBottom: '14px',
+                                            border: '1px solid var(--cs-border)'
+                                        }}>
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12.5px', color: 'var(--cs-text-secondary)' }}>
+                                                <MapPin size={14} style={{ marginTop: '2px', flexShrink: 0, color: 'var(--cs-text-muted)' }} />
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {[b.address, b.location, b.city, b.state].filter(Boolean).join(', ') || b.address || 'Location unconfigured'}
                                                 </span>
-                                            )}
-                                            <span className={`badge ${b.isActive ? 'badge-success' : 'badge-secondary'}`}>
-                                                {b.isActive ? 'active' : 'inactive'}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
-                                            <MapPin size={14} style={{ marginTop: '1px', flexShrink: 0, color: 'var(--cs-text-muted)' }} />
-                                            <span>{[b.address, b.location, b.city, b.state].filter(Boolean).join(', ') || b.address || '—'}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
-                                            <Phone size={13} color="var(--cs-text-muted)" /> {b.phone ?? '—'}
-                                        </div>
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                                        {[
-                                            { label: 'Students', value: b.studentCount, icon: Users, color: '#6C63FF' },
-                                            { label: 'Batches', value: b.batchCount, icon: BookOpen, color: '#10B981' },
-                                            { label: 'Head', value: b.headName ?? '—', icon: Users, color: '#F59E0B' },
-                                        ].map(stat => (
-                                            <div key={stat.label} style={{ background: 'var(--cs-surface-2)', borderRadius: '10px', padding: '10px', textAlign: 'center', border: '1px solid var(--cs-border)' }}>
-                                                <div style={{ fontSize: stat.label === 'Head' ? '12px' : '16px', fontWeight: 800, color: stat.color }}>{stat.value}</div>
-                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>{stat.label}</div>
                                             </div>
-                                        ))}
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12.5px', color: 'var(--cs-text-secondary)' }}>
+                                                <Phone size={13} style={{ flexShrink: 0, color: 'var(--cs-text-muted)' }} />
+                                                <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{b.phone ?? 'No phone added'}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Metrics & Head Ribbon */}
+                                        <div style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '1fr 1fr 1.25fr',
+                                            background: '#ffffff',
+                                            border: '1px solid var(--cs-border)',
+                                            borderRadius: '12px',
+                                            padding: '10px',
+                                            gap: '8px',
+                                            marginBottom: '16px'
+                                        }}>
+                                            {/* Stat 1: Students */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--cs-border)' }}>
+                                                <div style={{ fontSize: '17px', fontWeight: 800, color: '#6C63FF', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                                                    {b.studentCount}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                                    <Users size={11} /> Students
+                                                </div>
+                                            </div>
+
+                                            {/* Stat 2: Batches */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--cs-border)' }}>
+                                                <div style={{ fontSize: '17px', fontWeight: 800, color: '#10B981', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                                                    {b.batchCount}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                                    <BookOpen size={11} /> Batches
+                                                </div>
+                                            </div>
+
+                                            {/* Stat 3: Branch Head Persona */}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '4px', minWidth: 0 }}>
+                                                <div className="avatar-placeholder" style={{ width: 26, height: 26, fontSize: '10.5px', flexShrink: 0 }}>
+                                                    {initials(b.headName || '—')}
+                                                </div>
+                                                <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                                                    <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--cs-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {b.headName || 'Unassigned'}
+                                                    </div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--cs-text-muted)' }}>
+                                                        Branch Head
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                                    {/* Actions Footer */}
+                                    <div style={{ display: 'flex', gap: '8px', paddingTop: '14px', borderTop: '1px solid var(--cs-border)', alignItems: 'center' }}>
                                         <button
                                             type="button"
                                             className={isCurrentScope ? 'btn-primary' : 'btn-secondary'}
@@ -332,13 +472,15 @@ export default function BranchesPage() {
                                                 fontWeight: 600,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: '6px'
+                                                gap: '6px',
+                                                height: '36px'
                                             }}
                                             onClick={() => handleManageBranch(b)}
                                         >
                                             <Building2 size={13} />
                                             Manage this branch
                                         </button>
+
                                         {canManage && (
                                             <button
                                                 type="button"
@@ -349,17 +491,18 @@ export default function BranchesPage() {
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    gap: '5px',
+                                                    gap: '4px',
                                                     fontSize: '12px',
+                                                    height: '36px',
                                                     padding: '0 12px',
                                                     fontWeight: 600,
-                                                    color: 'var(--cs-primary)',
-                                                    borderColor: 'rgba(108, 99, 255, 0.3)'
+                                                    color: 'var(--cs-text-secondary)'
                                                 }}
                                             >
                                                 <Pencil size={12} /> Edit
                                             </button>
                                         )}
+
                                         {canManage && !b.isPrimary && (
                                             <button
                                                 type="button"
@@ -375,17 +518,18 @@ export default function BranchesPage() {
                                                     justifyContent: 'center',
                                                     gap: '4px',
                                                     fontSize: '12px',
+                                                    height: '36px',
                                                     padding: '0 10px',
                                                     fontWeight: 600,
                                                     color: '#EF4444',
-                                                    background: 'rgba(239, 68, 68, 0.08)',
-                                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                    background: 'rgba(239, 68, 68, 0.06)',
+                                                    border: '1px solid rgba(239, 68, 68, 0.2)',
                                                     borderRadius: '8px',
                                                     cursor: 'pointer',
                                                     transition: 'all 0.15s ease'
                                                 }}
-                                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)')}
-                                                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)')}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.06)')}
                                             >
                                                 <Trash2 size={12} /> Delete
                                             </button>
@@ -643,7 +787,7 @@ export default function BranchesPage() {
             {adding && (
                 <Modal
                     title="Add Branch"
-                    onClose={() => { setAdding(false); setError(null); setPhoneError(''); setPhoneTouched(false); }}
+                    onClose={() => { setAdding(false); resetAddForm(); }}
                     maxWidth="540px"
                     style={{ overflow: 'visible' }}
                 >
@@ -651,17 +795,37 @@ export default function BranchesPage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
                             <div>
                                 <label className="cs-label">Branch Name *</label>
-                                <input className="cs-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                                <input
+                                    className="cs-input"
+                                    required
+                                    placeholder="e.g. Branch-01"
+                                    value={form.name}
+                                    onChange={e => setForm({ ...form, name: e.target.value })}
+                                />
                             </div>
                             <div>
                                 <label className="cs-label">Code *</label>
-                                <input className="cs-input" required maxLength={10} placeholder="e.g. NORTH" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} />
+                                <input
+                                    className="cs-input"
+                                    required
+                                    maxLength={10}
+                                    placeholder="e.g. BH-01"
+                                    value={form.code}
+                                    onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                                />
                             </div>
                         </div>
+
                         <div>
                             <label className="cs-label">Address</label>
-                            <input className="cs-input" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+                            <input
+                                className="cs-input"
+                                placeholder="e.g. Dadar, Mumbai, Maharashtra"
+                                value={form.address}
+                                onChange={e => setForm({ ...form, address: e.target.value })}
+                            />
                         </div>
+
                         <div>
                             <label className="cs-label">Phone</label>
                             <CountryPhoneInput
@@ -688,14 +852,66 @@ export default function BranchesPage() {
                                 }}
                                 touched={phoneTouched}
                                 error={phoneError}
-                                placeholder="e.g. 9840012345"
+                                placeholder="e.g. 9098987787"
                             />
                         </div>
+
+                        <div>
+                            <label className="cs-label">Branch Head</label>
+                            <select
+                                className="cs-input"
+                                value={form.headUserId}
+                                onChange={e => setForm({ ...form, headUserId: e.target.value })}
+                            >
+                                <option value="">No Head Assigned</option>
+                                {staffList?.map(s => (
+                                    <option key={s.userId} value={s.userId}>
+                                        {s.fullName} ({s.role})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '4px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={form.isPrimary}
+                                    onChange={e => setForm({ ...form, isPrimary: e.target.checked })}
+                                />
+                                <span>Primary Campus</span>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={form.isActive}
+                                    onChange={e => setForm({ ...form, isActive: e.target.checked })}
+                                />
+                                <span>Active Branch</span>
+                            </label>
+                        </div>
+
                         {error && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{error}</div>}
-                        <button className="btn-primary" type="submit" disabled={saving} style={{ alignSelf: 'flex-end', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Check size={14} />
-                            {saving ? 'Creating…' : 'Create Branch'}
-                        </button>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => { setAdding(false); resetAddForm(); }}
+                                disabled={saving}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn-primary"
+                                type="submit"
+                                disabled={saving}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                                <Check size={14} />
+                                {saving ? 'Adding Branch…' : 'Add Branch'}
+                            </button>
+                        </div>
                     </form>
                 </Modal>
             )}

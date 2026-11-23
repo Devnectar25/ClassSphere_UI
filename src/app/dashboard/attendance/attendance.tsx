@@ -1,6 +1,6 @@
 'use client';
 import Topbar from '@/components/Topbar';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
     Calendar,
@@ -20,14 +20,27 @@ import {
     XCircle,
     RotateCcw,
     Table as TableIcon,
-    Filter
+    Filter,
+    Building2,
+    Briefcase
 } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
-import { can, useSession } from '@/lib/session';
+import { can, useSession, selectBranch } from '@/lib/session';
+import { useWorkspace } from '@/lib/workspace';
 
 interface Register {
     sessions: string[];
     students: Array<{ studentId: string; name: string; records: Record<string, string> }>;
+}
+
+interface BatchItem {
+    batchId: string;
+    name: string;
+    courseId?: string;
+    courseTitle?: string;
+    branchId?: string;
+    branchName?: string;
+    instructorName?: string | null;
 }
 
 interface DailyAttendanceResponse {
@@ -41,6 +54,27 @@ interface DailyAttendanceResponse {
         remarks: string | null;
         overallRate: number;
     }>;
+}
+
+interface StaffAttendanceMember {
+    userId: string;
+    name: string;
+    email: string;
+    phone: string;
+    role: string;
+    title: string;
+    branchId: string;
+    branchName: string;
+    batches: string;
+    status: 'present' | 'absent' | 'late' | 'excused' | null;
+    remarks: string | null;
+    overallRate: number;
+}
+
+interface StaffAttendanceResponse {
+    sessionDate: string;
+    branchId: string | null;
+    staff: StaffAttendanceMember[];
 }
 
 interface StudentAttendanceRecord {
@@ -131,21 +165,29 @@ function windowStart(offsetWeeks: number) {
 
 export default function AttendancePage() {
     const session = useSession();
+    const { workspace } = useWorkspace();
     const canMark = can(session, 'attendance.write');
     const today = getTodayIso();
 
+    // Branch selection state
+    const [selectedBranchId, setSelectedBranchId] = useState<string>(() => session?.selectedBranchId || session?.session?.branchId || 'all');
+
     // Navigation & View Mode
-    const [viewMode, setViewMode] = useState<'daily' | 'student' | 'matrix'>('daily');
+    const [viewMode, setViewMode] = useState<'daily' | 'staff' | 'student' | 'matrix'>('daily');
     const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
-    // Mode 1: Daily Roll Call state
+    // Mode 1: Daily Roll Call state (Students)
     const [dailyDate, setDailyDate] = useState<string>(today);
     const [dailyEdits, setDailyEdits] = useState<Record<string, { status: StatusKey; remarks: string }>>({});
     const [dailySearch, setDailySearch] = useState<string>('');
 
-    // Mode 2: Student Attendance state & timeframe filters
+    // Mode 2: Staff Attendance state
+    const [staffDate, setStaffDate] = useState<string>(today);
+    const [staffEdits, setStaffEdits] = useState<Record<string, { status: StatusKey; remarks: string; branchId?: string }>>({});
+    const [staffSearch, setStaffSearch] = useState<string>('');
+
+    // Mode 3: Student Attendance state & timeframe filters
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-    const [studentSearch, setStudentSearch] = useState<string>('');
     const [studentTimeframe, setStudentTimeframe] = useState<StudentTimeframeType>('monthly');
     const [studentDailyDate, setStudentDailyDate] = useState<string>(today);
     const [studentWeekOffset, setStudentWeekOffset] = useState<number>(0);
@@ -225,7 +267,7 @@ export default function AttendancePage() {
         studentTimeframeLabel = 'All Historical Records';
     }
 
-    // Mode 3: Matrix Register state
+    // Mode 4: Matrix Register state
     const [weekOffset, setWeekOffset] = useState(0);
     const [matrixEdits, setMatrixEdits] = useState<Record<string, Record<string, StatusKey>>>({});
 
@@ -235,12 +277,38 @@ export default function AttendancePage() {
     const [saving, setSaving] = useState(false);
 
     // Queries
-    const { data: batches, error: batchError, loading: batchesLoading } = useApi<Array<{ batchId: string; name: string }>>('/batches');
-    const { data: studentsList } = useApi<{ students: Array<{ studentId: string; firstName: string; lastName: string; email: string; batches?: string }> }>('/students?limit=200');
+    const { data: batches, error: batchError, loading: batchesLoading } = useApi<Array<BatchItem>>('/batches');
+    const { data: studentsList } = useApi<{ students: Array<{ studentId: string; firstName: string; lastName: string; email: string; batches?: string; branchId?: string; branchName?: string }> }>(
+        `/students?limit=200${selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : ''}`
+    );
+
+    // Filter batches according to selected branch
+    const filteredBatches = useMemo(() => {
+        if (!batches) return [];
+        if (selectedBranchId === 'all') return batches;
+        const targetBranch = workspace?.branches?.find(br => br.branchId === selectedBranchId);
+        return batches.filter(b => {
+            if (b.branchId && b.branchId === selectedBranchId) return true;
+            if (targetBranch && b.branchName && b.branchName.toLowerCase() === targetBranch.name.toLowerCase()) return true;
+            return false;
+        });
+    }, [batches, selectedBranchId, workspace?.branches]);
 
     // Effective batch
-    const activeBatchId = selectedBatchId ?? batches?.[0]?.batchId ?? null;
-    const activeBatchName = batches?.find(b => b.batchId === activeBatchId)?.name ?? '';
+    const activeBatchId = selectedBatchId ?? filteredBatches[0]?.batchId ?? null;
+    const activeBatchName = filteredBatches.find(b => b.batchId === activeBatchId)?.name ?? batches?.find(b => b.batchId === activeBatchId)?.name ?? '';
+
+    // Automatically ensure activeBatchId belongs to the filtered batch list
+    useEffect(() => {
+        if (filteredBatches.length > 0) {
+            const exists = filteredBatches.some(b => b.batchId === selectedBatchId);
+            if (!exists) {
+                setSelectedBatchId(filteredBatches[0].batchId);
+            }
+        } else {
+            setSelectedBatchId(null);
+        }
+    }, [filteredBatches, selectedBatchId]);
 
     // Register query for matrix
     const start = windowStart(weekOffset);
@@ -250,10 +318,16 @@ export default function AttendancePage() {
         activeBatchId ? `/attendance?batchId=${activeBatchId}&from=${iso(start)}&to=${iso(end)}` : null
     );
 
-    // Daily roll call query
+    // Daily roll call query (students)
     const { data: dailyData, error: dailyError, reload: reloadDaily, loading: dailyLoading } = useApi<DailyAttendanceResponse>(
         activeBatchId && dailyDate ? `/attendance?batchId=${activeBatchId}&date=${dailyDate}` : null
     );
+
+    // Staff Attendance query
+    const staffQueryUrl = viewMode === 'staff'
+        ? `/attendance?type=staff&date=${staffDate}${selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : ''}`
+        : null;
+    const { data: staffData, error: staffError, reload: reloadStaff, loading: staffLoading } = useApi<StaffAttendanceResponse>(staffQueryUrl);
 
     // Student attendance query with dynamic timeframe filtering
     const studentQueryUrl = selectedStudentId
@@ -278,6 +352,20 @@ export default function AttendancePage() {
         }
     }, [dailyData]);
 
+    // Sync staff edits when staffData arrives
+    useEffect(() => {
+        if (staffData?.staff) {
+            const initial: Record<string, { status: StatusKey; remarks: string; branchId?: string }> = {};
+            staffData.staff.forEach(s => {
+                const k = keyOf(s.status ?? undefined);
+                if (k) {
+                    initial[s.userId] = { status: k, remarks: s.remarks || '', branchId: s.branchId };
+                }
+            });
+            setStaffEdits(initial);
+        }
+    }, [staffData]);
+
     // Ensure student record batch id has default
     useEffect(() => {
         if (activeBatchId && !studentRecordBatchId) {
@@ -296,7 +384,7 @@ export default function AttendancePage() {
         }
     }, [selectedStudentId, dailyData, studentsList]);
 
-    // Handlers for Daily Roll Call
+    // Handlers for Daily Roll Call (Students)
     const setDailyStudentStatus = (studentId: string, status: StatusKey) => {
         setDailyEdits(prev => ({
             ...prev,
@@ -333,7 +421,7 @@ export default function AttendancePage() {
 
     const clearDailyMarks = () => {
         setDailyEdits({});
-        setMessage('Attendance cleared for this date.');
+        setMessage('Student attendance cleared for this date.');
         setMessageType('success');
     };
 
@@ -361,6 +449,80 @@ export default function AttendancePage() {
             reloadDaily();
             reloadRegister();
             if (selectedStudentId) reloadStudent();
+        } catch (err) {
+            setMessage((err as Error).message);
+            setMessageType('error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Handlers for Staff Attendance
+    const setStaffMemberStatus = (userId: string, status: StatusKey, branchId?: string) => {
+        setStaffEdits(prev => ({
+            ...prev,
+            [userId]: {
+                status,
+                remarks: prev[userId]?.remarks || '',
+                branchId: branchId || prev[userId]?.branchId
+            }
+        }));
+    };
+
+    const setStaffMemberRemarks = (userId: string, remarks: string, branchId?: string) => {
+        setStaffEdits(prev => ({
+            ...prev,
+            [userId]: {
+                status: prev[userId]?.status || 'P',
+                remarks,
+                branchId: branchId || prev[userId]?.branchId
+            }
+        }));
+    };
+
+    const markAllStaff = (status: StatusKey) => {
+        if (!staffData?.staff) return;
+        const next: Record<string, { status: StatusKey; remarks: string; branchId?: string }> = {};
+        staffData.staff.forEach(s => {
+            next[s.userId] = {
+                status,
+                remarks: staffEdits[s.userId]?.remarks || '',
+                branchId: s.branchId
+            };
+        });
+        setStaffEdits(next);
+        setMessage(`All staff marked as ${statusConfig[status].label} for ${formatFriendlyDate(staffDate)}.`);
+        setMessageType('success');
+    };
+
+    const clearStaffMarks = () => {
+        setStaffEdits({});
+        setMessage('Staff attendance marks reset for this date.');
+        setMessageType('success');
+    };
+
+    const saveStaffAttendance = async () => {
+        setSaving(true);
+        try {
+            const records = Object.entries(staffEdits).map(([userId, data]) => ({
+                userId,
+                status: statusConfig[data.status].value,
+                remarks: data.remarks || null,
+                branchId: data.branchId || null
+            }));
+
+            await api('/attendance', {
+                method: 'POST',
+                body: JSON.stringify({
+                    type: 'staff',
+                    sessionDate: staffDate,
+                    records
+                })
+            });
+
+            setMessage(`Staff attendance saved for ${formatFriendlyDate(staffDate)} (${records.length} staff recorded).`);
+            setMessageType('success');
+            reloadStaff();
         } catch (err) {
             setMessage((err as Error).message);
             setMessageType('error');
@@ -483,7 +645,11 @@ export default function AttendancePage() {
 
     // Calculate Summary Counts depending on view mode
     const summaryCounts: Record<StatusKey, number> = { P: 0, A: 0, L: 0, E: 0 };
-    if (viewMode === 'daily') {
+    if (viewMode === 'staff') {
+        Object.values(staffEdits).forEach(item => {
+            if (item.status) summaryCounts[item.status]++;
+        });
+    } else if (viewMode === 'daily') {
         Object.values(dailyEdits).forEach(item => {
             if (item.status) summaryCounts[item.status]++;
         });
@@ -498,6 +664,7 @@ export default function AttendancePage() {
             if (k) summaryCounts[k]++;
         }));
     }
+
     const totalSummaryCount = Object.values(summaryCounts).reduce((a, b) => a + b, 0);
 
     const pendingMatrixChanges = Object.values(matrixEdits).reduce((n, d) => n + Object.keys(d).length, 0);
@@ -513,15 +680,20 @@ export default function AttendancePage() {
         <>
             <Topbar
                 title="Attendance & Register"
-                subtitle="Daily roll call, student attendance tracking, and batch schedules"
+                subtitle="Daily roll call, student & staff attendance tracking, and batch schedules"
                 action={canMark ? {
-                    label: 'Mark Today',
+                    label: viewMode === 'staff' ? 'Mark Staff Today' : 'Mark Today',
                     onClick: () => {
-                        setViewMode('daily');
-                        setDailyDate(today);
-                        markAllDaily('P');
+                        if (viewMode === 'staff') {
+                            setStaffDate(today);
+                            markAllStaff('P');
+                        } else {
+                            setViewMode('daily');
+                            setDailyDate(today);
+                            markAllDaily('P');
+                        }
                     },
-                    hint: 'Quick mark all students present for today'
+                    hint: viewMode === 'staff' ? 'Quick mark all staff present for today' : 'Quick mark all students present for today'
                 } : undefined}
             />
 
@@ -530,7 +702,7 @@ export default function AttendancePage() {
                 {message && (
                     <div style={{
                         padding: '12px 16px',
-                        borderRadius: '8px',
+                        borderRadius: '10px',
                         marginBottom: '16px',
                         display: 'flex',
                         alignItems: 'center',
@@ -539,7 +711,7 @@ export default function AttendancePage() {
                         border: `1px solid ${messageType === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
                         color: messageType === 'success' ? '#065F46' : '#991B1B',
                         fontSize: '13px',
-                        fontWeight: 500
+                        fontWeight: 600
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {messageType === 'success' ? <CheckCircle2 size={16} color="#10B981" /> : <AlertCircle size={16} color="#EF4444" />}
@@ -547,16 +719,136 @@ export default function AttendancePage() {
                         </div>
                         <button
                             onClick={() => setMessage(null)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '13px', fontWeight: 600 }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '13px', fontWeight: 700 }}
                         >
                             ✕
                         </button>
                     </div>
                 )}
 
+                {/* ═══════════════════════════════════════════════════════════════
+                    ACADEMY ADMIN BRANCH SELECTOR BAR
+                    ═══════════════════════════════════════════════════════════════ */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    padding: '12px 18px',
+                    background: 'var(--cs-surface)',
+                    border: '1px solid var(--cs-border)',
+                    borderRadius: '14px',
+                    marginBottom: '16px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            color: 'var(--cs-primary)',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            marginRight: '4px'
+                        }}>
+                            <Building2 size={16} />
+                            <span>Branch:</span>
+                        </div>
+
+                        {/* All Branches button */}
+                        <button
+                            onClick={() => {
+                                setSelectedBranchId('all');
+                                selectBranch(null);
+                                setMessage(null);
+                            }}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '6px 14px',
+                                borderRadius: '20px',
+                                fontSize: '12px',
+                                fontWeight: selectedBranchId === 'all' ? 700 : 500,
+                                cursor: 'pointer',
+                                border: '1px solid',
+                                borderColor: selectedBranchId === 'all' ? 'var(--cs-primary)' : 'var(--cs-border)',
+                                background: selectedBranchId === 'all' ? 'var(--cs-primary)' : 'transparent',
+                                color: selectedBranchId === 'all' ? '#FFFFFF' : 'var(--cs-text-secondary)',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            <span>All Branches</span>
+                            <span style={{
+                                fontSize: '10px',
+                                padding: '1px 6px',
+                                borderRadius: '10px',
+                                background: selectedBranchId === 'all' ? 'rgba(255,255,255,0.25)' : 'var(--cs-border-subtle)',
+                                color: selectedBranchId === 'all' ? '#FFFFFF' : 'var(--cs-text-muted)'
+                            }}>
+                                {workspace?.branches?.length ?? 0}
+                            </span>
+                        </button>
+
+                        {/* Individual Branch buttons */}
+                        {(workspace?.branches ?? []).map(br => {
+                            const isSelected = selectedBranchId === br.branchId;
+                            return (
+                                <button
+                                    key={br.branchId}
+                                    onClick={() => {
+                                        setSelectedBranchId(br.branchId);
+                                        selectBranch(br.branchId);
+                                        setMessage(null);
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '6px 14px',
+                                        borderRadius: '20px',
+                                        fontSize: '12px',
+                                        fontWeight: isSelected ? 700 : 500,
+                                        cursor: 'pointer',
+                                        border: '1px solid',
+                                        borderColor: isSelected ? 'var(--cs-primary)' : 'var(--cs-border)',
+                                        background: isSelected ? 'var(--cs-primary)' : 'transparent',
+                                        color: isSelected ? '#FFFFFF' : 'var(--cs-text-secondary)',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    <span>{br.name}</span>
+                                    {br.code && (
+                                        <span style={{
+                                            fontSize: '10px',
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            background: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--cs-border-subtle)',
+                                            color: isSelected ? '#FFFFFF' : 'var(--cs-text-muted)'
+                                        }}>
+                                            {br.code}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Active Scope Label */}
+                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>Active View:</span>
+                        <strong style={{ color: 'var(--cs-text-primary)' }}>
+                            {selectedBranchId === 'all'
+                                ? 'Consolidated (All Branches)'
+                                : (workspace?.branches?.find(b => b.branchId === selectedBranchId)?.name || 'Selected Branch')}
+                        </strong>
+                    </div>
+                </div>
+
                 {/* View Mode Switcher Pills */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', gap: '6px', background: 'var(--cs-border-subtle)', padding: '4px', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', gap: '6px', background: 'var(--cs-border-subtle)', padding: '4px', borderRadius: '12px' }}>
                         <button
                             onClick={() => setViewMode('daily')}
                             style={{
@@ -571,6 +863,21 @@ export default function AttendancePage() {
                         >
                             <Calendar size={15} />
                             Daily Attendance
+                        </button>
+                        <button
+                            onClick={() => setViewMode('staff')}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+                                border: 'none', cursor: 'pointer',
+                                background: viewMode === 'staff' ? 'var(--cs-surface)' : 'transparent',
+                                color: viewMode === 'staff' ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                boxShadow: viewMode === 'staff' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <Briefcase size={15} />
+                            Staff Attendance
                         </button>
                         <button
                             onClick={() => setViewMode('student')}
@@ -606,7 +913,8 @@ export default function AttendancePage() {
 
                     {/* Quick Mode Indicator / Context */}
                     <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
-                        {viewMode === 'daily' && `Marking roll call for: ${formatFriendlyDate(dailyDate)}`}
+                        {viewMode === 'daily' && `Student roll call for: ${formatFriendlyDate(dailyDate)}`}
+                        {viewMode === 'staff' && `Staff roll call for: ${formatFriendlyDate(staffDate)}`}
                         {viewMode === 'student' && `Individual student attendance (${studentTimeframeLabel})`}
                         {viewMode === 'matrix' && `2-week session overview: ${rangeLabel}`}
                     </div>
@@ -619,11 +927,11 @@ export default function AttendancePage() {
                         const count = summaryCounts[key] || 0;
                         const pct = totalSummaryCount > 0 ? Math.round((count / totalSummaryCount) * 100) : 0;
                         return (
-                            <div key={key} className="cs-card" style={{ padding: '20px', borderColor: cfg.border }}>
+                            <div key={key} className="cs-card" style={{ padding: '20px', borderRadius: '16px', borderColor: cfg.border }}>
                                 <div style={{ fontSize: '28px', fontWeight: 800, color: cfg.color, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                                     {count}
                                 </div>
-                                <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', marginTop: '2px', fontWeight: 500 }}>
+                                <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', marginTop: '2px', fontWeight: 600 }}>
                                     {cfg.label}
                                 </div>
                                 <div style={{ marginTop: '10px' }}>
@@ -631,7 +939,7 @@ export default function AttendancePage() {
                                         <div className="progress-fill" style={{ width: `${pct}%`, background: cfg.color }} />
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>
-                                        {pct}% of {viewMode === 'daily' ? 'today\'s roll call' : viewMode === 'student' ? 'student sessions' : 'marks'}
+                                        {pct}% of {viewMode === 'staff' ? "today's staff" : viewMode === 'daily' ? "today's roll call" : viewMode === 'student' ? 'student sessions' : 'marks'}
                                     </div>
                                 </div>
                             </div>
@@ -642,7 +950,7 @@ export default function AttendancePage() {
                 {/* MAIN CONTENT AREA */}
 
                 {/* ═══════════════════════════════════════════════════════════════
-                    VIEW 1: DAILY ATTENDANCE (ROLL CALL)
+                    VIEW 1: DAILY ATTENDANCE (STUDENT ROLL CALL)
                     ═══════════════════════════════════════════════════════════════ */}
                 {viewMode === 'daily' && (
                     <div className="cs-card">
@@ -701,25 +1009,37 @@ export default function AttendancePage() {
                                 )}
                             </div>
 
-                            {/* Batch Pills */}
+                            {/* Batch Pills Filtered by Selected Branch */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-muted)' }}>Batch:</span>
-                                {batches?.map(b => (
-                                    <button
-                                        key={b.batchId}
-                                        onClick={() => { setSelectedBatchId(b.batchId); setMessage(null); }}
-                                        style={{
-                                            padding: '5px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600,
-                                            cursor: 'pointer', border: '1px solid',
-                                            borderColor: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.4)' : 'var(--cs-border)',
-                                            background: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
-                                            color: activeBatchId === b.batchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {b.name}
-                                    </button>
-                                ))}
+                                {filteredBatches.length === 0 ? (
+                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontStyle: 'italic' }}>
+                                        No batches in this branch
+                                    </span>
+                                ) : (
+                                    filteredBatches.map(b => (
+                                        <button
+                                            key={b.batchId}
+                                            onClick={() => { setSelectedBatchId(b.batchId); setMessage(null); }}
+                                            style={{
+                                                padding: '5px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600,
+                                                cursor: 'pointer', border: '1px solid',
+                                                borderColor: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.4)' : 'var(--cs-border)',
+                                                background: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
+                                                color: activeBatchId === b.batchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                                transition: 'all 0.2s',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '5px'
+                                            }}
+                                        >
+                                            <span>{b.name}</span>
+                                            {selectedBranchId === 'all' && b.branchName && (
+                                                <span style={{ fontSize: '10px', opacity: 0.7 }}>• {b.branchName}</span>
+                                            )}
+                                        </button>
+                                    ))
+                                )}
                             </div>
 
                             {/* Quick Batch Marking Actions */}
@@ -788,7 +1108,7 @@ export default function AttendancePage() {
                                     style={{
                                         width: '100%',
                                         padding: '6px 12px 6px 32px',
-                                        borderRadius: '6px',
+                                        borderRadius: '8px',
                                         border: '1px solid var(--cs-border)',
                                         fontSize: '12px'
                                     }}
@@ -812,7 +1132,7 @@ export default function AttendancePage() {
                         ) : !dailyData || dailyData.students.length === 0 ? (
                             <div style={{ padding: '56px 24px', textAlign: 'center' }}>
                                 <Users size={32} style={{ margin: '0 auto 10px', display: 'block', color: 'var(--cs-text-muted)' }} />
-                                <div style={{ fontSize: '15px', fontWeight: 600 }}>No students enrolled in {activeBatchName}</div>
+                                <div style={{ fontSize: '15px', fontWeight: 600 }}>No students enrolled in {activeBatchName || 'this batch'}</div>
                                 <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>
                                     Enroll students in this batch from the Students page to record daily attendance.
                                 </div>
@@ -974,7 +1294,357 @@ export default function AttendancePage() {
                 )}
 
                 {/* ═══════════════════════════════════════════════════════════════
-                    VIEW 2: STUDENT ATTENDANCE (PARTICULAR STUDENT DAILY BASES)
+                    VIEW 2: STAFF ATTENDANCE (ROLL CALL BY BRANCH)
+                    ═══════════════════════════════════════════════════════════════ */}
+                {viewMode === 'staff' && (
+                    <div className="cs-card">
+                        {/* Staff Toolbar: Date Picker & Actions */}
+                        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                            {/* Date Controls */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    className="btn-ghost"
+                                    style={{ padding: '6px' }}
+                                    onClick={() => setStaffDate(d => addDaysToIso(d, -1))}
+                                    title="Previous Day"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <input
+                                    type="date"
+                                    value={staffDate}
+                                    max={today}
+                                    onChange={e => setStaffDate(e.target.value)}
+                                    style={{
+                                        padding: '6px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--cs-border)',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        color: 'var(--cs-text-primary)',
+                                        background: 'var(--cs-surface)'
+                                    }}
+                                />
+                                <button
+                                    className="btn-ghost"
+                                    style={{ padding: '6px' }}
+                                    onClick={() => setStaffDate(d => addDaysToIso(d, 1))}
+                                    disabled={staffDate >= today}
+                                    title="Next Day"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                                {staffDate !== today && (
+                                    <button
+                                        onClick={() => setStaffDate(today)}
+                                        style={{
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            border: '1px solid var(--cs-border)',
+                                            background: 'var(--cs-surface-dim)',
+                                            color: 'var(--cs-primary)',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Today
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Branch indicator */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--cs-text-muted)' }}>
+                                <Building2 size={15} color="var(--cs-primary)" />
+                                <span>Staff Scope:</span>
+                                <strong style={{ color: 'var(--cs-text-primary)' }}>
+                                    {selectedBranchId === 'all'
+                                        ? 'All Branches'
+                                        : (workspace?.branches?.find(b => b.branchId === selectedBranchId)?.name || 'Selected Branch')}
+                                </strong>
+                            </div>
+
+                            {/* Quick Staff Marking Actions */}
+                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {canMark && (
+                                    <>
+                                        <button
+                                            onClick={() => markAllStaff('P')}
+                                            style={{
+                                                padding: '6px 12px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                                background: 'rgba(16, 185, 129, 0.1)',
+                                                color: '#065F46',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Mark All Present
+                                        </button>
+                                        <button
+                                            onClick={() => markAllStaff('A')}
+                                            style={{
+                                                padding: '6px 12px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                                background: 'rgba(239, 68, 68, 0.1)',
+                                                color: '#991B1B',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Mark All Absent
+                                        </button>
+                                        <button
+                                            onClick={clearStaffMarks}
+                                            style={{
+                                                padding: '6px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                border: '1px solid var(--cs-border)',
+                                                background: 'transparent',
+                                                color: 'var(--cs-text-muted)',
+                                                cursor: 'pointer'
+                                            }}
+                                            title="Reset marks"
+                                        >
+                                            <RotateCcw size={14} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Search bar */}
+                        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ position: 'relative', width: '320px' }}>
+                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '9px', color: 'var(--cs-text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search staff by name, email, or role..."
+                                    value={staffSearch}
+                                    onChange={e => setStaffSearch(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '6px 12px 6px 32px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--cs-border)',
+                                        fontSize: '12px'
+                                    }}
+                                />
+                            </div>
+                            <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
+                                Mark roll call for instructors and staff members filtered by branch.
+                            </span>
+                        </div>
+
+                        {/* Staff Table */}
+                        {staffLoading ? (
+                            <div style={{ padding: '56px 24px', textAlign: 'center', color: 'var(--cs-text-muted)', fontSize: '14px' }}>
+                                Loading staff attendance…
+                            </div>
+                        ) : staffError ? (
+                            <div style={{ padding: '56px 24px', textAlign: 'center', color: 'var(--cs-danger)', fontSize: '14px' }}>
+                                <AlertCircle size={28} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.8 }} />
+                                Unable to load staff attendance: {staffError}
+                            </div>
+                        ) : !staffData || staffData.staff.length === 0 ? (
+                            <div style={{ padding: '56px 24px', textAlign: 'center' }}>
+                                <Briefcase size={32} style={{ margin: '0 auto 10px', display: 'block', color: 'var(--cs-text-muted)' }} />
+                                <div style={{ fontSize: '15px', fontWeight: 600 }}>No staff members found</div>
+                                <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>
+                                    {selectedBranchId === 'all'
+                                        ? 'Add staff members from Users & Roles to manage staff attendance.'
+                                        : 'No staff members assigned to this branch.'}
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table className="cs-table">
+                                    <thead>
+                                        <tr>
+                                            <th style={{ minWidth: '220px' }}>Staff Member</th>
+                                            <th style={{ minWidth: '150px' }}>Role & Branch</th>
+                                            <th style={{ minWidth: '160px' }}>Assigned Batches</th>
+                                            <th style={{ minWidth: '280px' }}>Status ({formatFriendlyDate(staffDate)})</th>
+                                            <th style={{ minWidth: '240px' }}>Remarks / Reason</th>
+                                            <th style={{ textAlign: 'center', width: '120px' }}>Overall Rate</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {staffData.staff
+                                            .filter(s => {
+                                                if (!staffSearch) return true;
+                                                const q = staffSearch.toLowerCase();
+                                                return s.name.toLowerCase().includes(q) ||
+                                                    s.email.toLowerCase().includes(q) ||
+                                                    s.role.toLowerCase().includes(q) ||
+                                                    (s.branchName && s.branchName.toLowerCase().includes(q));
+                                            })
+                                            .map(s => {
+                                                const currentStatus = staffEdits[s.userId]?.status;
+                                                const remarks = staffEdits[s.userId]?.remarks ?? '';
+
+                                                return (
+                                                    <tr key={s.userId}>
+                                                        {/* Staff Avatar & Name */}
+                                                        <td>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                                <div className="avatar-placeholder" style={{ width: 34, height: 34, fontSize: '12px' }}>
+                                                                    {initials(s.name)}
+                                                                </div>
+                                                                <div>
+                                                                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--cs-text-primary)' }}>
+                                                                        {s.name}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>
+                                                                        {s.email} {s.phone ? `• ${s.phone}` : ''}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Role & Branch */}
+                                                        <td>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                                                <span style={{
+                                                                    padding: '2px 8px',
+                                                                    borderRadius: '10px',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600,
+                                                                    background: 'rgba(79, 70, 229, 0.1)',
+                                                                    color: 'var(--cs-primary)'
+                                                                }}>
+                                                                    {s.role || s.title || 'Staff'}
+                                                                </span>
+                                                                {s.branchName && (
+                                                                    <span style={{
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '6px',
+                                                                        fontSize: '10px',
+                                                                        fontWeight: 500,
+                                                                        background: 'var(--cs-border-subtle)',
+                                                                        color: 'var(--cs-text-secondary)'
+                                                                    }}>
+                                                                        {s.branchName}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Batches */}
+                                                        <td>
+                                                            <div style={{ fontSize: '12px', color: s.batches ? 'var(--cs-text-primary)' : 'var(--cs-text-muted)' }}>
+                                                                {s.batches || '—'}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Status Roll Call */}
+                                                        <td>
+                                                            <div style={{ display: 'flex', gap: '6px' }}>
+                                                                {KEYS.map(k => {
+                                                                    const cfg = statusConfig[k];
+                                                                    const isSelected = currentStatus === k;
+                                                                    return (
+                                                                        <button
+                                                                            key={k}
+                                                                            disabled={!canMark}
+                                                                            onClick={() => setStaffMemberStatus(s.userId, k, s.branchId)}
+                                                                            style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '4px',
+                                                                                padding: '5px 10px',
+                                                                                borderRadius: '6px',
+                                                                                fontSize: '11px',
+                                                                                fontWeight: 700,
+                                                                                cursor: 'pointer',
+                                                                                border: `1px solid ${isSelected ? cfg.color : 'var(--cs-border)'}`,
+                                                                                background: isSelected ? cfg.bg : 'var(--cs-surface)',
+                                                                                color: isSelected ? cfg.color : 'var(--cs-text-muted)',
+                                                                                transition: 'all 0.15s ease'
+                                                                            }}
+                                                                        >
+                                                                            <span style={{
+                                                                                width: 14,
+                                                                                height: 14,
+                                                                                borderRadius: '50%',
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center',
+                                                                                fontSize: '9px',
+                                                                                background: isSelected ? cfg.color : 'transparent',
+                                                                                color: isSelected ? '#FFFFFF' : 'inherit'
+                                                                            }}>
+                                                                                {k}
+                                                                            </span>
+                                                                            {cfg.label}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Remarks */}
+                                                        <td>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Add notes / remarks..."
+                                                                disabled={!canMark}
+                                                                value={remarks}
+                                                                onChange={e => setStaffMemberRemarks(s.userId, e.target.value, s.branchId)}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '5px 8px',
+                                                                    fontSize: '12px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid var(--cs-border)',
+                                                                    background: 'var(--cs-surface)'
+                                                                }}
+                                                            />
+                                                        </td>
+
+                                                        {/* Overall Rate */}
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            <span style={{
+                                                                fontSize: '13px',
+                                                                fontWeight: 700,
+                                                                color: s.overallRate >= 80 ? '#10B981' : s.overallRate >= 60 ? '#F59E0B' : '#EF4444'
+                                                            }}>
+                                                                {s.overallRate}%
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Footer / Save Bar */}
+                        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--cs-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                            <div style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>
+                                {staffData?.staff.length ?? 0} staff members • {Object.keys(staffEdits).length} marked for {formatFriendlyDate(staffDate)}
+                            </div>
+                            <button
+                                className="btn-primary"
+                                style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                disabled={!canMark || saving || Object.keys(staffEdits).length === 0}
+                                onClick={saveStaffAttendance}
+                            >
+                                <Check size={14} />
+                                {saving ? 'Saving…' : `Save Staff Attendance (${Object.keys(staffEdits).length})`}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* ═══════════════════════════════════════════════════════════════
+                    VIEW 3: STUDENT ATTENDANCE (PARTICULAR STUDENT DAILY BASES)
                     ═══════════════════════════════════════════════════════════════ */}
                 {viewMode === 'student' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -991,7 +1661,7 @@ export default function AttendancePage() {
                                         value={selectedStudentId ?? ''}
                                         onChange={e => setSelectedStudentId(e.target.value)}
                                         style={{
-                                            minWidth: '260px',
+                                            minWidth: '280px',
                                             padding: '8px 12px',
                                             borderRadius: '8px',
                                             border: '1px solid var(--cs-border)',
@@ -1004,7 +1674,7 @@ export default function AttendancePage() {
                                         <option value="" disabled>Choose a student to manage…</option>
                                         {(studentsList?.students ?? []).map(st => (
                                             <option key={st.studentId} value={st.studentId}>
-                                                {st.firstName} {st.lastName} {st.batches ? `(${st.batches})` : ''}
+                                                {st.firstName} {st.lastName} {st.branchName ? `[${st.branchName}]` : ''} {st.batches ? `(${st.batches})` : ''}
                                             </option>
                                         ))}
                                     </select>
@@ -1373,8 +2043,8 @@ export default function AttendancePage() {
                                                             background: 'var(--cs-surface)'
                                                         }}
                                                     >
-                                                        {batches?.map(b => (
-                                                            <option key={b.batchId} value={b.batchId}>{b.name}</option>
+                                                        {(batches ?? []).map(b => (
+                                                            <option key={b.batchId} value={b.batchId}>{b.name} {b.branchName ? `(${b.branchName})` : ''}</option>
                                                         ))}
                                                     </select>
                                                 </div>
@@ -1560,7 +2230,7 @@ export default function AttendancePage() {
                 )}
 
                 {/* ═══════════════════════════════════════════════════════════════
-                    VIEW 3: BATCH MATRIX REGISTER (COMPATIBLE MULTI-WEEK VIEW)
+                    VIEW 4: BATCH MATRIX REGISTER (COMPATIBLE MULTI-WEEK VIEW)
                     ═══════════════════════════════════════════════════════════════ */}
                 {viewMode === 'matrix' && (
                     <div className="cs-card">
@@ -1570,22 +2240,34 @@ export default function AttendancePage() {
                                 <span style={{ fontSize: '15px', fontWeight: 700 }}>Batch:</span>
                             </div>
                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                {batches?.map(b => (
-                                    <button
-                                        key={b.batchId}
-                                        onClick={() => { setSelectedBatchId(b.batchId); setMatrixEdits({}); setMessage(null); }}
-                                        style={{
-                                            padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                                            cursor: 'pointer', border: '1px solid',
-                                            borderColor: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.4)' : 'var(--cs-border)',
-                                            background: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
-                                            color: activeBatchId === b.batchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {b.name}
-                                    </button>
-                                ))}
+                                {filteredBatches.length === 0 ? (
+                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontStyle: 'italic' }}>
+                                        No batches in this branch
+                                    </span>
+                                ) : (
+                                    filteredBatches.map(b => (
+                                        <button
+                                            key={b.batchId}
+                                            onClick={() => { setSelectedBatchId(b.batchId); setMatrixEdits({}); setMessage(null); }}
+                                            style={{
+                                                padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                                                cursor: 'pointer', border: '1px solid',
+                                                borderColor: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.4)' : 'var(--cs-border)',
+                                                background: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
+                                                color: activeBatchId === b.batchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                                transition: 'all 0.2s',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '5px'
+                                            }}
+                                        >
+                                            <span>{b.name}</span>
+                                            {selectedBranchId === 'all' && b.branchName && (
+                                                <span style={{ fontSize: '10px', opacity: 0.7 }}>• {b.branchName}</span>
+                                            )}
+                                        </button>
+                                    ))
+                                )}
                             </div>
 
                             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1596,7 +2278,7 @@ export default function AttendancePage() {
                         </div>
 
                         {/* Legend */}
-                        {batches && batches.length > 0 && register && register.students.length > 0 && (
+                        {filteredBatches.length > 0 && register && register.students.length > 0 && (
                             <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>Legend (click a cell to change):</span>
                                 {KEYS.map(k => {

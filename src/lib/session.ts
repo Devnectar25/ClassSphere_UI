@@ -97,7 +97,7 @@ export function isSupportAdmin(session: SessionState | null): boolean {
 
 /** Where a user lands after signing in. */
 export function homePath(session: SessionState) {
-    if (!session.session.tenantId) return '/admin';
-    if (session.session.role === 'Guardian') return '/portal';
+    if (!session?.session?.tenantId && !session?.user?.isPlatformAdmin) return '/admin';
+    if (session?.session?.role === 'Guardian') return '/portal';
     return can(session, 'reports.read') ? '/dashboard' : '/dashboard/students';
 }

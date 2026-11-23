@@ -69,11 +69,8 @@ function LoginForm() {
             });
             saveSession({ ...session, selectedBranchId: null });
             const next = searchParams.get('next');
-            if (next && next.startsWith('/')) {
-                router.replace(next);
-            } else {
-                router.replace(homePath(session));
-            }
+            const destination = (next && next.startsWith('/')) ? next : homePath(session);
+            window.location.href = destination;
         } catch (err) {
             setError((err as Error).message);
             setBusy(false);

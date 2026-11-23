@@ -4,7 +4,7 @@ import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
 import React, { useState } from 'react';
-import { Search, CreditCard, CheckCircle, Clock, XCircle, AlertCircle, Download, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, CreditCard, CheckCircle, Clock, XCircle, AlertCircle, Download, Loader2, ChevronLeft, ChevronRight, Plus, FileText } from 'lucide-react';
 import { api, useApi, formatMoney, formatDate, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -752,10 +752,42 @@ export default function InvoicesPage() {
     };
 
     const summaryStats = data ? [
-        { label: 'Billed This Month', value: money(data.summary.billedThisMonth), color: '#6C63FF', sub: `${data.summary.billedThisMonthCount} invoices` },
-        { label: 'Collected (all time)', value: money(data.summary.collectedTotal), color: '#10B981', sub: `${data.summary.billedTotal > 0 ? Math.round((data.summary.collectedTotal / data.summary.billedTotal) * 100) : 0}% of billed` },
-        { label: 'Outstanding', value: money(data.summary.outstandingAmount), color: '#F59E0B', sub: `${data.summary.outstandingCount} invoices` },
-        { label: 'Overdue', value: money(data.summary.overdueAmount), color: '#EF4444', sub: `${data.summary.overdueCount} invoices` },
+        {
+            label: 'Billed This Month',
+            value: money(data.summary.billedThisMonth),
+            color: 'var(--cs-primary)',
+            bg: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.05) 100%)',
+            border: 'rgba(99, 102, 241, 0.25)',
+            icon: CreditCard,
+            sub: `${data.summary.billedThisMonthCount} invoices`
+        },
+        {
+            label: 'Collected (all time)',
+            value: money(data.summary.collectedTotal),
+            color: '#10B981',
+            bg: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%)',
+            border: 'rgba(16, 185, 129, 0.25)',
+            icon: CheckCircle,
+            sub: `${data.summary.billedTotal > 0 ? Math.round((data.summary.collectedTotal / data.summary.billedTotal) * 100) : 0}% of billed`
+        },
+        {
+            label: 'Outstanding',
+            value: money(data.summary.outstandingAmount),
+            color: '#F59E0B',
+            bg: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%)',
+            border: 'rgba(245, 158, 11, 0.25)',
+            icon: Clock,
+            sub: `${data.summary.outstandingCount} invoices`
+        },
+        {
+            label: 'Overdue',
+            value: money(data.summary.overdueAmount),
+            color: '#EF4444',
+            bg: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%)',
+            border: 'rgba(239, 68, 68, 0.25)',
+            icon: AlertCircle,
+            sub: `${data.summary.overdueCount} invoices`
+        },
     ] : [];
 
     return (
@@ -763,8 +795,22 @@ export default function InvoicesPage() {
             <Topbar title="Invoices & Dues" subtitle="View, collect, and manage all student fee invoices" />
             <div className="page-body">
                 {notice && (
-                    <div className="cs-card" style={{ padding: '12px 16px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{notice}</span>
+                    <div style={{
+                        padding: '14px 18px',
+                        fontSize: '13px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '20px',
+                        background: 'var(--cs-surface)',
+                        border: '1px solid var(--cs-border)',
+                        borderRadius: '12px',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.03)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <CheckCircle size={15} color="#10B981" />
+                            <span style={{ fontWeight: 600, color: 'var(--cs-text-primary)' }}>{notice}</span>
+                        </div>
                         <button className="btn-ghost" style={{ padding: '2px 8px', fontSize: '12px' }} onClick={() => setNotice(null)}>Dismiss</button>
                     </div>
                 )}
@@ -772,14 +818,57 @@ export default function InvoicesPage() {
                 {!data ? <PageState error={error} /> : (
                     <>
                         {/* Summary row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-                            {summaryStats.map(s => (
-                                <div key={s.label} className="cs-card" style={{ padding: '20px' }}>
-                                    <div style={{ fontSize: '22px', fontWeight: 800, color: s.color, fontFamily: "'Plus Jakarta Sans', sans-serif", marginBottom: '4px' }}>{s.value}</div>
-                                    <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>{s.label}</div>
-                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>{s.sub}</div>
-                                </div>
-                            ))}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '22px' }}>
+                            {summaryStats.map(s => {
+                                const Icon = s.icon;
+                                return (
+                                    <div
+                                        key={s.label}
+                                        className="cs-card"
+                                        style={{
+                                            borderRadius: '16px',
+                                            background: 'var(--cs-surface)',
+                                            border: '1px solid var(--cs-border)',
+                                            padding: '18px 20px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '16px',
+                                            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                        onMouseEnter={e => {
+                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                            e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.06)';
+                                        }}
+                                        onMouseLeave={e => {
+                                            e.currentTarget.style.transform = 'none';
+                                            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+                                        }}
+                                    >
+                                        <div style={{
+                                            width: '46px',
+                                            height: '46px',
+                                            borderRadius: '12px',
+                                            background: s.bg,
+                                            border: `1px solid ${s.border}`,
+                                            color: s.color,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            flexShrink: 0
+                                        }}>
+                                            <Icon size={22} color={s.color} />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '24px', fontWeight: 800, color: s.color, fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                                                {s.value}
+                                            </div>
+                                            <div style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 600, marginTop: '4px' }}>{s.label}</div>
+                                            <div style={{ fontSize: '11.5px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>{s.sub}</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         {/* Overdue Banner when in Overdue tab */}
@@ -787,20 +876,22 @@ export default function InvoicesPage() {
                             <div style={{
                                 background: 'rgba(239, 68, 68, 0.05)',
                                 border: '1px solid rgba(239, 68, 68, 0.2)',
-                                borderRadius: '12px',
+                                borderRadius: '16px',
                                 padding: '16px 20px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 flexWrap: 'wrap',
-                                gap: '12px'
+                                gap: '12px',
+                                marginBottom: '20px'
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                                     <div style={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: '10px',
+                                        width: 44,
+                                        height: 44,
+                                        borderRadius: '12px',
                                         background: 'rgba(239, 68, 68, 0.1)',
+                                        border: '1px solid rgba(239, 68, 68, 0.25)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
@@ -809,7 +900,7 @@ export default function InvoicesPage() {
                                         <AlertCircle size={22} />
                                     </div>
                                     <div>
-                                        <div style={{ fontWeight: 700, fontSize: '16px', color: '#EF4444' }}>
+                                        <div style={{ fontWeight: 800, fontSize: '16px', color: '#EF4444' }}>
                                             Total Overdue: {money(filtered.reduce((acc, i) => acc + (i.balanceAmount || 0), 0))}
                                         </div>
                                         <div style={{ fontSize: '12.5px', color: 'var(--cs-text-muted)', marginTop: '2px' }}>
@@ -821,7 +912,7 @@ export default function InvoicesPage() {
                                     <button
                                         type="button"
                                         className="btn-secondary"
-                                        style={{ fontSize: '12px', padding: '6px 14px', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
+                                        style={{ fontSize: '12.5px', fontWeight: 600, padding: '6px 14px', borderRadius: '8px', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
                                         onClick={async () => {
                                             try {
                                                 setBusy(true);
@@ -842,249 +933,464 @@ export default function InvoicesPage() {
                             </div>
                         )}
 
-                        {/* Main table */}
-                        <div className="cs-card">
-                            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--cs-border)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)', borderRadius: '10px', padding: '8px 14px', flex: 1, minWidth: '200px', maxWidth: '300px' }}>
-                                        <Search size={15} color="var(--cs-text-muted)" />
-                                        <input className="cs-input" placeholder="Search invoice or student..." style={{ background: 'none', border: 'none', padding: 0, boxShadow: 'none' }} value={search} onChange={e => { setSearch(e.target.value); setOffset(0); }} />
+                        {/* Main table card */}
+                        <div className="cs-card" style={{
+                            borderRadius: '16px',
+                            border: '1px solid var(--cs-border)',
+                            background: 'var(--cs-surface)',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                            overflow: 'hidden'
+                        }}>
+                            {/* Toolbar */}
+                            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--cs-border)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: 1 }}>
+                                        {/* Search Input */}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            background: 'var(--cs-surface-2)',
+                                            border: '1px solid var(--cs-border)',
+                                            borderRadius: '10px',
+                                            padding: '0 12px',
+                                            width: '280px',
+                                            height: '38px',
+                                            boxSizing: 'border-box'
+                                        }}>
+                                            <Search size={15} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
+                                            <input
+                                                className="cs-input"
+                                                placeholder="Search invoice or student..."
+                                                style={{ background: 'none', border: 'none', padding: 0, boxShadow: 'none', fontSize: '13px', width: '100%' }}
+                                                value={search}
+                                                onChange={e => { setSearch(e.target.value); setOffset(0); }}
+                                            />
+                                            {search && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setSearch(''); setOffset(0); }}
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cs-text-muted)', padding: '2px', display: 'flex' }}
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Status Filter Tabs */}
+                                        <div style={{ display: 'inline-flex', background: 'var(--cs-surface-2)', padding: '3px', borderRadius: '10px', border: '1px solid var(--cs-border)', gap: '3px' }}>
+                                            {['all', 'pending', 'paid', 'overdue', 'void'].map(tab => {
+                                                const isActive = activeTab === tab;
+                                                const label = tab === 'all' ? 'All' : statusConfig[tab]?.label || tab;
+                                                return (
+                                                    <button
+                                                        key={tab}
+                                                        type="button"
+                                                        onClick={() => { setActiveTab(tab); setOffset(0); }}
+                                                        style={{
+                                                            padding: '6px 14px',
+                                                            fontSize: '12.5px',
+                                                            fontWeight: isActive ? 700 : 500,
+                                                            borderRadius: '7px',
+                                                            border: 'none',
+                                                            background: isActive ? 'var(--cs-surface)' : 'transparent',
+                                                            color: isActive ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                                            boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.15s ease'
+                                                        }}
+                                                    >
+                                                        {label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
 
-                                    <div className="tab-list">
-                                        {['pending', 'paid', 'overdue', 'void', 'all'].map(tab => (
-                                            <button key={tab} className={`tab-trigger${activeTab === tab ? ' active' : ''}`} onClick={() => { setActiveTab(tab); setOffset(0); }}>
-                                                {tab === 'all' ? 'All' : statusConfig[tab].label}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    {/* Action button */}
+                                    {canCollect && (
+                                        <button
+                                            type="button"
+                                            onClick={generateCycle}
+                                            disabled={busy}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                fontSize: '13px',
+                                                fontWeight: 600,
+                                                padding: '0 16px',
+                                                height: '38px',
+                                                borderRadius: '10px',
+                                                border: 'none',
+                                                background: 'linear-gradient(135deg, var(--cs-primary) 0%, #6366f1 100%)',
+                                                color: '#ffffff',
+                                                cursor: busy ? 'wait' : 'pointer',
+                                                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
+                                                transition: 'all 0.15s ease',
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        >
+                                            <Plus size={15} /> Generate Invoices
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
                             <div style={{ overflowX: 'auto' }}>
-                                <table className="cs-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+                                <table className="cs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                     <thead>
-                                        <tr style={{ background: 'var(--cs-surface-2)' }}>
-                                            <th style={{ width: '12%', padding: '10px 6px 10px 14px' }}>Invoice #</th>
-                                            <th style={{ width: '14%', padding: '10px 6px' }}>Student</th>
-                                            <th style={{ width: '16%', padding: '10px 6px' }}>Batch</th>
-                                            <th style={{ width: '17%', padding: '10px 6px' }}>Fee Type</th>
-                                            <th style={{ width: '9%', padding: '10px 6px' }}>Amount</th>
-                                            <th style={{ width: '10%', padding: '10px 6px' }}>Due Date</th>
-                                            <th style={{ width: '8%', padding: '10px 4px', textAlign: 'center' }}>Status</th>
-                                            <th style={{ width: '14%', padding: '10px 8px', textAlign: 'center' }}>Actions</th>
+                                        <tr style={{ background: 'var(--cs-surface-2)', borderBottom: '1px solid var(--cs-border)' }}>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Invoice #</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Student</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Batch</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Fee Type</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Amount</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Due Date</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Status</th>
+                                            <th style={{ padding: '14px 20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'right' }}>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {paginatedInvoices.map(inv => {
-                                            const sc = statusConfig[inv.status] || statusConfig.pending;
-                                            const desig = inv.designation || 'Tuition Fee';
-                                            const feeParts = desig.includes('—')
-                                                ? desig.split('—').map(p => p.trim())
-                                                : desig.includes('-')
-                                                ? desig.split('-').map(p => p.trim())
-                                                : [desig];
+                                        {paginatedInvoices.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={8} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--cs-text-muted)' }}>
+                                                    <FileText size={36} style={{ opacity: 0.35, marginBottom: '10px' }} />
+                                                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--cs-text-secondary)' }}>No invoices found</div>
+                                                    <div style={{ fontSize: '12.5px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>
+                                                        {search ? 'Try clearing your search query' : 'There are no invoices in this category'}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            paginatedInvoices.map(inv => {
+                                                const sc = statusConfig[inv.status] || statusConfig.pending;
+                                                const desig = inv.designation || 'Tuition Fee';
+                                                const feeParts = desig.includes('—')
+                                                    ? desig.split('—').map(p => p.trim())
+                                                    : desig.includes('-')
+                                                    ? desig.split('-').map(p => p.trim())
+                                                    : [desig];
 
-                                            return (
-                                                <tr key={inv.invoiceId}>
-                                                    <td style={{ padding: '9px 6px 9px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                                        <code style={{ fontSize: '11px', background: 'var(--cs-surface-2)', padding: '2px 5px', borderRadius: '4px', color: '#8B85FF', display: 'inline-block', letterSpacing: '-0.02em' }}>
-                                                            {inv.invoiceNumber}
-                                                        </code>
-                                                    </td>
-                                                    <td style={{ padding: '9px 6px', verticalAlign: 'middle' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            <div className="avatar-placeholder" style={{ width: 26, height: 26, fontSize: '10px', flexShrink: 0 }}>
-                                                                {initials(inv.studentName)}
-                                                            </div>
-                                                            <span style={{ fontWeight: 600, fontSize: '12px', lineHeight: 1.25, whiteSpace: 'normal', wordBreak: 'normal', color: 'var(--cs-text-primary)' }}>
-                                                                {inv.studentName}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td style={{ padding: '9px 6px', verticalAlign: 'middle' }}>
-                                                        {!inv.batches ? (
-                                                            <span style={{ color: 'var(--cs-text-muted)', fontSize: '11px' }}>—</span>
-                                                        ) : (
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
-                                                                {inv.batches.split(', ').map(b => (
-                                                                    <span
-                                                                        key={b}
-                                                                        className="badge badge-primary"
-                                                                        style={{
-                                                                            display: 'inline-block',
-                                                                            whiteSpace: 'normal',
-                                                                            wordBreak: 'normal',
-                                                                            lineHeight: 1.25,
-                                                                            fontSize: '10.5px',
-                                                                            padding: '2px 6px',
-                                                                            height: 'auto',
-                                                                            borderRadius: '5px',
-                                                                            maxWidth: '100%'
-                                                                        }}
-                                                                    >
-                                                                        {b}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ padding: '9px 6px', verticalAlign: 'middle' }}>
-                                                        {feeParts.length > 1 ? (
-                                                            <div>
-                                                                <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--cs-text-primary)', lineHeight: 1.25, whiteSpace: 'normal', wordBreak: 'normal' }}>
-                                                                    {feeParts[0]}
+                                                return (
+                                                    <tr key={inv.invoiceId} style={{ borderBottom: '1px solid var(--cs-border)' }}>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                            <code style={{
+                                                                fontSize: '12px',
+                                                                fontFamily: 'monospace',
+                                                                fontWeight: 600,
+                                                                background: 'rgba(99, 102, 241, 0.08)',
+                                                                color: 'var(--cs-primary)',
+                                                                border: '1px solid rgba(99, 102, 241, 0.18)',
+                                                                padding: '4px 9px',
+                                                                borderRadius: '6px',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '5px',
+                                                                letterSpacing: '-0.01em'
+                                                            }}>
+                                                                <FileText size={12} color="var(--cs-primary)" />
+                                                                {inv.invoiceNumber}
+                                                            </code>
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                                <div style={{
+                                                                    width: 34,
+                                                                    height: 34,
+                                                                    borderRadius: '50%',
+                                                                    background: 'linear-gradient(135deg, var(--cs-primary) 0%, #4338ca 100%)',
+                                                                    color: '#ffffff',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 700,
+                                                                    flexShrink: 0,
+                                                                    boxShadow: '0 2px 5px rgba(99, 102, 241, 0.2)'
+                                                                }}>
+                                                                    {initials(inv.studentName)}
                                                                 </div>
-                                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '2px', lineHeight: 1.2, whiteSpace: 'normal', wordBreak: 'normal' }}>
-                                                                    {feeParts.slice(1).join(' — ')}
+                                                                <div style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--cs-text-primary)' }}>
+                                                                    {inv.studentName}
                                                                 </div>
                                                             </div>
-                                                        ) : (
-                                                            <div style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', lineHeight: 1.3, whiteSpace: 'normal', wordBreak: 'normal' }}>
-                                                                {inv.designation}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ padding: '9px 6px', verticalAlign: 'middle' }}>
-                                                        <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', color: inv.status === 'paid' ? '#10B981' : inv.status === 'overdue' ? '#EF4444' : 'var(--cs-text-primary)' }}>
-                                                            {money(inv.totalAmount)}
-                                                        </div>
-                                                        {Number(inv.late_fee_amount || 0) > 0 && (
-                                                            <div style={{ fontSize: '11px', color: '#EF4444', fontWeight: 600, whiteSpace: 'nowrap', marginTop: '1px' }}>
-                                                                + {money(inv.late_fee_amount || 0)} late fee
-                                                            </div>
-                                                        )}
-                                                        {inv.balanceAmount > 0 && inv.balanceAmount < (inv.totalAmount + Number(inv.late_fee_amount || 0)) && (
-                                                            <div style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap', marginTop: '1px' }}>
-                                                                Balance {money(inv.balanceAmount)}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ padding: '9px 6px', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '11.5px', color: 'var(--cs-text-muted)' }}>
-                                                        <div>{formatDate(inv.dueDate)}</div>
-                                                        {Number(inv.days_overdue || 0) > 0 && inv.status !== 'paid' && (
-                                                            <div style={{ color: '#EF4444', fontWeight: 600, fontSize: '10.5px', marginTop: '1px' }}>
-                                                                {inv.days_overdue} days overdue
-                                                            </div>
-                                                        )}
-                                                        {inv.paidOn && inv.status === 'paid' && (
-                                                            <div style={{ color: '#10B981', fontSize: '10.5px', marginTop: '1px' }}>
-                                                                Paid: {formatDate(inv.paidOn)}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ padding: '9px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                                        {inv.overdue_status === 'waived' ? (
-                                                            <span className="badge badge-secondary" style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }} title={inv.waived_reason ? `Waived: ${inv.waived_reason}` : 'Late fee waived'}>
-                                                                <CheckCircle size={10} /> Waived
-                                                            </span>
-                                                        ) : inv.overdue_status === 'in_grace' ? (
-                                                            <span className="badge badge-warning" style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }}>
-                                                                <Clock size={10} /> In Grace
-                                                            </span>
-                                                        ) : (
-                                                            <span className={`badge ${sc.cls}`} style={{ display: 'inline-flex', padding: '2px 7px', fontSize: '10.5px' }}>
-                                                                <sc.icon size={10} /> {sc.label}
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ padding: '9px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                                            {canCollect && Number(inv.late_fee_amount || 0) > 0 && (
-                                                                <button
-                                                                    type="button"
-                                                                    className="btn-secondary cell-nowrap"
-                                                                    style={{
-                                                                        padding: '4px 8px',
-                                                                        height: '28px',
-                                                                        fontSize: '11px',
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        gap: '3px',
-                                                                        borderRadius: '6px',
-                                                                        color: '#EF4444',
-                                                                        borderColor: 'rgba(239, 68, 68, 0.3)'
-                                                                    }}
-                                                                    onClick={() => {
-                                                                        setWaivingInvoice(inv);
-                                                                        setWaiveReason('');
-                                                                        setWaiveError(null);
-                                                                    }}
-                                                                    title={`Waive late fee of ${money(inv.late_fee_amount || 0)}`}
-                                                                >
-                                                                    Waive
-                                                                </button>
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle' }}>
+                                                            {!inv.batches ? (
+                                                                <span style={{ color: 'var(--cs-text-muted)', fontSize: '13px' }}>—</span>
+                                                            ) : (
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                                                    {inv.batches.split(', ').map(b => (
+                                                                        <span
+                                                                            key={b}
+                                                                            style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                fontSize: '11.5px',
+                                                                                fontWeight: 600,
+                                                                                padding: '3px 8px',
+                                                                                borderRadius: '6px',
+                                                                                background: 'rgba(99, 102, 241, 0.08)',
+                                                                                color: 'var(--cs-primary)',
+                                                                                border: '1px solid rgba(99, 102, 241, 0.15)'
+                                                                            }}
+                                                                        >
+                                                                            {b}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
                                                             )}
-                                                            {canCollect && inv.balanceAmount > 0 && (
-                                                                <button
-                                                                    type="button"
-                                                                    className="btn-secondary cell-nowrap"
-                                                                    style={{
-                                                                        padding: '4px 10px',
-                                                                        height: '28px',
-                                                                        fontSize: '11.5px',
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        gap: '4px',
-                                                                        borderRadius: '6px'
-                                                                    }}
-                                                                    onClick={() => { setCollecting(inv); setPayment({ amount: String(inv.balanceAmount), paymentMethod: 'Cash' }); }}
-                                                                    title={`Collect payment for ${inv.studentName}`}
-                                                                >
-                                                                    <CreditCard size={11} /> Collect
-                                                                </button>
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle' }}>
+                                                            {feeParts.length > 1 ? (
+                                                                <div>
+                                                                    <div style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--cs-text-primary)' }}>
+                                                                        {feeParts[0]}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '2px', fontWeight: 500 }}>
+                                                                        {feeParts.slice(1).join(' — ')}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ fontSize: '13px', color: 'var(--cs-text-primary)', fontWeight: 600 }}>
+                                                                    {inv.designation}
+                                                                </div>
                                                             )}
-                                                            {(() => {
-                                                                const isDownloading = downloadingId === (inv.invoiceId || inv.invoiceNumber);
-                                                                return (
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle' }}>
+                                                            <div style={{
+                                                                fontSize: '14.5px',
+                                                                fontWeight: 800,
+                                                                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                                                                color: inv.status === 'paid' ? '#059669' : inv.status === 'overdue' ? '#DC2626' : 'var(--cs-text-primary)'
+                                                            }}>
+                                                                {money(inv.totalAmount)}
+                                                            </div>
+                                                            {Number(inv.late_fee_amount || 0) > 0 && (
+                                                                <div style={{ fontSize: '11px', color: '#DC2626', fontWeight: 700, marginTop: '2px' }}>
+                                                                    + {money(inv.late_fee_amount || 0)} late fee
+                                                                </div>
+                                                            )}
+                                                            {inv.balanceAmount > 0 && inv.balanceAmount < (inv.totalAmount + Number(inv.late_fee_amount || 0)) && (
+                                                                <div style={{ fontSize: '11.5px', color: 'var(--cs-text-muted)', marginTop: '2px', fontWeight: 500 }}>
+                                                                    Bal: {money(inv.balanceAmount)}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                            <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--cs-text-secondary)' }}>
+                                                                {formatDate(inv.dueDate)}
+                                                            </div>
+                                                            {inv.paidOn && inv.status === 'paid' && (
+                                                                <div style={{ color: '#059669', fontSize: '11.5px', fontWeight: 600, marginTop: '2px' }}>
+                                                                    Paid: {formatDate(inv.paidOn)}
+                                                                </div>
+                                                            )}
+                                                            {Number(inv.days_overdue || 0) > 0 && inv.status !== 'paid' && (
+                                                                <div style={{ color: '#DC2626', fontWeight: 700, fontSize: '11px', marginTop: '2px' }}>
+                                                                    {inv.days_overdue} days overdue
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                            {inv.overdue_status === 'waived' ? (
+                                                                <span style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    background: 'var(--cs-surface-2)',
+                                                                    color: 'var(--cs-text-muted)',
+                                                                    border: '1px solid var(--cs-border)',
+                                                                    borderRadius: '12px',
+                                                                    padding: '3px 10px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 500
+                                                                }} title={inv.waived_reason ? `Waived: ${inv.waived_reason}` : 'Late fee waived'}>
+                                                                    <CheckCircle size={11} /> Waived
+                                                                </span>
+                                                            ) : inv.overdue_status === 'in_grace' ? (
+                                                                <span style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    background: 'rgba(245, 158, 11, 0.1)',
+                                                                    color: '#D97706',
+                                                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                                                    borderRadius: '12px',
+                                                                    padding: '3px 10px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 600
+                                                                }}>
+                                                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#F59E0B' }} />
+                                                                    In Grace
+                                                                </span>
+                                                            ) : inv.status === 'paid' ? (
+                                                                <span style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    background: 'rgba(16, 185, 129, 0.08)',
+                                                                    color: '#059669',
+                                                                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                                                                    borderRadius: '12px',
+                                                                    padding: '3px 10px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 600
+                                                                }}>
+                                                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 6px #10B981' }} />
+                                                                    Paid
+                                                                </span>
+                                                            ) : inv.status === 'overdue' ? (
+                                                                <span style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    background: 'rgba(239, 68, 68, 0.1)',
+                                                                    color: '#DC2626',
+                                                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                                    borderRadius: '12px',
+                                                                    padding: '3px 10px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 600
+                                                                }}>
+                                                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#DC2626' }} />
+                                                                    Overdue
+                                                                </span>
+                                                            ) : (
+                                                                <span style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    background: 'rgba(245, 158, 11, 0.1)',
+                                                                    color: '#D97706',
+                                                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                                                    borderRadius: '12px',
+                                                                    padding: '3px 10px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 600
+                                                                }}>
+                                                                    <Clock size={11} /> {sc.label}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ padding: '16px 20px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                                                {canCollect && Number(inv.late_fee_amount || 0) > 0 && (
                                                                     <button
                                                                         type="button"
-                                                                        className="btn-primary cell-nowrap"
-                                                                        disabled={isDownloading}
                                                                         style={{
-                                                                            padding: '4px 12px',
-                                                                            height: '28px',
-                                                                            minWidth: '82px',
+                                                                            padding: '0 10px',
+                                                                            height: '32px',
                                                                             fontSize: '11.5px',
+                                                                            fontWeight: 600,
                                                                             display: 'inline-flex',
                                                                             alignItems: 'center',
-                                                                            justifyContent: 'center',
                                                                             gap: '4px',
-                                                                            borderRadius: '6px',
-                                                                            opacity: isDownloading ? 0.75 : 1,
-                                                                            cursor: isDownloading ? 'wait' : 'pointer'
+                                                                            borderRadius: '8px',
+                                                                            color: '#DC2626',
+                                                                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                                                                            background: 'rgba(239, 68, 68, 0.05)',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s ease'
                                                                         }}
                                                                         onClick={() => {
-                                                                            if (!isDownloading) downloadInvoice(inv);
+                                                                            setWaivingInvoice(inv);
+                                                                            setWaiveReason('');
+                                                                            setWaiveError(null);
                                                                         }}
-                                                                        title={`Download Invoice ${inv.invoiceNumber}`}
+                                                                        title={`Waive late fee of ${money(inv.late_fee_amount || 0)}`}
                                                                     >
-                                                                        {isDownloading ? (
-                                                                            <>
-                                                                                <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Saving...
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <Download size={11} /> Invoice
-                                                                            </>
-                                                                        )}
+                                                                        Waive
                                                                     </button>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                                                )}
+
+                                                                {canCollect && inv.balanceAmount > 0 && (
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{
+                                                                            padding: '0 12px',
+                                                                            height: '32px',
+                                                                            fontSize: '12px',
+                                                                            fontWeight: 600,
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '5px',
+                                                                            borderRadius: '8px',
+                                                                            border: 'none',
+                                                                            background: 'linear-gradient(135deg, var(--cs-primary) 0%, #6366f1 100%)',
+                                                                            color: '#ffffff',
+                                                                            boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s ease'
+                                                                        }}
+                                                                        onClick={() => { setCollecting(inv); setPayment({ amount: String(inv.balanceAmount), paymentMethod: 'Cash' }); }}
+                                                                        title={`Collect payment for ${inv.studentName}`}
+                                                                    >
+                                                                        <CreditCard size={13} /> Collect
+                                                                    </button>
+                                                                )}
+
+                                                                {(() => {
+                                                                    const isDownloading = downloadingId === (inv.invoiceId || inv.invoiceNumber);
+                                                                    return (
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={isDownloading}
+                                                                            style={{
+                                                                                padding: '0 12px',
+                                                                                height: '32px',
+                                                                                fontSize: '12px',
+                                                                                fontWeight: 600,
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '5px',
+                                                                                borderRadius: '8px',
+                                                                                border: '1px solid var(--cs-border)',
+                                                                                background: 'var(--cs-surface-2)',
+                                                                                color: 'var(--cs-primary)',
+                                                                                cursor: isDownloading ? 'wait' : 'pointer',
+                                                                                transition: 'all 0.15s ease'
+                                                                            }}
+                                                                            onMouseEnter={e => {
+                                                                                e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)';
+                                                                                e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+                                                                            }}
+                                                                            onMouseLeave={e => {
+                                                                                e.currentTarget.style.background = 'var(--cs-surface-2)';
+                                                                                e.currentTarget.style.borderColor = 'var(--cs-border)';
+                                                                            }}
+                                                                            onClick={() => {
+                                                                                if (!isDownloading) downloadInvoice(inv);
+                                                                            }}
+                                                                            title={`Download Invoice ${inv.invoiceNumber}`}
+                                                                        >
+                                                                            {isDownloading ? (
+                                                                                <>
+                                                                                    <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Saving...
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <Download size={13} /> Invoice
+                                                                                </>
+                                                                            )}
+                                                                        </button>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
 
-                            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>
-                                    Showing {total === 0 ? 0 : offset + 1}–{Math.min(offset + paginatedInvoices.length, total)} of {total} invoices (7 per page)
+                            {/* Pagination footer */}
+                            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: 'var(--cs-surface)' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--cs-text-muted)', fontWeight: 500 }}>
+                                    Showing <strong style={{ color: 'var(--cs-text-primary)', fontWeight: 700 }}>{total === 0 ? 0 : offset + 1}–{Math.min(offset + paginatedInvoices.length, total)}</strong> of <strong style={{ color: 'var(--cs-text-primary)', fontWeight: 700 }}>{total}</strong> invoices (7 per page)
                                 </span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <button
@@ -1092,14 +1398,16 @@ export default function InvoicesPage() {
                                         className="btn-ghost"
                                         style={{
                                             padding: '6px 12px',
-                                            fontSize: '13px',
+                                            fontSize: '12.5px',
+                                            fontWeight: 600,
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '4px',
                                             border: '1px solid var(--cs-border)',
                                             borderRadius: '8px',
                                             cursor: offset === 0 ? 'not-allowed' : 'pointer',
-                                            opacity: offset === 0 ? 0.4 : 1
+                                            opacity: offset === 0 ? 0.4 : 1,
+                                            background: 'var(--cs-surface)'
                                         }}
                                         disabled={offset === 0}
                                         onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
@@ -1128,8 +1436,8 @@ export default function InvoicesPage() {
                                                         fontWeight: isCurrent ? 700 : 500,
                                                         cursor: 'pointer',
                                                         border: '1px solid',
-                                                        background: isCurrent ? 'var(--cs-primary, #6C63FF)' : 'transparent',
-                                                        borderColor: isCurrent ? 'var(--cs-primary, #6C63FF)' : 'var(--cs-border)',
+                                                        background: isCurrent ? 'var(--cs-primary)' : 'var(--cs-surface)',
+                                                        borderColor: isCurrent ? 'var(--cs-primary)' : 'var(--cs-border)',
                                                         color: isCurrent ? '#ffffff' : 'var(--cs-text-secondary)',
                                                         transition: 'all 0.15s ease'
                                                     }}
@@ -1145,14 +1453,16 @@ export default function InvoicesPage() {
                                         className="btn-ghost"
                                         style={{
                                             padding: '6px 12px',
-                                            fontSize: '13px',
+                                            fontSize: '12.5px',
+                                            fontWeight: 600,
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '4px',
                                             border: '1px solid var(--cs-border)',
                                             borderRadius: '8px',
                                             cursor: offset + PAGE_SIZE >= total ? 'not-allowed' : 'pointer',
-                                            opacity: offset + PAGE_SIZE >= total ? 0.4 : 1
+                                            opacity: offset + PAGE_SIZE >= total ? 0.4 : 1,
+                                            background: 'var(--cs-surface)'
                                         }}
                                         disabled={offset + PAGE_SIZE >= total}
                                         onClick={() => setOffset(offset + PAGE_SIZE)}
