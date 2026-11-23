@@ -11,6 +11,8 @@ import { SIDEBAR_TOGGLE_EVENT } from '@/components/Sidebar';
 import { initials, useApi, formatDate } from '@/lib/api';
 import { ROLE_LABELS, can, clearSession, useSession } from '@/lib/session';
 import Modal from '@/components/Modal';
+import LogoutConfirmationModal from '@/components/LogoutConfirmationModal';
+import NotificationCenter from '@/components/NotificationCenter';
 
 interface TopbarProps {
     title: string;
@@ -124,10 +126,18 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
         };
     }, [dropdownOpen, notifOpen]);
 
-    const handleLogout = () => {
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+    const handleLogoutConfirm = () => {
+        setShowLogoutConfirm(false);
         setDropdownOpen(false);
         clearSession();
         router.replace('/login');
+    };
+
+    const handleLogout = () => {
+        setDropdownOpen(false);
+        setShowLogoutConfirm(true);
     };
 
     const handleOpenProfile = () => {
@@ -186,189 +196,7 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
                     </div>
 
                     {/* Notifications */}
-                    <div ref={notifRef} style={{ position: 'relative' }}>
-                        <button
-                            type="button"
-                            className="cs-topbar-bell"
-                            onClick={() => {
-                                setNotifOpen(prev => !prev);
-                                setDropdownOpen(false);
-                            }}
-                            title="Notifications & Notices"
-                            aria-label="Notifications"
-                            style={{
-                                width: 40, height: 40, borderRadius: '10px',
-                                background: notifOpen ? 'var(--cs-surface-3, #f1f5f9)' : 'var(--cs-surface-2)',
-                                border: '1px solid var(--cs-border)',
-                                cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: notifOpen ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            <Bell size={18} />
-                            {unreadCount > 0 && (
-                                <span
-                                    style={{
-                                        position: 'absolute',
-                                        top: 8,
-                                        right: 8,
-                                        width: 8,
-                                        height: 8,
-                                        borderRadius: '50%',
-                                        background: '#EF4444',
-                                        border: '2px solid #ffffff',
-                                    }}
-                                />
-                            )}
-                        </button>
-
-                        {/* Notifications Dropdown Panel */}
-                        {notifOpen && (
-                            <div style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 8px)',
-                                right: 0,
-                                width: '360px',
-                                background: '#ffffff',
-                                border: '1px solid var(--cs-border)',
-                                borderRadius: '12px',
-                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
-                                zIndex: 100,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                overflow: 'hidden'
-                            }}>
-                                {/* Header */}
-                                <div style={{
-                                    padding: '12px 16px',
-                                    borderBottom: '1px solid var(--cs-border)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    background: 'var(--cs-surface-2)'
-                                }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--cs-text-primary)' }}>
-                                            Notifications
-                                        </span>
-                                        {unreadCount > 0 ? (
-                                            <span className="badge badge-primary" style={{ fontSize: '11px', padding: '1px 6px' }}>
-                                                {unreadCount} new
-                                            </span>
-                                        ) : (
-                                            <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>
-                                                All caught up
-                                            </span>
-                                        )}
-                                    </div>
-                                    {unreadCount > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={handleMarkAllAsRead}
-                                            style={{
-                                                background: 'none', border: 'none', cursor: 'pointer',
-                                                fontSize: '11.5px', color: 'var(--cs-primary)', fontWeight: 600, padding: 0
-                                            }}
-                                        >
-                                            Mark all read
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Notification items list */}
-                                <div style={{ maxHeight: '340px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                                    {rawNotices.length === 0 ? (
-                                        <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--cs-text-muted)' }}>
-                                            <Bell size={28} style={{ opacity: 0.35, marginBottom: '6px' }} />
-                                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>No notifications yet</div>
-                                            <div style={{ fontSize: '11.5px', marginTop: '2px' }}>You will receive notice broadcasts, announcements, and fee alerts here.</div>
-                                        </div>
-                                    ) : (
-                                        rawNotices.slice(0, 6).map(n => {
-                                            const id = n.noticeId || n.notice_id || n.title;
-                                            const isUnread = !readIds.includes(id);
-                                            const type = (n.noticeType || n.notice_type || 'notice').toLowerCase();
-                                            const IconComp = type === 'alert' ? AlertTriangle : type === 'event' ? Calendar : type === 'announcement' ? Megaphone : Bell;
-                                            const iconColor = type === 'alert' ? '#EF4444' : type === 'event' ? '#10B981' : type === 'announcement' ? '#6C63FF' : '#06B6D4';
-
-                                            return (
-                                                <div
-                                                    key={id}
-                                                    onClick={() => handleOpenNotice(n)}
-                                                    style={{
-                                                        padding: '12px 16px',
-                                                        borderBottom: '1px solid var(--cs-border)',
-                                                        cursor: 'pointer',
-                                                        background: isUnread ? 'rgba(108, 99, 255, 0.04)' : '#ffffff',
-                                                        display: 'flex',
-                                                        gap: '12px',
-                                                        alignItems: 'flex-start',
-                                                        transition: 'background 0.15s ease'
-                                                    }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--cs-surface-2, #f8fafc)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = isUnread ? 'rgba(108, 99, 255, 0.04)' : '#ffffff')}
-                                                >
-                                                    <div style={{
-                                                        width: 32, height: 32, borderRadius: '8px',
-                                                        background: `${iconColor}18`,
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        flexShrink: 0, marginTop: '2px', color: iconColor
-                                                    }}>
-                                                        <IconComp size={15} />
-                                                    </div>
-                                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                                            <span style={{
-                                                                fontSize: '12.5px', fontWeight: isUnread ? 700 : 600,
-                                                                color: 'var(--cs-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                                            }}>
-                                                                {n.title}
-                                                            </span>
-                                                            {isUnread && (
-                                                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cs-primary)', flexShrink: 0 }} />
-                                                            )}
-                                                        </div>
-                                                        <p style={{
-                                                            fontSize: '11.5px', color: 'var(--cs-text-muted)', margin: '3px 0 0',
-                                                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-                                                        }}>
-                                                            {n.content}
-                                                        </p>
-                                                        <div style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>
-                                                            {formatDate(n.publishedAt || n.published_at)}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
-
-                                {/* Footer link to all notices */}
-                                <div style={{
-                                    padding: '10px 14px',
-                                    borderTop: '1px solid var(--cs-border)',
-                                    background: 'var(--cs-surface-2)',
-                                    textAlign: 'center'
-                                }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setNotifOpen(false);
-                                            router.push('/dashboard/notices');
-                                        }}
-                                        style={{
-                                            background: 'none', border: 'none', cursor: 'pointer',
-                                            fontSize: '12px', fontWeight: 600, color: 'var(--cs-primary)',
-                                            display: 'inline-flex', alignItems: 'center', gap: '4px'
-                                        }}
-                                    >
-                                        View All Notices & Events ➔
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <NotificationCenter />
 
                     {/* Action button */}
                     {action && (
@@ -627,11 +455,24 @@ export default function Topbar({ title, subtitle, action }: TopbarProps) {
                     </div>
                 </Modal>
             )}
+
+            {/* Logout Confirmation Modal */}
+            <LogoutConfirmationModal
+                isOpen={showLogoutConfirm}
+                onClose={() => setShowLogoutConfirm(false)}
+                onConfirm={handleLogoutConfirm}
+                userName={userName}
+                userEmail={userEmail}
+            />
         </>
     );
 }
 
 const TOPBAR_CSS = `
+@keyframes csDropdownFadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .cs-topbar-menu { display: none; width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px; border: 1px solid var(--cs-border); background: var(--cs-surface-2); color: var(--cs-text-primary); align-items: center; justify-content: center; cursor: pointer; }
 .cs-topbar-menu:focus-visible { outline: 2px solid #4F46E5; outline-offset: 2px; }
 @media (max-width: 1280px) { .cs-topbar-search { width: 260px !important; } }

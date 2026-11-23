@@ -52,7 +52,7 @@ const feesConfig: Record<string, { label: string; cls: string }> = {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
 
-const emptyForm = { firstName: '', lastName: '', email: '', phone: '', photo: '', dateOfBirth: '', courseId: '', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' };
+const emptyForm = { firstName: '', lastName: '', email: '', phone: '', photo: '', dateOfBirth: '', enrollmentNumber: '', courseId: '', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' };
 
 interface GuardianFormData {
     mode: 'new' | 'existing';
@@ -118,7 +118,7 @@ export default function StudentsPage() {
 
     // Edit student state
     const [editingStudent, setEditingStudent] = useState<Student | null>(null);
-    const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', phone: '', status: 'active', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' });
+    const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', phone: '', status: 'active', enrollmentNumber: '', courseId: '', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' });
     const [editCountry, setEditCountry] = useState<CountryOption>(COUNTRIES[0]);
     const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
     const [editTouched, setEditTouched] = useState<Record<string, boolean>>({});
@@ -136,6 +136,11 @@ export default function StudentsPage() {
                 if (!val) return 'Last name is required.';
                 if (val.length < 2) return 'Last name must be at least 2 characters.';
                 if (!NAME_REGEX.test(val)) return 'Last name can only contain letters.';
+                return '';
+            case 'enrollmentNumber':
+                if (val && !/^[a-zA-Z0-9_-]{2,30}$/.test(val)) {
+                    return 'Student ID must be 2 to 30 alphanumeric characters (e.g. STUD-01).';
+                }
                 return '';
             case 'email':
                 if (!val) return 'Email address is required.';
@@ -374,9 +379,24 @@ export default function StudentsPage() {
     if (search) query.set('q', search);
     if (statusFilter !== 'all') query.set('status', statusFilter);
     const { data, error, reload } = useApi<StudentSearch>(`/students?${query}`);
-    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; branchId?: string | null }>>(showAdd || !!editingStudent ? '/courses' : null);
+    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; tuitionAmount?: number; branchId?: string | null }>>(showAdd || !!editingStudent ? '/courses' : null);
     const { data: batches } = useApi<Array<{ batchId: string; name: string; courseTitle?: string; courseId?: string; tuitionAmount?: number; branchId?: string }>>(showAdd || !!editingStudent ? '/batches' : null);
     const { data: rawGuardians } = useApi<Array<{ guardianId: string; firstName: string; lastName: string; phone: string; email: string; relationship: string; householdCode?: string }>>(showAdd ? '/guardians' : null);
+    const { data: nextIdData } = useApi<{ nextId: string }>(showAdd ? '/students?action=next-id' : null);
+
+    useEffect(() => {
+        if (showAdd && !form.enrollmentNumber) {
+            if (nextIdData?.nextId) {
+                setForm(f => ({ ...f, enrollmentNumber: nextIdData.nextId }));
+            } else if (data?.students) {
+                const maxSeq = data.students.reduce((max, s) => {
+                    const match = s.enrollmentNumber?.match(/^STUD-(\d+)$/i);
+                    return match ? Math.max(max, parseInt(match[1], 10)) : max;
+                }, 0);
+                setForm(f => ({ ...f, enrollmentNumber: `STUD-${String(maxSeq + 1).padStart(2, '0')}` }));
+            }
+        }
+    }, [showAdd, nextIdData, data]);
 
     const counts = data?.statusCounts ?? {};
     const totalStudents = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -454,6 +474,7 @@ export default function StudentsPage() {
                 method: 'POST',
                 body: JSON.stringify({
                     ...form,
+                    enrollmentNumber: form.enrollmentNumber?.trim() || undefined,
                     phone: formattedPhone,
                     countryCode: selectedCountry.dialCode,
                     batchId: form.batchId || undefined,
@@ -544,6 +565,8 @@ export default function StudentsPage() {
             email: s.email || '',
             phone: parsedDigits,
             status: s.status,
+            enrollmentNumber: s.enrollmentNumber || '',
+            courseId: '',
             batchId: '',
             branchId: s.branchId || workspace?.branches.find(b => b.isPrimary)?.branchId || '',
             feeStatus: s.feeStatus || 'none',
@@ -566,6 +589,7 @@ export default function StudentsPage() {
             lastName: validateField('lastName', editForm.lastName),
             email: validateField('email', editForm.email),
             phone: validateField('phone', editForm.phone, editCountry),
+            enrollmentNumber: validateField('enrollmentNumber', editForm.enrollmentNumber),
         };
 
         const activeErrors = Object.fromEntries(Object.entries(errors).filter(([_, msg]) => Boolean(msg)));
@@ -585,6 +609,7 @@ export default function StudentsPage() {
                 body: JSON.stringify({
                     studentId: editingStudent.studentId,
                     ...editForm,
+                    enrollmentNumber: editForm.enrollmentNumber ? editForm.enrollmentNumber.trim() : undefined,
                     phone: formattedPhone,
                     batchId: editForm.batchId || undefined,
                     branchId: editForm.branchId || undefined,
@@ -1305,22 +1330,52 @@ export default function StudentsPage() {
                                         )}
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="cs-label">Email <span style={{ color: '#EF4444' }}>*</span></label>
-                                    <input
-                                        className="cs-input"
-                                        type="email"
-                                        placeholder="student@example.com"
-                                        value={form.email}
-                                        onChange={handleFieldChange('email')}
-                                        onBlur={handleBlur('email')}
-                                        style={getInputStyle('email')}
-                                    />
-                                    {touched.email && fieldErrors.email && (
-                                        <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
-                                            {fieldErrors.email}
-                                        </p>
-                                    )}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label">
+                                            Student ID <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 400 }}>(e.g. STUD-01)</span>
+                                        </label>
+                                        <input
+                                            className="cs-input"
+                                            placeholder="e.g. STUD-01"
+                                            value={form.enrollmentNumber}
+                                            onChange={e => {
+                                                const val = e.target.value.toUpperCase();
+                                                setForm(f => ({ ...f, enrollmentNumber: val }));
+                                                if (touched.enrollmentNumber) {
+                                                    setFieldErrors(errs => ({ ...errs, enrollmentNumber: validateField('enrollmentNumber', val) }));
+                                                }
+                                            }}
+                                            onBlur={handleBlur('enrollmentNumber')}
+                                            style={getInputStyle('enrollmentNumber')}
+                                        />
+                                        {touched.enrollmentNumber && fieldErrors.enrollmentNumber ? (
+                                            <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                {fieldErrors.enrollmentNumber}
+                                            </p>
+                                        ) : (
+                                            <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '2px' }}>
+                                                Auto-assigned if left blank
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="cs-label">Email <span style={{ color: '#EF4444' }}>*</span></label>
+                                        <input
+                                            className="cs-input"
+                                            type="email"
+                                            placeholder="student@example.com"
+                                            value={form.email}
+                                            onChange={handleFieldChange('email')}
+                                            onBlur={handleBlur('email')}
+                                            style={getInputStyle('email')}
+                                        />
+                                        {touched.email && fieldErrors.email && (
+                                            <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                                {fieldErrors.email}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div>
@@ -1935,36 +1990,160 @@ export default function StudentsPage() {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="cs-label">Status</label>
-                            <select className="cs-input" value={editForm.status} onChange={handleEditFieldChange('status')}>
-                                <option value="active">Active</option>
-                                <option value="on-hold">On-Hold</option>
-                                <option value="inquiry">Inquiry</option>
-                                <option value="completed">Completed</option>
-                                <option value="withdrawn">Withdrawn</option>
-                            </select>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div>
+                                <label className="cs-label">
+                                    Student ID <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 400 }}>(e.g. STUD-01)</span>
+                                </label>
+                                <input
+                                    className="cs-input"
+                                    value={editForm.enrollmentNumber}
+                                    placeholder="e.g. STUD-01"
+                                    onChange={e => {
+                                        const val = e.target.value.toUpperCase();
+                                        setEditForm(f => ({ ...f, enrollmentNumber: val }));
+                                        if (editTouched.enrollmentNumber) {
+                                            setEditFieldErrors(errs => ({ ...errs, enrollmentNumber: validateField('enrollmentNumber', val) }));
+                                        }
+                                    }}
+                                    onBlur={handleEditBlur('enrollmentNumber')}
+                                    style={getEditInputStyle('enrollmentNumber')}
+                                />
+                                {editTouched.enrollmentNumber && editFieldErrors.enrollmentNumber && (
+                                    <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '3px', fontWeight: 500 }}>
+                                        {editFieldErrors.enrollmentNumber}
+                                    </p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="cs-label">Status</label>
+                                <select className="cs-input" value={editForm.status} onChange={handleEditFieldChange('status')}>
+                                    <option value="active">Active</option>
+                                    <option value="on-hold">On-Hold</option>
+                                    <option value="inquiry">Inquiry</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="withdrawn">Withdrawn</option>
+                                </select>
+                            </div>
                         </div>
 
                         {!branchScoped && (workspace?.branches.length ?? 0) > 1 ? (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label">Branch</label>
+                                        <select
+                                            className="cs-input"
+                                            value={editForm.branchId}
+                                            onChange={e => {
+                                                const newBranchId = e.target.value;
+                                                setEditForm(f => ({
+                                                    ...f,
+                                                    branchId: newBranchId,
+                                                    batchId: '', // Reset batch selection when switching branch
+                                                }));
+                                            }}
+                                        >
+                                            {workspace?.branches.map(b => (
+                                                <option key={b.branchId} value={b.branchId}>
+                                                    {b.name}{b.isPrimary ? ' (Primary)' : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="cs-label">Course (optional)</label>
+                                        <select
+                                            className="cs-input"
+                                            value={editForm.courseId}
+                                            onChange={e => {
+                                                const newCourseId = e.target.value;
+                                                const selectedCourse = courses?.find(c => c.courseId === newCourseId);
+                                                const currentBatch = batches?.find(b => b.batchId === editForm.batchId);
+                                                const shouldResetBatch = editForm.batchId && newCourseId && currentBatch?.courseId && currentBatch.courseId !== newCourseId;
+                                                setEditForm(f => ({
+                                                    ...f,
+                                                    courseId: newCourseId,
+                                                    batchId: shouldResetBatch ? '' : f.batchId,
+                                                    feeAmount: selectedCourse && selectedCourse.tuitionAmount && !f.feeAmount ? String(selectedCourse.tuitionAmount) : f.feeAmount,
+                                                    feeStatus: selectedCourse && f.feeStatus === 'none' ? 'pending' : f.feeStatus,
+                                                }));
+                                            }}
+                                        >
+                                            <option value="">{courses ? '— All Courses / Any —' : 'Loading courses…'}</option>
+                                            {courses?.map(c => (
+                                                <option key={c.courseId} value={c.courseId}>
+                                                    {c.title} ({c.code}){c.tuitionAmount ? ` — ₹${Number(c.tuitionAmount).toLocaleString('en-IN')}` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
                                 <div>
-                                    <label className="cs-label">Branch</label>
+                                    <label className="cs-label">Change / Assign Batch</label>
                                     <select
                                         className="cs-input"
-                                        value={editForm.branchId}
+                                        value={editForm.batchId}
                                         onChange={e => {
-                                            const newBranchId = e.target.value;
+                                            const bId = e.target.value;
+                                            const selected = batches?.find(b => b.batchId === bId);
                                             setEditForm(f => ({
                                                 ...f,
-                                                branchId: newBranchId,
-                                                batchId: '', // Reset batch selection when switching branch
+                                                batchId: bId,
+                                                courseId: selected?.courseId || f.courseId,
+                                                feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : f.feeAmount,
+                                                feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
                                             }));
                                         }}
                                     >
-                                        {workspace?.branches.map(b => (
-                                            <option key={b.branchId} value={b.branchId}>
-                                                {b.name}{b.isPrimary ? ' (Primary)' : ''}
+                                        {(() => {
+                                            const editBatches = batches?.filter(b => (!editForm.branchId || !b.branchId || b.branchId === editForm.branchId) && (!editForm.courseId || b.courseId === editForm.courseId)) || [];
+                                            const editPlaceholder = !batches
+                                                ? 'Loading batches…'
+                                                : editBatches.length > 0
+                                                    ? '— Keep existing batch or unassigned —'
+                                                    : editForm.courseId
+                                                        ? '— No batches available for this course —'
+                                                        : '— No batches available for this branch —';
+                                            return (
+                                                <>
+                                                    <option value="">{editPlaceholder}</option>
+                                                    {editBatches.map(b => (
+                                                        <option key={b.batchId} value={b.batchId}>
+                                                            {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
+                                                        </option>
+                                                    ))}
+                                                </>
+                                            );
+                                        })()}
+                                    </select>
+                                </div>
+                            </>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                    <label className="cs-label">Course (optional)</label>
+                                    <select
+                                        className="cs-input"
+                                        value={editForm.courseId}
+                                        onChange={e => {
+                                            const newCourseId = e.target.value;
+                                            const selectedCourse = courses?.find(c => c.courseId === newCourseId);
+                                            const currentBatch = batches?.find(b => b.batchId === editForm.batchId);
+                                            const shouldResetBatch = editForm.batchId && newCourseId && currentBatch?.courseId && currentBatch.courseId !== newCourseId;
+                                            setEditForm(f => ({
+                                                ...f,
+                                                courseId: newCourseId,
+                                                batchId: shouldResetBatch ? '' : f.batchId,
+                                                feeAmount: selectedCourse && selectedCourse.tuitionAmount && !f.feeAmount ? String(selectedCourse.tuitionAmount) : f.feeAmount,
+                                                feeStatus: selectedCourse && f.feeStatus === 'none' ? 'pending' : f.feeStatus,
+                                            }));
+                                        }}
+                                    >
+                                        <option value="">{courses ? '— All Courses / Any —' : 'Loading courses…'}</option>
+                                        {courses?.map(c => (
+                                            <option key={c.courseId} value={c.courseId}>
+                                                {c.title} ({c.code}){c.tuitionAmount ? ` — ₹${Number(c.tuitionAmount).toLocaleString('en-IN')}` : ''}
                                             </option>
                                         ))}
                                     </select>
@@ -1980,18 +2159,21 @@ export default function StudentsPage() {
                                             setEditForm(f => ({
                                                 ...f,
                                                 batchId: bId,
+                                                courseId: selected?.courseId || f.courseId,
                                                 feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : f.feeAmount,
                                                 feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
                                             }));
                                         }}
                                     >
                                         {(() => {
-                                            const editBatches = batches?.filter(b => !editForm.branchId || !b.branchId || b.branchId === editForm.branchId) || [];
+                                            const editBatches = batches?.filter(b => (!editForm.branchId || !b.branchId || b.branchId === editForm.branchId) && (!editForm.courseId || b.courseId === editForm.courseId)) || [];
                                             const editPlaceholder = !batches
                                                 ? 'Loading batches…'
                                                 : editBatches.length > 0
                                                     ? '— Keep existing batch or unassigned —'
-                                                    : '— No batches available for this branch —';
+                                                    : editForm.courseId
+                                                        ? '— No batches available for this course —'
+                                                        : '— No batches available for this branch —';
                                             return (
                                                 <>
                                                     <option value="">{editPlaceholder}</option>
@@ -2005,43 +2187,6 @@ export default function StudentsPage() {
                                         })()}
                                     </select>
                                 </div>
-                            </div>
-                        ) : (
-                            <div>
-                                <label className="cs-label">Change / Assign Batch</label>
-                                <select
-                                    className="cs-input"
-                                    value={editForm.batchId}
-                                    onChange={e => {
-                                        const bId = e.target.value;
-                                        const selected = batches?.find(b => b.batchId === bId);
-                                        setEditForm(f => ({
-                                            ...f,
-                                            batchId: bId,
-                                            feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : f.feeAmount,
-                                            feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
-                                        }));
-                                    }}
-                                >
-                                    {(() => {
-                                        const editBatches = batches?.filter(b => !editForm.branchId || !b.branchId || b.branchId === editForm.branchId) || [];
-                                        const editPlaceholder = !batches
-                                            ? 'Loading batches…'
-                                            : editBatches.length > 0
-                                                ? '— Keep existing batch or unassigned —'
-                                                : '— No batches available for this branch —';
-                                        return (
-                                            <>
-                                                <option value="">{editPlaceholder}</option>
-                                                {editBatches.map(b => (
-                                                    <option key={b.batchId} value={b.batchId}>
-                                                        {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
-                                                    </option>
-                                                ))}
-                                            </>
-                                        );
-                                    })()}
-                                </select>
                             </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

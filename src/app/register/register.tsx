@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
     CheckCircle, ArrowRight, ArrowLeft, Eye, EyeOff, BadgeCheck, Circle, Building2, Phone, Mail, X, AlertCircle, RefreshCw,
-    Globe, Map, Building, Compass, MapPin,
+    Globe, Map, Building, Compass, MapPin, User, Lock, Sparkles, Check, ShieldCheck
 } from 'lucide-react';
 import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
@@ -34,7 +34,6 @@ const NAME_REGEX = /^[a-zA-Z]+(?:[ '.-][a-zA-Z]*)*$/;
 const ACADEMY_NAME_REGEX = /^[a-zA-Z][a-zA-Z &'.,()\-/]*$/;
 const NO_DIGIT_FIELDS: string[] = ['academyName', 'firstName', 'lastName', 'customCategory', 'customCountry', 'state', 'city'];
 const CATEGORY_VALUES = CATEGORIES.map(([value]) => value);
-const iconLeft: React.CSSProperties = { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' };
 const MAX = { academyName: 100, firstName: 50, lastName: 50, email: 254, phone: 10, password: 64 };
 
 /** Password rules, shown as a live checklist under the field. */
@@ -116,6 +115,24 @@ const DEFAULT_PLANS: Plan[] = [
     },
 ];
 
+const INITIAL_FORM = {
+    academyName: '',
+    academyType: 'Tuition',
+    customCategory: '',
+    country: 'India',
+    customCountry: '',
+    state: '',
+    city: '',
+    location: '',
+    address: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirmPassword: '',
+};
+
 export default function RegisterPage() {
     const router = useRouter();
     const [step, setStep] = useState(0);
@@ -124,23 +141,7 @@ export default function RegisterPage() {
     const displayPlans = plans && plans.length > 0 ? plans : DEFAULT_PLANS;
     const [planTier, setPlanTier] = useState<string | null>(null);
     const selectedPlan = planTier ?? displayPlans.find(p => p.isPopular)?.planTier ?? 'Professional';
-    const [form, setForm] = useState({
-        academyName: '',
-        academyType: 'Tuition',
-        customCategory: '',
-        country: 'India',
-        customCountry: '',
-        state: '',
-        city: '',
-        location: '',
-        address: '',
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        password: '',
-        confirmPassword: '',
-    });
+    const [form, setForm] = useState(INITIAL_FORM);
     const [passwordFocused, setPasswordFocused] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -152,6 +153,37 @@ export default function RegisterPage() {
     const [busyState, setBusyState] = useState<'idle' | 'opening' | 'verifying'>('idle');
     const [paymentStatus, setPaymentStatus] = useState<'idle' | 'cancelled' | 'failed' | 'success'>('idle');
     const [session, setSession] = useState<SessionState | null>(null);
+
+    const resetRegistration = () => {
+        setStep(0);
+        setForm(INITIAL_FORM);
+        setPlanTier(null);
+        setPaymentStatus('idle');
+        setSession(null);
+        setError(null);
+        setFieldErrors({});
+        setTouched({});
+        setVerifiedPhone(null);
+        setOtp(null);
+        setOtpInput('');
+        setTermsTouched(false);
+        setAcceptTerms(false);
+        setBusy(false);
+        setBusyState('idle');
+    };
+
+    // Guarantee that visiting /register always starts on Step 0 if completed earlier
+    useEffect(() => {
+        if (step === 2) {
+            resetRegistration();
+        }
+        return () => {
+            setStep(0);
+            setSession(null);
+            setPaymentStatus('idle');
+            setError(null);
+        };
+    }, []);
 
     // Demo OTP: the code is generated in the browser and shown on screen — no SMS is sent.
     const [otp, setOtp] = useState<{ code: string; phone: string; expiresAt: number } | null>(null);
@@ -209,9 +241,9 @@ export default function RegisterPage() {
 
     const sendOtp = async () => {
         setTouched(t => ({ ...t, phone: true }));
-        const phoneError = validateField('phone', form.phone);
-        setFieldErrors(errs => ({ ...errs, phone: phoneError }));
-        if (phoneError) return;
+        const pErr = validateField('phone', form.phone);
+        setFieldErrors(errs => ({ ...errs, phone: pErr }));
+        if (pErr) return;
         // Never send an OTP to a number that already has an account
         setCheckingPhone(true);
         const { phoneTaken } = await checkAvailability({ phone: phoneDigits });
@@ -261,10 +293,33 @@ export default function RegisterPage() {
                 if (!val) return 'City is required.';
                 if (val.length < 2) return 'City must be at least 2 characters.';
                 return '';
-            case 'location':
-                if (!val) return 'Location / Area is required.';
-                if (val.length < 2) return 'Location must be at least 2 characters.';
-                return '';
+            case 'location': {
+                if (!val) return 'PIN code / Area is required.';
+                const isIndia = form.country !== 'Other Country';
+                if (isIndia) {
+                    const cleanDigits = val.replace(/\s/g, '');
+                    if (/^\d+$/.test(cleanDigits)) {
+                        if (cleanDigits.length < 6) return 'PIN code must be exactly 6 digits (e.g. 411038).';
+                        if (cleanDigits.length > 6) return 'PIN code cannot exceed 6 digits.';
+                        if (cleanDigits.startsWith('0')) return 'Indian PIN code cannot start with 0.';
+                        if (!/^[1-9][0-9]{5}$/.test(cleanDigits)) return 'Please enter a valid 6-digit PIN code.';
+                        return '';
+                    }
+                    const pinMatches = val.match(/\b\d+\b/g);
+                    if (!pinMatches) {
+                        return 'Please include a valid 6-digit PIN code (e.g. 411038).';
+                    }
+                    const hasValidPin = pinMatches.some(p => /^[1-9][0-9]{5}$/.test(p));
+                    if (!hasValidPin) {
+                        return 'Please enter a valid 6-digit PIN code (e.g. 411038).';
+                    }
+                    return '';
+                } else {
+                    if (val.length < 3) return 'Postal code must be at least 3 characters.';
+                    if (!/^[a-zA-Z0-9\s-]{3,10}$/.test(val)) return 'Please enter a valid postal code (3–10 characters).';
+                    return '';
+                }
+            }
             case 'address':
                 if (!val) return 'Campus street address is required.';
                 if (val.length < 5) return 'Address must be at least 5 characters.';
@@ -272,7 +327,7 @@ export default function RegisterPage() {
             case 'firstName':
             case 'lastName': {
                 const label = name === 'firstName' ? 'First name' : 'Last name';
-                const min = name === 'firstName' ? 2 : 1; // last names may be an initial
+                const min = name === 'firstName' ? 2 : 1;
                 if (!val) return `${label} is required.`;
                 if (val.length < min) return `${label} must be at least ${min} characters.`;
                 if (val.length > MAX[name]) return `${label} cannot exceed ${MAX[name]} characters.`;
@@ -342,6 +397,12 @@ export default function RegisterPage() {
         let val = e.target.value;
         // Name fields never accept digits — typed or pasted numbers are dropped
         if (NO_DIGIT_FIELDS.includes(key)) val = val.replace(/[0-9]/g, '');
+        if (key === 'location') {
+            const cleanDigits = val.replace(/\s/g, '');
+            if (/^\d+$/.test(cleanDigits) && cleanDigits.length > 6) {
+                val = cleanDigits.slice(0, 6);
+            }
+        }
         setForm(f => ({ ...f, [key]: val }));
         if (touched[key]) {
             setFieldErrors(errs => ({ ...errs, [key]: validateField(key, val) }));
@@ -368,7 +429,6 @@ export default function RegisterPage() {
 
     const handleBlur = (key: keyof typeof form) => () => {
         if (key === 'phone' && phoneVerified) return;
-        // Tidy the value on leaving the field: trim and collapse repeated spaces; emails are lower-cased
         let val = form[key];
         if (key === 'academyName' || key === 'firstName' || key === 'lastName') val = val.trim().replace(/\s+/g, ' ');
         else if (key === 'email') val = val.trim().toLowerCase();
@@ -403,7 +463,7 @@ export default function RegisterPage() {
 
         const errorsObj: Record<string, string> = Object.fromEntries(fields.map(f => [f, validateField(f, form[f as keyof typeof form] ?? '')]));
 
-        // Re-check uniqueness with the server (another sign-up may have used the number meanwhile)
+        // Re-check uniqueness with the server
         if (!errorsObj.phone || (form.email.trim() && !errorsObj.email)) {
             const res = await checkAvailability({
                 phone: errorsObj.phone ? undefined : phoneDigits,
@@ -433,17 +493,8 @@ export default function RegisterPage() {
         setStep(1);
     };
 
-    const getInputStyle = (fieldName: string) => {
-        const hasError = touched[fieldName] && Boolean(fieldErrors[fieldName]);
-        return {
-            borderColor: hasError ? '#EF4444' : undefined,
-            background: hasError ? '#FEF2F2' : undefined,
-        };
-    };
-
     const handleRegisterError = (err: unknown) => {
         const message = (err as Error).message || 'Registration failed.';
-        // Duplicate caught by the server at create time: send the user back to the field to fix
         if (/mobile number already exists/i.test(message) || /email already exists/i.test(message)) {
             const isPhone = /mobile/i.test(message);
             if (isPhone) { setTakenPhones(l => [...l, phoneDigits]); setVerifiedPhone(null); }
@@ -464,7 +515,6 @@ export default function RegisterPage() {
         setPaymentStatus('idle');
 
         try {
-            // 1. Ensure Razorpay Checkout SDK is ready
             const loaded = await loadRazorpayScript();
             if (!loaded) {
                 setError('Failed to connect to Razorpay payment gateway. Please check your internet connection.');
@@ -473,7 +523,6 @@ export default function RegisterPage() {
                 return;
             }
 
-            // 2. Prepare payload
             const effectiveAcademyType = form.academyType === 'Other' && form.customCategory.trim()
                 ? form.customCategory.trim()
                 : form.academyType;
@@ -489,7 +538,6 @@ export default function RegisterPage() {
             delete payload.customCategory;
             delete payload.customCountry;
 
-            // 3. Create server-side Razorpay Autopay Subscription & Order
             const orderRes = await api<{
                 orderId: string;
                 subscriptionId?: string | null;
@@ -510,7 +558,6 @@ export default function RegisterPage() {
                 }),
             });
 
-            // 4. Configure Razorpay checkout options (Autopay Subscription or standard Order)
             const options: Record<string, unknown> = {
                 key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
                 name: 'ClassSphere',
@@ -525,7 +572,7 @@ export default function RegisterPage() {
                     planTier: selectedPlan,
                 },
                 theme: {
-                    color: '#4F46E5', // ClassSphere signature indigo
+                    color: '#4F46E5',
                 },
                 modal: {
                     ondismiss: () => {
@@ -552,7 +599,6 @@ export default function RegisterPage() {
                         setBusyState('verifying');
                         setError(null);
 
-                        // 5. Verify payment signature on backend and activate academy
                         const verifyRes = await api<{
                             session: SessionState;
                             tenantId: string;
@@ -582,7 +628,6 @@ export default function RegisterPage() {
                 },
             };
 
-            // If an Autopay subscription exists, use subscription_id; otherwise fall back to order_id & amount
             if (orderRes.subscriptionId) {
                 options.subscription_id = orderRes.subscriptionId;
             } else {
@@ -613,6 +658,25 @@ export default function RegisterPage() {
         }
     };
 
+    // Sleek input styling helper
+    const getFieldInputStyle = (fieldName: string, hasIconLeft = true) => {
+        const hasError = touched[fieldName] && Boolean(fieldErrors[fieldName]);
+        return {
+            width: '100%',
+            height: '44px',
+            borderRadius: '10px',
+            fontSize: '13.5px',
+            paddingLeft: hasIconLeft ? '40px' : '14px',
+            paddingRight: '14px',
+            border: `1.5px solid ${hasError ? '#EF4444' : '#E2E8F0'}`,
+            background: hasError ? '#FEF2F2' : '#F8FAFC',
+            color: '#0F172A',
+            outline: 'none',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            boxShadow: hasError ? '0 0 0 3px rgba(239, 68, 68, 0.12)' : 'none',
+        };
+    };
+
     return (
         <div className="reg-page">
             <div className="reg-shell">
@@ -620,675 +684,1024 @@ export default function RegisterPage() {
 
                 {/* ─── Right: Form panel ─── */}
                 <div className="reg-main">
-                    <Link href="/" aria-label="Close and go to home page" className="reg-close">
+                    <Link
+                        href="/"
+                        aria-label="Close and go to home page"
+                        className="reg-close"
+                        onClick={() => {
+                            if (step === 2) resetRegistration();
+                        }}
+                    >
                         <X size={18} />
                     </Link>
 
-                    {/* ─── Static header: logo + steps ─── */}
-                    <div className="reg-head">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transform: 'translateX(-20px)' }}>
-                            {steps.map((s, i) => (
-                                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <div style={{
-                                        width: 32, height: 32, borderRadius: '50%',
-                                        background: i < step ? '#10B981' : i === step ? '#4F46E5' : '#F1F5F9',
-                                        border: `2px solid ${i < step ? '#10B981' : i === step ? '#4F46E5' : '#E2E8F0'}`,
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '13px', fontWeight: 700, color: i <= step ? 'white' : '#94A3B8',
-                                        transition: 'all 0.3s'
-                                    }}>
-                                        {i < step ? <CheckCircle size={16} /> : i + 1}
+                    {/* ─── Header: Modern Stepper & Titles ─── */}
+                    <div className="reg-head" style={{ padding: '24px 44px 18px', borderBottom: '1px solid #F1F5F9', background: '#FFFFFF' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', maxWidth: '380px', margin: '0 auto' }}>
+                            {steps.map((s, i) => {
+                                const isCompleted = i < step;
+                                const isActive = i === step;
+                                return (
+                                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: i < steps.length - 1 ? 1 : 'none' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{
+                                                width: 30, height: 30, borderRadius: '50%',
+                                                background: isCompleted ? '#10B981' : isActive ? 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)' : '#F1F5F9',
+                                                border: `2px solid ${isCompleted ? '#10B981' : isActive ? '#4F46E5' : '#E2E8F0'}`,
+                                                boxShadow: isActive ? '0 3px 10px rgba(79, 70, 229, 0.3)' : 'none',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '12px', fontWeight: 700, color: (isCompleted || isActive) ? '#FFFFFF' : '#94A3B8',
+                                                transition: 'all 0.3s ease',
+                                                flexShrink: 0
+                                            }}>
+                                                {isCompleted ? <Check size={15} strokeWidth={2.8} /> : i + 1}
+                                            </div>
+                                            <span style={{
+                                                fontSize: '12.5px',
+                                                fontWeight: isActive ? 700 : 600,
+                                                color: isActive ? '#0F172A' : isCompleted ? '#059669' : '#94A3B8',
+                                                letterSpacing: '-0.01em',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {s}
+                                            </span>
+                                        </div>
+                                        {i < steps.length - 1 && (
+                                            <div style={{
+                                                flex: 1,
+                                                height: 2,
+                                                borderRadius: 1,
+                                                background: i < step ? '#10B981' : '#E2E8F0',
+                                                margin: '0 6px',
+                                                transition: 'background 0.3s ease'
+                                            }} />
+                                        )}
                                     </div>
-                                    <span style={{ fontSize: '12px', fontWeight: 600, color: i === step ? '#0F172A' : '#94A3B8' }}>{s}</span>
-                                    {i < steps.length - 1 && <div style={{ width: 32, height: 1, background: i < step ? '#10B981' : '#E2E8F0' }} />}
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         {step < 2 && (
-                            <div style={{ marginTop: '24px' }}>
-                                <h1 className="reg-title">{step === 0 ? 'Create your academy' : 'Choose your plan'}</h1>
-                                <p className="reg-subtitle" style={{ marginBottom: 0 }}>
-                                    {step === 0 ? 'Start your 14-day free trial — no credit card needed' : 'Start with a free 14-day trial on any plan.'}
+                            <div style={{ marginTop: '16px', textAlign: 'left' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                                    <span style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                        padding: '2px 8px', borderRadius: '9999px',
+                                        background: '#EEF2FF', color: '#4F46E5',
+                                        fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase'
+                                    }}>
+                                        Step {step + 1} of 3 • {step === 0 ? 'Academy Setup' : 'Choose Plan'}
+                                    </span>
+                                </div>
+                                <h1 className="reg-title" style={{ fontSize: '21px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', margin: '4px 0 2px' }}>
+                                    {step === 0 ? 'Create your academy' : 'Choose your plan'}
+                                </h1>
+                                <p className="reg-subtitle" style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>
+                                    {step === 0 ? 'Start your 14-day free trial — no credit card needed.' : 'All plans include full feature access during your 14-day free trial.'}
                                 </p>
                             </div>
                         )}
                     </div>
 
-                    {/* ─── Scrollable middle ─── */}
-                    <div className="reg-body no-scrollbar" style={{ scrollbarWidth: 'none' }}>
+                    {/* ─── Scrollable body ─── */}
+                    <div className="reg-body no-scrollbar" style={{ scrollbarWidth: 'none', padding: '20px 44px 24px' }}>
 
-                {step === 0 && (
-                    <>
-                        <form onSubmit={continueToPlan} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                    <label className="cs-label">Your First Name <span className="reg-req">*</span></label>
-                                    <input
-                                        className="cs-input"
-                                        placeholder="First name"
-                                        autoComplete="given-name"
-                                        maxLength={MAX.firstName}
-                                        value={form.firstName}
-                                        onChange={handleFieldChange('firstName')}
-                                        onBlur={handleBlur('firstName')}
-                                        style={getInputStyle('firstName')}
-                                    />
-                                    {touched.firstName && fieldErrors.firstName && (
-                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                            {fieldErrors.firstName}
-                                        </p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="cs-label">Last Name <span className="reg-req">*</span></label>
-                                    <input
-                                        className="cs-input"
-                                        placeholder="Last name"
-                                        autoComplete="family-name"
-                                        maxLength={MAX.lastName}
-                                        value={form.lastName}
-                                        onChange={handleFieldChange('lastName')}
-                                        onBlur={handleBlur('lastName')}
-                                        style={getInputStyle('lastName')}
-                                    />
-                                    {touched.lastName && fieldErrors.lastName && (
-                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                            {fieldErrors.lastName}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="cs-label">Email Address <span className="reg-req">*</span></label>
-                                <div style={{ position: 'relative' }}>
-                                    <Mail size={17} style={iconLeft} />
-                                    <input
-                                        className="cs-input reg-input"
-                                        type="email"
-                                        placeholder="you@academy.com"
-                                        autoComplete="email"
-                                        maxLength={MAX.email}
-                                        value={form.email}
-                                        onChange={handleFieldChange('email')}
-                                        onBlur={handleBlur('email')}
-                                        style={{ paddingLeft: '42px', ...getInputStyle('email') }}
-                                        required
-                                    />
-                                </div>
-                                {touched.email && fieldErrors.email ? (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.email}
-                                        {fieldErrors.email === EMAIL_TAKEN && (
-                                            <> <Link href="/login" style={{ color: '#4F46E5', fontWeight: 600 }}>Sign in</Link></>
-                                        )}
-                                    </p>
-                                ) : (
-                                    <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
-                                        Required for account verification, login, and billing receipts
-                                    </p>
-                                )}
-                            </div>
-                            <div>
-                                <label className="cs-label">Mobile Number <span className="reg-req">*</span></label>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                                    <Phone size={17} style={iconLeft} />
-                                    <input
-                                        className="cs-input reg-input"
-                                        type="tel"
-                                        placeholder="9840012345"
-                                        autoComplete="tel"
-                                        inputMode="numeric"
-                                        maxLength={MAX.phone}
-                                        value={form.phone}
-                                        disabled={phoneVerified}
-                                        readOnly={phoneVerified}
-                                        onChange={handlePhoneChange}
-                                        onBlur={handleBlur('phone')}
-                                        style={{
-                                            width: '100%',
-                                            paddingLeft: '42px',
-                                            ...getInputStyle('phone'),
-                                            ...(phoneVerified ? {
-                                                borderColor: '#10B981',
-                                                background: '#F0FDF4',
-                                                color: '#475569',
-                                                cursor: 'not-allowed',
-                                            } : {}),
-                                        }}
-                                    />
-                                    </div>
-                                    {phoneVerified ? (
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 12px', borderRadius: '8px', background: '#ECFDF5', color: '#047857', fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                            <BadgeCheck size={16} /> Verified
-                                        </span>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            className="btn-secondary"
-                                            onClick={sendOtp}
-                                            disabled={resendIn > 0 || checkingPhone}
-                                            style={{ whiteSpace: 'nowrap', justifyContent: 'center', minWidth: '110px' }}
-                                        >
-                                            {checkingPhone ? 'Checking…' : resendIn > 0 ? `Resend in ${resendIn}s` : otp ? 'Resend OTP' : 'Send OTP'}
-                                        </button>
-                                    )}
-                                </div>
-                                {touched.phone && fieldErrors.phone ? (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.phone}
-                                        {fieldErrors.phone === PHONE_TAKEN && (
-                                            <> <Link href="/login" style={{ color: '#4F46E5', fontWeight: 600 }}>Sign in</Link></>
-                                        )}
-                                    </p>
-                                ) : !phoneVerified && fieldErrors.phoneOtp ? (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.phoneOtp}
-                                    </p>
-                                ) : (
-                                    <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>
-                                        {phoneVerified ? 'Mobile number verified and locked' : 'Enter a 10-digit mobile number (e.g. 9840012345)'}
-                                    </p>
-                                )}
-                                {otp && !phoneVerified && (
-                                    <div style={{ marginTop: '10px', padding: '12px', border: '1px solid #C7D2FE', background: '#EEF2FF', borderRadius: '8px' }}>
-                                        <p style={{ fontSize: '12px', color: '#4338CA', marginBottom: '8px' }}>
-                                            <strong>Demo mode:</strong> no SMS is sent. Your OTP is{' '}
-                                            <span style={{ fontFamily: 'monospace', fontSize: '14px', fontWeight: 700, letterSpacing: '0.15em' }}>{otp.code}</span>
-                                        </p>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
+                        {/* ══════════════════════════════════════════════════
+                            STEP 0: ACCOUNT INFORMATION (Sequence Unchanged)
+                           ══════════════════════════════════════════════════ */}
+                        {step === 0 && (
+                            <form onSubmit={continueToPlan} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+
+                                {/* 1. First Name & Last Name */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                            Your First Name <span style={{ color: '#EF4444' }}>*</span>
+                                        </label>
+                                        <div style={{ position: 'relative' }}>
+                                            <User size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
                                             <input
                                                 className="cs-input"
-                                                inputMode="numeric"
-                                                autoComplete="one-time-code"
-                                                maxLength={6}
-                                                placeholder="Enter 6-digit OTP"
-                                                value={otpInput}
-                                                onChange={e => { setOtpInput(e.target.value.replace(/\D/g, '')); setOtpError(null); }}
-                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); verifyOtp(); } }}
-                                                style={{ flex: 1, minWidth: 0, letterSpacing: '0.2em', background: '#FFFFFF' }}
+                                                placeholder="First name"
+                                                autoComplete="given-name"
+                                                maxLength={MAX.firstName}
+                                                value={form.firstName}
+                                                onChange={handleFieldChange('firstName')}
+                                                onBlur={handleBlur('firstName')}
+                                                style={getFieldInputStyle('firstName', true)}
                                             />
-                                            <button type="button" className="btn-primary" onClick={verifyOtp} disabled={otpInput.length !== 6}
-                                                style={{ justifyContent: 'center', minWidth: '90px' }}>
-                                                Verify
-                                            </button>
                                         </div>
-                                        {otpError && (
-                                            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px', fontWeight: 500 }}>{otpError}</p>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="cs-label">Academy / Class Name <span className="reg-req">*</span></label>
-                                <div style={{ position: 'relative' }}>
-                                    <Building2 size={17} style={iconLeft} />
-                                    <input
-                                        className="cs-input reg-input"
-                                        placeholder="e.g. Apex Music & Arts Conservatory"
-                                        autoComplete="organization"
-                                        maxLength={MAX.academyName}
-                                        value={form.academyName}
-                                        onChange={handleFieldChange('academyName')}
-                                        onBlur={handleBlur('academyName')}
-                                        style={{ paddingLeft: '42px', ...getInputStyle('academyName') }}
-                                    />
-                                </div>
-                                {touched.academyName && fieldErrors.academyName && (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.academyName}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="cs-label" id="reg-category-label">Class Category <span className="reg-req">*</span></label>
-                                <select
-                                    id="reg-category"
-                                    className="cs-input reg-native-select"
-                                    aria-labelledby="reg-category-label"
-                                    value={form.academyType}
-                                    onChange={handleFieldChange('academyType')}
-                                >
-                                    {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                                </select>
-                                {touched.academyType && fieldErrors.academyType && (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.academyType}
-                                    </p>
-                                )}
-
-                                {form.academyType !== 'Other' && (
-                                    <div style={{ marginTop: '7px', fontSize: '11.5px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-                                        <span style={{ fontWeight: 600, color: '#4F46E5' }}>Recommended Course Categories:</span>
-                                        {getRecommendedCategories(form.academyType).map(cat => (
-                                            <span key={cat} style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', padding: '1px 7px', borderRadius: '4px', fontSize: '11px', color: '#334155' }}>
-                                                {cat}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {form.academyType === 'Other' && (
-                                    <div style={{ marginTop: '10px' }}>
-                                        <label className="cs-label" style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
-                                            Specify Category Name <span className="reg-req">*</span>
-                                        </label>
-                                        <input
-                                            className="cs-input reg-input"
-                                            type="text"
-                                            placeholder="Enter your class category (e.g. Coding, Robotics, Karate)"
-                                            maxLength={50}
-                                            value={form.customCategory}
-                                            onChange={handleFieldChange('customCategory')}
-                                            onBlur={handleBlur('customCategory')}
-                                            style={getInputStyle('customCategory')}
-                                            autoFocus
-                                            required
-                                        />
-                                        {touched.customCategory && fieldErrors.customCategory && (
-                                            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                                {fieldErrors.customCategory}
+                                        {touched.firstName && fieldErrors.firstName && (
+                                            <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                <span>{fieldErrors.firstName}</span>
                                             </p>
                                         )}
                                     </div>
-                                )}
-                            </div>
 
-                            {/* 1) Country & 2) State */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                            Last Name <span style={{ color: '#EF4444' }}>*</span>
+                                        </label>
+                                        <div style={{ position: 'relative' }}>
+                                            <User size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                            <input
+                                                className="cs-input"
+                                                placeholder="Last name"
+                                                autoComplete="family-name"
+                                                maxLength={MAX.lastName}
+                                                value={form.lastName}
+                                                onChange={handleFieldChange('lastName')}
+                                                onBlur={handleBlur('lastName')}
+                                                style={getFieldInputStyle('lastName', true)}
+                                            />
+                                        </div>
+                                        {touched.lastName && fieldErrors.lastName && (
+                                            <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                <span>{fieldErrors.lastName}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* 2. Email Address */}
                                 <div>
-                                    <label className="cs-label">Country <span className="reg-req">*</span></label>
-                                    <CountrySelect
-                                        value={form.country}
-                                        onChange={val => {
-                                            setForm(f => ({
-                                                ...f,
-                                                country: val,
-                                                customCountry: val === 'Other Country' ? f.customCountry : '',
-                                            }));
-                                            if (touched.country) {
-                                                setFieldErrors(errs => ({ ...errs, country: validateField('country', val) }));
-                                            }
-                                        }}
-                                        onBlur={handleBlur('country')}
-                                        hasError={Boolean(touched.country && fieldErrors.country)}
-                                    />
-                                    {touched.country && fieldErrors.country && (
-                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                            {fieldErrors.country}
+                                    <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Email Address <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Mail size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                        <input
+                                            className="cs-input reg-input"
+                                            type="email"
+                                            placeholder="you@academy.com"
+                                            autoComplete="email"
+                                            maxLength={MAX.email}
+                                            value={form.email}
+                                            onChange={handleFieldChange('email')}
+                                            onBlur={handleBlur('email')}
+                                            style={getFieldInputStyle('email', true)}
+                                            required
+                                        />
+                                    </div>
+                                    {touched.email && fieldErrors.email ? (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.email}</span>
+                                            {fieldErrors.email === EMAIL_TAKEN && (
+                                                <Link href="/login" style={{ color: '#4F46E5', fontWeight: 700, marginLeft: '4px', textDecoration: 'underline' }}>Sign in</Link>
+                                            )}
+                                        </p>
+                                    ) : (
+                                        <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '3px', marginLeft: '2px' }}>
+                                            Required for account verification, login, and billing receipts.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* 3. Mobile Number + OTP Verification */}
+                                <div>
+                                    <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Mobile Number <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                                            <Phone size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                            <input
+                                                className="cs-input reg-input"
+                                                type="tel"
+                                                placeholder="9840012345"
+                                                autoComplete="tel"
+                                                inputMode="numeric"
+                                                maxLength={MAX.phone}
+                                                value={form.phone}
+                                                disabled={phoneVerified}
+                                                readOnly={phoneVerified}
+                                                onChange={handlePhoneChange}
+                                                onBlur={handleBlur('phone')}
+                                                style={{
+                                                    ...getFieldInputStyle('phone', true),
+                                                    ...(phoneVerified ? {
+                                                        borderColor: '#10B981',
+                                                        background: '#F0FDF4',
+                                                        color: '#166534',
+                                                        cursor: 'not-allowed',
+                                                        fontWeight: 600,
+                                                    } : {}),
+                                                }}
+                                            />
+                                        </div>
+                                        {phoneVerified ? (
+                                            <span style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                                padding: '0 14px', height: '44px', borderRadius: '10px',
+                                                background: '#ECFDF5', border: '1.5px solid #A7F3D0', color: '#047857',
+                                                fontSize: '12.5px', fontWeight: 700, whiteSpace: 'nowrap'
+                                            }}>
+                                                <BadgeCheck size={16} /> Verified
+                                            </span>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="btn-secondary"
+                                                onClick={sendOtp}
+                                                disabled={resendIn > 0 || checkingPhone}
+                                                style={{
+                                                    height: '44px', borderRadius: '10px', padding: '0 16px',
+                                                    fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap',
+                                                    justifyContent: 'center', minWidth: '110px',
+                                                    border: '1.5px solid #CBD5E1', background: '#FFFFFF', color: '#334155'
+                                                }}
+                                            >
+                                                {checkingPhone ? 'Checking…' : resendIn > 0 ? `Resend in ${resendIn}s` : otp ? 'Resend OTP' : 'Send OTP'}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {touched.phone && fieldErrors.phone ? (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.phone}</span>
+                                            {fieldErrors.phone === PHONE_TAKEN && (
+                                                <Link href="/login" style={{ color: '#4F46E5', fontWeight: 700, marginLeft: '4px', textDecoration: 'underline' }}>Sign in</Link>
+                                            )}
+                                        </p>
+                                    ) : !phoneVerified && fieldErrors.phoneOtp ? (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.phoneOtp}</span>
+                                        </p>
+                                    ) : (
+                                        <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '3px', marginLeft: '2px' }}>
+                                            {phoneVerified ? 'Mobile number verified and locked' : 'Enter 10-digit Indian mobile number (e.g. 9840012345)'}
                                         </p>
                                     )}
 
-                                    {form.country === 'Other Country' && (
+                                    {/* OTP verification drawer */}
+                                    {otp && !phoneVerified && (
+                                        <div style={{
+                                            marginTop: '10px', padding: '12px 14px',
+                                            border: '1.5px solid #C7D2FE', background: '#F5F7FF',
+                                            borderRadius: '10px', boxShadow: '0 2px 8px rgba(79, 70, 229, 0.08)'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                                <span style={{ fontSize: '12px', color: '#4338CA', fontWeight: 500 }}>
+                                                    Demo Verification Code:
+                                                </span>
+                                                <span style={{
+                                                    fontFamily: 'monospace', fontSize: '14px', fontWeight: 800,
+                                                    letterSpacing: '0.18em', color: '#3730A3', background: '#EEF2FF',
+                                                    padding: '2px 8px', borderRadius: '6px', border: '1px solid #C7D2FE'
+                                                }}>
+                                                    {otp.code}
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <input
+                                                    className="cs-input"
+                                                    inputMode="numeric"
+                                                    autoComplete="one-time-code"
+                                                    maxLength={6}
+                                                    placeholder="Enter 6-digit OTP"
+                                                    value={otpInput}
+                                                    onChange={e => { setOtpInput(e.target.value.replace(/\D/g, '')); setOtpError(null); }}
+                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); verifyOtp(); } }}
+                                                    style={{
+                                                        flex: 1, minWidth: 0, height: '40px', letterSpacing: '0.22em',
+                                                        textAlign: 'center', fontWeight: 700, fontSize: '14px',
+                                                        background: '#FFFFFF', border: '1.5px solid #CBD5E1', borderRadius: '8px'
+                                                    }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="btn-primary"
+                                                    onClick={verifyOtp}
+                                                    disabled={otpInput.length !== 6}
+                                                    style={{
+                                                        height: '40px', borderRadius: '8px', padding: '0 16px',
+                                                        justifyContent: 'center', minWidth: '90px', fontSize: '13px', fontWeight: 600
+                                                    }}
+                                                >
+                                                    Verify
+                                                </button>
+                                            </div>
+                                            {otpError && (
+                                                <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '6px', fontWeight: 500 }}>
+                                                    <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                    <span>{otpError}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 4. Academy / Class Name */}
+                                <div>
+                                    <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Academy / Class Name <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Building2 size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                        <input
+                                            className="cs-input reg-input"
+                                            placeholder="e.g. Apex Music & Arts Conservatory"
+                                            autoComplete="organization"
+                                            maxLength={MAX.academyName}
+                                            value={form.academyName}
+                                            onChange={handleFieldChange('academyName')}
+                                            onBlur={handleBlur('academyName')}
+                                            style={getFieldInputStyle('academyName', true)}
+                                        />
+                                    </div>
+                                    {touched.academyName && fieldErrors.academyName && (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.academyName}</span>
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* 5. Class Category */}
+                                <div>
+                                    <label className="cs-label" id="reg-category-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Class Category <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Sparkles size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                        <select
+                                            id="reg-category"
+                                            className="cs-input reg-native-select"
+                                            aria-labelledby="reg-category-label"
+                                            value={form.academyType}
+                                            onChange={handleFieldChange('academyType')}
+                                            style={{
+                                                ...getFieldInputStyle('academyType', true),
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                        </select>
+                                    </div>
+                                    {touched.academyType && fieldErrors.academyType && (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.academyType}</span>
+                                        </p>
+                                    )}
+
+                                    {form.academyType === 'Other' && (
                                         <div style={{ marginTop: '8px' }}>
-                                            <label className="cs-label" style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
-                                                Specify Country Name <span className="reg-req">*</span>
+                                            <label className="cs-label" style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                                                Specify Category Name <span style={{ color: '#EF4444' }}>*</span>
                                             </label>
                                             <div style={{ position: 'relative' }}>
-                                                <Globe size={16} style={iconLeft} />
+                                                <Sparkles size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
                                                 <input
                                                     className="cs-input reg-input"
                                                     type="text"
-                                                    placeholder="Enter your country name"
-                                                    maxLength={60}
-                                                    value={form.customCountry}
-                                                    onChange={handleFieldChange('customCountry')}
-                                                    onBlur={handleBlur('customCountry')}
-                                                    style={{ paddingLeft: '42px', ...getInputStyle('customCountry') }}
+                                                    placeholder="Enter your class category (e.g. Coding, Robotics, Karate)"
+                                                    maxLength={50}
+                                                    value={form.customCategory}
+                                                    onChange={handleFieldChange('customCategory')}
+                                                    onBlur={handleBlur('customCategory')}
+                                                    style={getFieldInputStyle('customCategory', true)}
                                                     autoFocus
                                                     required
                                                 />
                                             </div>
-                                            {touched.customCountry && fieldErrors.customCountry && (
-                                                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                                    {fieldErrors.customCountry}
+                                            {touched.customCategory && fieldErrors.customCategory && (
+                                                <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                    <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                    <span>{fieldErrors.customCategory}</span>
                                                 </p>
                                             )}
                                         </div>
                                     )}
                                 </div>
 
-                                <div>
-                                    <label className="cs-label">State / Province <span className="reg-req">*</span></label>
-                                    <div style={{ position: 'relative' }}>
-                                        <Map size={17} style={iconLeft} />
-                                        <input
-                                            className="cs-input reg-input"
-                                            placeholder="e.g. Maharashtra"
-                                            maxLength={60}
-                                            value={form.state}
-                                            onChange={handleFieldChange('state')}
-                                            onBlur={handleBlur('state')}
-                                            style={{ paddingLeft: '42px', ...getInputStyle('state') }}
+                                {/* 6. Country & State */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                            Country <span style={{ color: '#EF4444' }}>*</span>
+                                        </label>
+                                        <CountrySelect
+                                            value={form.country}
+                                            onChange={val => {
+                                                setForm(f => ({
+                                                    ...f,
+                                                    country: val,
+                                                    customCountry: val === 'Other Country' ? f.customCountry : '',
+                                                }));
+                                                if (touched.country) {
+                                                    setFieldErrors(errs => ({ ...errs, country: validateField('country', val) }));
+                                                }
+                                            }}
+                                            onBlur={handleBlur('country')}
+                                            hasError={Boolean(touched.country && fieldErrors.country)}
+                                            style={{ height: '44px', borderRadius: '10px' }}
                                         />
-                                    </div>
-                                    {touched.state && fieldErrors.state && (
-                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                            {fieldErrors.state}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* 3) City & 5) Location */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                    <label className="cs-label">City <span className="reg-req">*</span></label>
-                                    <div style={{ position: 'relative' }}>
-                                        <Building size={17} style={iconLeft} />
-                                        <input
-                                            className="cs-input reg-input"
-                                            placeholder="e.g. Pune"
-                                            maxLength={60}
-                                            value={form.city}
-                                            onChange={handleFieldChange('city')}
-                                            onBlur={handleBlur('city')}
-                                            style={{ paddingLeft: '42px', ...getInputStyle('city') }}
-                                        />
-                                    </div>
-                                    {touched.city && fieldErrors.city && (
-                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                            {fieldErrors.city}
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label className="cs-label">Location / Area / Pin <span className="reg-req">*</span></label>
-                                    <div style={{ position: 'relative' }}>
-                                        <Compass size={17} style={iconLeft} />
-                                        <input
-                                            className="cs-input reg-input"
-                                            placeholder="e.g. Kothrud, 411038"
-                                            maxLength={80}
-                                            value={form.location}
-                                            onChange={handleFieldChange('location')}
-                                            onBlur={handleBlur('location')}
-                                            style={{ paddingLeft: '42px', ...getInputStyle('location') }}
-                                        />
-                                    </div>
-                                    {touched.location && fieldErrors.location && (
-                                        <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                            {fieldErrors.location}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* 4) Address */}
-                            <div>
-                                <label className="cs-label">Street Address / Campus Premises <span className="reg-req">*</span></label>
-                                <div style={{ position: 'relative' }}>
-                                    <MapPin size={17} style={iconLeft} />
-                                    <input
-                                        className="cs-input reg-input"
-                                        placeholder="e.g. Office 204, Crystal Plaza, Paud Road"
-                                        maxLength={200}
-                                        value={form.address}
-                                        onChange={handleFieldChange('address')}
-                                        onBlur={handleBlur('address')}
-                                        style={{ paddingLeft: '42px', ...getInputStyle('address') }}
-                                    />
-                                </div>
-                                {touched.address && fieldErrors.address && (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.address}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="cs-label">Password <span className="reg-req">*</span></label>
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        className="cs-input"
-                                        type={showPassword ? 'text' : 'password'}
-                                        placeholder="Create a strong password"
-                                        autoComplete="new-password"
-                                        maxLength={MAX.password}
-                                        style={{ paddingRight: '44px', ...getInputStyle('password') }}
-                                        value={form.password}
-                                        onChange={handleFieldChange('password')}
-                                        onFocus={() => setPasswordFocused(true)}
-                                        onBlur={() => { setPasswordFocused(false); handleBlur('password')(); }}
-                                    />
-                                    <button
-                                        type="button"
-                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
-                                    >
-                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                </div>
-                                {(() => {
-                                    // Dynamic hints: only while typing, only the rules still unmet, plus a strength bar
-                                    const pw = form.password;
-                                    const passed = PASSWORD_RULES.filter(r => r.test(pw)).length;
-                                    const pending = PASSWORD_RULES.filter(r => !r.test(pw));
-                                    const showHints = pw.length > 0 && (passwordFocused || !touched.password);
-                                    if (!showHints) {
-                                        return touched.password && fieldErrors.password ? (
-                                            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                                {fieldErrors.password}
+                                        {touched.country && fieldErrors.country && (
+                                            <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                <span>{fieldErrors.country}</span>
                                             </p>
-                                        ) : null;
-                                    }
-                                    const ratio = passed / PASSWORD_RULES.length;
-                                    const [strength, color] = ratio === 1 ? ['Strong', '#10B981'] : ratio >= 0.67 ? ['Medium', '#F59E0B'] : ['Weak', '#EF4444'];
-                                    return (
-                                        <div style={{ marginTop: '6px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ flex: 1, height: 4, borderRadius: 2, background: '#E2E8F0', overflow: 'hidden' }}>
-                                                    <div style={{ width: `${ratio * 100}%`, height: '100%', background: color, transition: 'width 0.2s, background 0.2s' }} />
+                                        )}
+
+                                        {form.country === 'Other Country' && (
+                                            <div style={{ marginTop: '8px' }}>
+                                                <label className="cs-label" style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                                                    Specify Country Name <span style={{ color: '#EF4444' }}>*</span>
+                                                </label>
+                                                <div style={{ position: 'relative' }}>
+                                                    <Globe size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                                    <input
+                                                        className="cs-input reg-input"
+                                                        type="text"
+                                                        placeholder="Enter your country name"
+                                                        maxLength={60}
+                                                        value={form.customCountry}
+                                                        onChange={handleFieldChange('customCountry')}
+                                                        onBlur={handleBlur('customCountry')}
+                                                        style={getFieldInputStyle('customCountry', true)}
+                                                        autoFocus
+                                                        required
+                                                    />
                                                 </div>
-                                                <span style={{ fontSize: '11px', fontWeight: 600, color }}>{strength}</span>
+                                                {touched.customCountry && fieldErrors.customCountry && (
+                                                    <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                        <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                        <span>{fieldErrors.customCountry}</span>
+                                                    </p>
+                                                )}
                                             </div>
-                                            {pending.length > 0 ? (
-                                                <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                    {pending.map(rule => (
-                                                        <li key={rule.label} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#64748B' }}>
-                                                            <Circle size={10} /> {rule.label}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            ) : fieldErrors.password && touched.password ? (
-                                                <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px', fontWeight: 500 }}>{fieldErrors.password}</p>
-                                            ) : (
-                                                <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '11px', marginTop: '4px', fontWeight: 500 }}>
-                                                    <CheckCircle size={12} /> Great, your password is strong
-                                                </p>
-                                            )}
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                            State / Province <span style={{ color: '#EF4444' }}>*</span>
+                                        </label>
+                                        <div style={{ position: 'relative' }}>
+                                            <Map size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                            <input
+                                                className="cs-input reg-input"
+                                                placeholder="e.g. Maharashtra"
+                                                maxLength={60}
+                                                value={form.state}
+                                                onChange={handleFieldChange('state')}
+                                                onBlur={handleBlur('state')}
+                                                style={getFieldInputStyle('state', true)}
+                                            />
                                         </div>
-                                    );
-                                })()}
-                            </div>
+                                        {touched.state && fieldErrors.state && (
+                                            <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                <span>{fieldErrors.state}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* 7. City & Location / Area / Pin */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                            City <span style={{ color: '#EF4444' }}>*</span>
+                                        </label>
+                                        <div style={{ position: 'relative' }}>
+                                            <Building size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                            <input
+                                                className="cs-input reg-input"
+                                                placeholder="e.g. Pune"
+                                                maxLength={60}
+                                                value={form.city}
+                                                onChange={handleFieldChange('city')}
+                                                onBlur={handleBlur('city')}
+                                                style={getFieldInputStyle('city', true)}
+                                            />
+                                        </div>
+                                        {touched.city && fieldErrors.city && (
+                                            <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                <span>{fieldErrors.city}</span>
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                            Location / Area / Pin <span style={{ color: '#EF4444' }}>*</span>
+                                        </label>
+                                        <div style={{ position: 'relative' }}>
+                                            <Compass size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                            <input
+                                                className="cs-input reg-input"
+                                                placeholder="e.g. 411038 or Kothrud, 411038"
+                                                maxLength={80}
+                                                value={form.location}
+                                                onChange={handleFieldChange('location')}
+                                                onBlur={handleBlur('location')}
+                                                style={getFieldInputStyle('location', true)}
+                                            />
+                                        </div>
+                                        {touched.location && fieldErrors.location && (
+                                            <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                <span>{fieldErrors.location}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* 8. Address */}
+                                <div>
+                                    <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Street Address / Campus Premises <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <MapPin size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                        <input
+                                            className="cs-input reg-input"
+                                            placeholder="e.g. Office 204, Crystal Plaza, Paud Road"
+                                            maxLength={200}
+                                            value={form.address}
+                                            onChange={handleFieldChange('address')}
+                                            onBlur={handleBlur('address')}
+                                            style={getFieldInputStyle('address', true)}
+                                        />
+                                    </div>
+                                    {touched.address && fieldErrors.address && (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.address}</span>
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* 9. Password */}
+                                <div>
+                                    <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Password <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Lock size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                        <input
+                                            className="cs-input"
+                                            type={showPassword ? 'text' : 'password'}
+                                            placeholder="Create a strong password"
+                                            autoComplete="new-password"
+                                            maxLength={MAX.password}
+                                            style={{
+                                                ...getFieldInputStyle('password', true),
+                                                paddingRight: '42px',
+                                            }}
+                                            value={form.password}
+                                            onChange={handleFieldChange('password')}
+                                            onFocus={() => setPasswordFocused(true)}
+                                            onBlur={() => { setPasswordFocused(false); handleBlur('password')(); }}
+                                        />
+                                        <button
+                                            type="button"
+                                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            style={{ position: 'absolute', right: '13px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                                        >
+                                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+
+                                    {/* Dynamic Password Strength & Criteria Checklist */}
+                                    {(() => {
+                                        const pw = form.password;
+                                        const passedRules = PASSWORD_RULES.filter(r => r.test(pw));
+                                        const passedCount = passedRules.length;
+                                        const showHints = pw.length > 0 && (passwordFocused || !touched.password);
+
+                                        if (!showHints) {
+                                            return touched.password && fieldErrors.password ? (
+                                                <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                                    <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                                    <span>{fieldErrors.password}</span>
+                                                </p>
+                                            ) : null;
+                                        }
+
+                                        const score = passedCount; // 0 to 6
+                                        const [strengthLabel, strengthColor] = score === 6
+                                            ? ['Strong Password', '#10B981']
+                                            : score >= 4
+                                            ? ['Good Password', '#F59E0B']
+                                            : score >= 2
+                                            ? ['Fair Password', '#FB923C']
+                                            : ['Weak Password', '#EF4444'];
+
+                                        return (
+                                            <div style={{ marginTop: '8px', padding: '10px 12px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px' }}>
+                                                {/* 4-segment visual strength bar */}
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                                    <span style={{ fontSize: '11px', fontWeight: 700, color: strengthColor }}>{strengthLabel}</span>
+                                                    <span style={{ fontSize: '11px', color: '#64748B' }}>{passedCount} of 6 requirements</span>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', height: '4px', marginBottom: '8px' }}>
+                                                    {[1, 2, 3, 4].map(seg => {
+                                                        const active = score >= seg * 1.5;
+                                                        return (
+                                                            <div
+                                                                key={seg}
+                                                                style={{
+                                                                    height: '100%',
+                                                                    borderRadius: '2px',
+                                                                    background: active ? strengthColor : '#E2E8F0',
+                                                                    transition: 'all 0.25s ease'
+                                                                }}
+                                                            />
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {/* Live criteria checklist */}
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
+                                                    {PASSWORD_RULES.map(rule => {
+                                                        const isMet = rule.test(pw);
+                                                        return (
+                                                            <div key={rule.label} style={{
+                                                                display: 'flex', alignItems: 'center', gap: '5px',
+                                                                fontSize: '11px', fontWeight: 500,
+                                                                color: isMet ? '#059669' : '#64748B',
+                                                                transition: 'color 0.2s'
+                                                            }}>
+                                                                {isMet ? (
+                                                                    <Check size={12} strokeWidth={2.5} color="#10B981" />
+                                                                ) : (
+                                                                    <Circle size={8} color="#94A3B8" />
+                                                                )}
+                                                                <span>{rule.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {fieldErrors.password && touched.password && (
+                                                    <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11px', marginTop: '6px', fontWeight: 500 }}>
+                                                        <AlertCircle size={11} style={{ flexShrink: 0 }} />
+                                                        <span>{fieldErrors.password}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+
+                                {/* 10. Confirm Password */}
+                                <div>
+                                    <label className="cs-label" style={{ fontWeight: 600, fontSize: '12.5px', color: '#334155', marginBottom: '4px' }}>
+                                        Confirm Password <span style={{ color: '#EF4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Lock size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
+                                        <input
+                                            className="cs-input"
+                                            type={showConfirm ? 'text' : 'password'}
+                                            placeholder="Re-enter your password"
+                                            autoComplete="new-password"
+                                            maxLength={MAX.password}
+                                            style={{
+                                                ...getFieldInputStyle('confirmPassword', true),
+                                                paddingRight: '42px',
+                                                ...(form.confirmPassword && form.confirmPassword === form.password ? {
+                                                    borderColor: '#10B981',
+                                                    background: '#F0FDF4',
+                                                } : {}),
+                                            }}
+                                            value={form.confirmPassword}
+                                            onChange={e => {
+                                                handleFieldChange('confirmPassword')(e);
+                                                const v = e.target.value;
+                                                if (touched.confirmPassword || v.length >= form.password.length) {
+                                                    setTouched(t => ({ ...t, confirmPassword: true }));
+                                                    setFieldErrors(errs => ({ ...errs, confirmPassword: validateField('confirmPassword', v) }));
+                                                }
+                                            }}
+                                            onPaste={e => e.preventDefault()}
+                                            onBlur={handleBlur('confirmPassword')}
+                                        />
+                                        <button
+                                            type="button"
+                                            aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                                            onClick={() => setShowConfirm(!showConfirm)}
+                                            style={{ position: 'absolute', right: '13px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                                        >
+                                            {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    {touched.confirmPassword && fieldErrors.confirmPassword ? (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '4px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>{fieldErrors.confirmPassword}</span>
+                                        </p>
+                                    ) : form.confirmPassword && form.confirmPassword === form.password ? (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '11.5px', marginTop: '4px', fontWeight: 600 }}>
+                                            <CheckCircle size={12} /> Passwords match
+                                        </p>
+                                    ) : null}
+                                </div>
+
+                                {/* 11. Terms of Service Checkbox */}
+                                <div style={{
+                                    padding: '10px 12px', borderRadius: '10px',
+                                    background: (termsTouched && !acceptTerms) ? '#FEF2F2' : '#F8FAFC',
+                                    border: `1.5px solid ${(termsTouched && !acceptTerms) ? '#FCA5A5' : '#E2E8F0'}`,
+                                    transition: 'all 0.2s'
+                                }}>
+                                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12.5px', color: '#334155', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={acceptTerms}
+                                            onChange={e => {
+                                                setAcceptTerms(e.target.checked);
+                                                setTermsTouched(true);
+                                                if (e.target.checked && fieldErrors.acceptTerms) {
+                                                    setFieldErrors(prev => ({ ...prev, acceptTerms: '' }));
+                                                }
+                                                if (error) setError(null);
+                                            }}
+                                            style={{ marginTop: 2, accentColor: '#4F46E5', width: 16, height: 16, cursor: 'pointer' }}
+                                        />
+                                        <span style={{ lineHeight: 1.45 }}>
+                                            I agree to ClassSphere&apos;s <Link href="/terms" target="_blank" style={{ color: '#4F46E5', fontWeight: 600, textDecoration: 'underline' }}>Terms &amp; Conditions</Link> and <Link href="/privacy" target="_blank" style={{ color: '#4F46E5', fontWeight: 600, textDecoration: 'underline' }}>Privacy Policy</Link>
+                                        </span>
+                                    </label>
+                                    {termsTouched && !acceptTerms && (
+                                        <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontSize: '11.5px', marginTop: '6px', fontWeight: 500 }}>
+                                            <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                                            <span>Please agree to the Terms &amp; Conditions and Privacy Policy to continue.</span>
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Form error banner */}
+                                {error && (
+                                    <div role="alert" style={{
+                                        background: '#FEF2F2', border: '1.5px solid #FCA5A5',
+                                        borderRadius: '10px', padding: '10px 14px', color: '#B91C1C',
+                                        fontSize: '12.5px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px'
+                                    }}>
+                                        <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                                        <span>{error}</span>
+                                    </div>
+                                )}
+
+                                {/* 12. Submit CTA */}
+                                <button
+                                    type="submit"
+                                    className="btn-primary reg-cta"
+                                    style={{
+                                        width: '100%', height: '46px', borderRadius: '10px',
+                                        fontSize: '14.5px', fontWeight: 700, display: 'flex',
+                                        alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                        background: 'linear-gradient(135deg, #4F46E5 0%, #4338CA 100%)',
+                                        boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                                        cursor: 'pointer', transition: 'all 0.2s ease',
+                                    }}
+                                >
+                                    Continue to Plans <ArrowRight size={17} />
+                                </button>
+                            </form>
+                        )}
+
+                        {/* ══════════════════════════════════════════════════
+                            STEP 1: PLAN SELECTION (Sequence Unchanged)
+                           ══════════════════════════════════════════════════ */}
+                        {step === 1 && (
                             <div>
-                                <label className="cs-label">Confirm Password <span className="reg-req">*</span></label>
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        className="cs-input"
-                                        type={showConfirm ? 'text' : 'password'}
-                                        placeholder="Re-enter your password"
-                                        autoComplete="new-password"
-                                        maxLength={MAX.password}
-                                        style={{
-                                            paddingRight: '44px', ...getInputStyle('confirmPassword'),
-                                            ...(form.confirmPassword && form.confirmPassword === form.password ? { borderColor: '#10B981' } : {}),
-                                        }}
-                                        value={form.confirmPassword}
-                                        onChange={e => {
-                                            // Live match check once the user has typed as many characters as the password
-                                            handleFieldChange('confirmPassword')(e);
-                                            const v = e.target.value;
-                                            if (touched.confirmPassword || v.length >= form.password.length) {
-                                                setTouched(t => ({ ...t, confirmPassword: true }));
-                                                setFieldErrors(errs => ({ ...errs, confirmPassword: validateField('confirmPassword', v) }));
-                                            }
-                                        }}
-                                        onPaste={e => e.preventDefault()}
-                                        onBlur={handleBlur('confirmPassword')}
-                                    />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                                    {plans?.map(p => {
+                                        const selected = p.planTier === selectedPlan;
+                                        return (
+                                            <div
+                                                key={p.planTier}
+                                                onClick={() => setPlanTier(p.planTier)}
+                                                style={{
+                                                    position: 'relative',
+                                                    padding: '16px',
+                                                    background: selected ? '#F5F7FF' : '#FFFFFF',
+                                                    border: `2px solid ${selected ? '#4F46E5' : '#E2E8F0'}`,
+                                                    borderRadius: '12px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: selected ? '0 4px 16px rgba(79, 70, 229, 0.12)' : 'none',
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                        <input
+                                                            type="radio"
+                                                            name="plan"
+                                                            checked={selected}
+                                                            onChange={() => setPlanTier(p.planTier)}
+                                                            style={{ accentColor: '#4F46E5', width: 18, height: 18, cursor: 'pointer' }}
+                                                        />
+                                                        <div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <h3 style={{ fontSize: '15px', fontWeight: 700, color: selected ? '#3730A3' : '#0F172A', margin: 0 }}>
+                                                                    {p.planTier}
+                                                                </h3>
+                                                                {p.isPopular && (
+                                                                    <span style={{
+                                                                        fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em',
+                                                                        padding: '2px 8px', borderRadius: '9999px',
+                                                                        background: '#EEF2FF', color: '#4F46E5', border: '1px solid #C7D2FE'
+                                                                    }}>
+                                                                        ⭐ POPULAR
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>
+                                                                {p.description || `Up to ${p.maxSeats} active students • ${p.maxBranches} campus branch`}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                                        <div style={{ fontSize: '17px', fontWeight: 800, color: selected ? '#4F46E5' : '#0F172A' }}>
+                                                            {formatMoney(p.priceMonthly, p.currency)}
+                                                            <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B' }}>/mo</span>
+                                                        </div>
+                                                        <span style={{ fontSize: '10.5px', color: '#10B981', fontWeight: 600 }}>14 days free trial</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Plan feature highlights */}
+                                                {p.features && p.features.length > 0 && (
+                                                    <div style={{
+                                                        marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #EEF2FF',
+                                                        display: 'flex', flexWrap: 'wrap', gap: '6px'
+                                                    }}>
+                                                        {p.features.slice(0, 3).map((f: string, fi: number) => (
+                                                            <span key={fi} style={{
+                                                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                                fontSize: '11px', color: '#475569', background: selected ? '#EEF2FF' : '#F8FAFC',
+                                                                padding: '2px 8px', borderRadius: '6px'
+                                                            }}>
+                                                                <Check size={11} color="#10B981" strokeWidth={2.5} /> {f}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {paymentStatus === 'cancelled' && (
+                                    <div style={{
+                                        padding: '12px 14px', borderRadius: '10px', background: '#FFFBEB',
+                                        border: '1px solid #FDE68A', color: '#92400E', fontSize: '12.5px',
+                                        display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px',
+                                    }}>
+                                        <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                                        <span>Payment was cancelled. You can retry with the button below or choose a different plan.</span>
+                                    </div>
+                                )}
+
+                                {paymentStatus === 'failed' && (
+                                    <div style={{
+                                        padding: '12px 14px', borderRadius: '10px', background: '#FEF2F2',
+                                        border: '1px solid #FECACA', color: '#991B1B', fontSize: '12.5px',
+                                        display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px',
+                                    }}>
+                                        <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                                        <span>{error || 'Payment was unsuccessful. Your account was not charged. Please try again.'}</span>
+                                    </div>
+                                )}
+
+                                {error && paymentStatus !== 'failed' && (
+                                    <div role="alert" style={{
+                                        padding: '12px 14px', borderRadius: '10px', background: '#FEF2F2',
+                                        border: '1px solid #FCA5A5', color: '#B91C1C', fontSize: '12.5px',
+                                        display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px'
+                                    }}>
+                                        <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                                        <span>{error}</span>
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', gap: '10px' }}>
                                     <button
                                         type="button"
-                                        aria-label={showConfirm ? 'Hide password' : 'Show password'}
-                                        onClick={() => setShowConfirm(!showConfirm)}
-                                        style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                                        className="btn-secondary"
+                                        style={{ height: '46px', borderRadius: '10px', padding: '0 18px', fontSize: '14px', fontWeight: 600 }}
+                                        disabled={busy}
+                                        onClick={() => { setError(null); setPaymentStatus('idle'); setStep(0); }}
                                     >
-                                        {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        <ArrowLeft size={16} /> Back
+                                    </button>
+                                    <button
+                                        className="btn-primary reg-cta"
+                                        style={{
+                                            flex: 1, height: '46px', borderRadius: '10px',
+                                            fontSize: '14.5px', fontWeight: 700,
+                                            background: 'linear-gradient(135deg, #4F46E5 0%, #4338CA 100%)',
+                                            boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                                        }}
+                                        disabled={busy || !selectedPlan}
+                                        onClick={createAcademy}
+                                    >
+                                        {busy ? (
+                                            busyState === 'verifying' ? (
+                                                <>Verifying Payment… <RefreshCw size={16} className="animate-spin" /></>
+                                            ) : (
+                                                <>Opening Razorpay… <RefreshCw size={16} className="animate-spin" /></>
+                                            )
+                                        ) : paymentStatus === 'failed' || paymentStatus === 'cancelled' ? (
+                                            <>Retry Payment <ArrowRight size={16} /></>
+                                        ) : (
+                                            <>Create Academy <ArrowRight size={16} /></>
+                                        )}
                                     </button>
                                 </div>
-                                {touched.confirmPassword && fieldErrors.confirmPassword ? (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        {fieldErrors.confirmPassword}
-                                    </p>
-                                ) : form.confirmPassword && form.confirmPassword === form.password ? (
-                                    <p style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        <CheckCircle size={12} /> Passwords match
-                                    </p>
-                                ) : null}
                             </div>
-                            <div>
-                                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#475569', cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={acceptTerms}
-                                        onChange={e => {
-                                            setAcceptTerms(e.target.checked);
-                                            setTermsTouched(true);
-                                            if (e.target.checked && fieldErrors.acceptTerms) {
-                                                setFieldErrors(prev => ({ ...prev, acceptTerms: '' }));
-                                            }
-                                            if (error) setError(null);
-                                        }}
-                                        style={{ marginTop: 2, accentColor: '#4F46E5' }}
-                                    />
-                                    <span>I agree to ClassSphere&apos;s <Link href="/terms" target="_blank" style={{ color: '#4F46E5', fontWeight: 500 }}>Terms &amp; Conditions</Link> and <Link href="/privacy" target="_blank" style={{ color: '#4F46E5', fontWeight: 500 }}>Privacy Policy</Link></span>
-                                </label>
-                                {termsTouched && !acceptTerms && (
-                                    <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '4px', fontWeight: 500 }}>
-                                        Please agree to the Terms &amp; Conditions and Privacy Policy to continue.
-                                    </p>
-                                )}
-                            </div>
+                        )}
 
-                            {error && (
-                                <div role="alert" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '8px', padding: '10px 14px', color: '#B91C1C', fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span>⚠️</span>
-                                    <span>{error}</span>
-                                </div>
-                            )}
-                            <button type="submit" className="btn-primary reg-cta">
-                                Continue <ArrowRight size={17} />
-                            </button>
-                        </form>
-                    </>
-                )}
-
-                {step === 1 && (
-                    <>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-                            {displayPlans.map(p => {
-                                const selected = p.planTier === selectedPlan;
-                                return (
-                                <label key={p.planTier} style={{
-                                    display: 'flex', alignItems: 'center', gap: '12px', padding: '16px',
-                                    background: selected ? 'rgba(79,70,229,0.04)' : '#F8FAFC',
-                                    border: `1px solid ${selected ? 'rgba(79,70,229,0.25)' : '#E2E8F0'}`,
-                                    borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s'
+                        {/* ══════════════════════════════════════════════════
+                            STEP 2: READY / WELCOME (Sequence Unchanged)
+                           ══════════════════════════════════════════════════ */}
+                        {step === 2 && (
+                            <div style={{ textAlign: 'center', padding: '16px 0 8px' }}>
+                                <div style={{
+                                    width: 64, height: 64, borderRadius: '20px',
+                                    background: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)',
+                                    border: '1.5px solid #C7D2FE',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '32px', margin: '0 auto 16px',
+                                    boxShadow: '0 8px 20px rgba(79, 70, 229, 0.15)'
                                 }}>
-                                    <input type="radio" name="plan" checked={selected} onChange={() => setPlanTier(p.planTier)} style={{ accentColor: '#4F46E5' }} />
-                                    <span style={{ fontWeight: 600, fontSize: '14px', color: selected ? '#4338CA' : '#0F172A' }}>
-                                        {p.planTier} — {formatMoney(p.priceMonthly, p.currency)}/mo{p.isPopular ? ' ⭐' : ''}
-                                    </span>
-                                </label>
-                                );
-                            })}
-                        </div>
-                        {paymentStatus === 'cancelled' && (
-                            <div style={{
-                                padding: '12px 14px', borderRadius: '10px', background: '#FFFBEB',
-                                border: '1px solid #FDE68A', color: '#92400E', fontSize: '13px',
-                                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px',
-                            }}>
-                                <AlertCircle size={16} style={{ flexShrink: 0 }} />
-                                <span>Payment was cancelled. You can retry with the button below or change your selected plan.</span>
+                                    🎉
+                                </div>
+                                <h1 style={{ fontSize: '23px', fontWeight: 800, marginBottom: '8px', color: '#0F172A', letterSpacing: '-0.02em' }}>
+                                    Welcome to ClassSphere!
+                                </h1>
+                                <p style={{ color: '#64748B', fontSize: '13.5px', lineHeight: 1.6, maxWidth: '420px', margin: '0 auto 20px' }}>
+                                    <strong style={{ color: '#0F172A' }}>{form.academyName.trim()}</strong> is ready with a Main Campus branch.
+                                    Next, configure your courses, batches, and student admissions.
+                                </p>
+
+                                {/* Academy summary card */}
+                                <div style={{
+                                    background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px',
+                                    padding: '14px 18px', textAlign: 'left', marginBottom: '22px'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                        <ShieldCheck size={18} color="#4F46E5" />
+                                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                                            Account Setup Summary
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                                        <div>
+                                            <span style={{ color: '#64748B' }}>Primary Contact:</span>
+                                            <div style={{ fontWeight: 600, color: '#0F172A' }}>{`${form.firstName} ${form.lastName}`.trim()}</div>
+                                        </div>
+                                        <div>
+                                            <span style={{ color: '#64748B' }}>Login Identifier:</span>
+                                            <div style={{ fontWeight: 600, color: '#0F172A' }}>{form.email.trim() || form.phone.trim()}</div>
+                                        </div>
+                                        <div>
+                                            <span style={{ color: '#64748B' }}>Branch:</span>
+                                            <div style={{ fontWeight: 600, color: '#0F172A' }}>Main Campus</div>
+                                        </div>
+                                        <div>
+                                            <span style={{ color: '#64748B' }}>Plan Tier:</span>
+                                            <div style={{ fontWeight: 600, color: '#4F46E5' }}>{selectedPlan || 'Starter'} (14-Day Trial)</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button
+                                    className="btn-primary"
+                                    style={{
+                                        width: '100%', maxWidth: '280px', height: '44px',
+                                        justifyContent: 'center', padding: '0 24px',
+                                        fontSize: '14.5px', fontWeight: 700, borderRadius: '10px',
+                                        background: 'linear-gradient(135deg, #4F46E5 0%, #4338CA 100%)',
+                                        boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                                        margin: '0 auto'
+                                    }}
+                                    onClick={() => {
+                                        const dest = session ? homePath(session) : '/login';
+                                        resetRegistration();
+                                        router.replace(dest);
+                                    }}
+                                >
+                                    Go to Dashboard <ArrowRight size={16} />
+                                </button>
                             </div>
                         )}
-
-                        {paymentStatus === 'failed' && (
-                            <div style={{
-                                padding: '12px 14px', borderRadius: '10px', background: '#FEF2F2',
-                                border: '1px solid #FECACA', color: '#991B1B', fontSize: '13px',
-                                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px',
-                            }}>
-                                <AlertCircle size={16} style={{ flexShrink: 0 }} />
-                                <span>{error || 'Payment was unsuccessful. Your account was not charged. Please try again.'}</span>
-                            </div>
-                        )}
-
-                        {error && paymentStatus !== 'failed' && (
-                            <div role="alert" style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{error}</div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                style={{ height: '50px', borderRadius: '12px' }}
-                                disabled={busy}
-                                onClick={() => { setError(null); setPaymentStatus('idle'); setStep(0); }}
-                            >
-                                <ArrowLeft size={16} /> Back
-                            </button>
-                            <button
-                                className="btn-primary reg-cta"
-                                style={{ flex: 1 }}
-                                disabled={busy || !selectedPlan}
-                                onClick={createAcademy}
-                            >
-                                {busy ? (
-                                    busyState === 'verifying' ? (
-                                        <>Verifying Payment… <RefreshCw size={16} className="animate-spin" /></>
-                                    ) : (
-                                        <>Opening Razorpay… <RefreshCw size={16} className="animate-spin" /></>
-                                    )
-                                ) : paymentStatus === 'failed' || paymentStatus === 'cancelled' ? (
-                                    <>Retry Payment <ArrowRight size={16} /></>
-                                ) : (
-                                    <>Create Academy <ArrowRight size={16} /></>
-                                )}
-                            </button>
-                        </div>
-                    </>
-                )}
-
-                {step === 2 && (
-                    <>
-                        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                            <div style={{ fontSize: '56px', marginBottom: '16px' }}>🎉</div>
-                            <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '10px', color: '#0F172A', letterSpacing: '-0.015em' }}>Welcome to ClassSphere!</h1>
-                            <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px' }}>
-                                {form.academyName.trim()} is ready, with a Main Campus branch. Next, add your courses, batches and students.
-                                You can sign in any time with {form.email.trim()
-                                    ? <>{form.email.trim().toLowerCase()} or your mobile number</>
-                                    : <>your mobile number {form.phone.trim()}</>}.
-                            </p>
-                            <button className="btn-primary" style={{ justifyContent: 'center', padding: '12px 32px', height: '44px', fontSize: '15px' }}
-                                onClick={() => router.replace(session ? homePath(session) : '/login')}>
-                                Go to Dashboard <ArrowRight size={16} />
-                            </button>
-                        </div>
-                    </>
-                )}
                     </div>
 
                     {/* ─── Static footer ─── */}
                     {step < 2 && (
-                        <p className="reg-foot">
+                        <p className="reg-foot" style={{ padding: '14px 44px', fontSize: '13px' }}>
                             Already have an account? <Link href="/login" style={{ color: '#4F46E5', fontWeight: 700, textDecoration: 'none', marginLeft: '4px' }}>Sign in</Link>
                         </p>
                     )}

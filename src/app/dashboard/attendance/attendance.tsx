@@ -93,6 +93,7 @@ interface StudentAttendanceResponse {
         name: string;
         email: string;
         phone: string;
+        enrolledBatches?: Array<{ batchId: string; name: string }>;
     };
     summary: {
         total: number;
@@ -275,6 +276,27 @@ export default function AttendancePage() {
     const [message, setMessage] = useState<string | null>(null);
     const [messageType, setMessageType] = useState<'success' | 'error'>('success');
     const [saving, setSaving] = useState(false);
+    const [justSaved, setJustSaved] = useState(false);
+    const [popupToast, setPopupToast] = useState<{
+        message: string;
+        type: 'success' | 'error';
+        studentName?: string;
+        date?: string;
+        statusLabel?: string;
+    } | null>(null);
+
+    const showPopup = (msg: string, type: 'success' | 'error' = 'success', extra?: { studentName?: string; date?: string; statusLabel?: string }) => {
+        setMessage(msg);
+        setMessageType(type);
+        setPopupToast({ message: msg, type, ...extra });
+        if (type === 'success') {
+            setJustSaved(true);
+            setTimeout(() => setJustSaved(false), 3000);
+        }
+        setTimeout(() => {
+            setPopupToast(current => current?.message === msg ? null : current);
+        }, 4500);
+    };
 
     // Queries
     const { data: batches, error: batchError, loading: batchesLoading } = useApi<Array<BatchItem>>('/batches');
@@ -366,12 +388,17 @@ export default function AttendancePage() {
         }
     }, [staffData]);
 
-    // Ensure student record batch id has default
+    // Ensure student record batch id has default or matches student's enrolled batch
     useEffect(() => {
-        if (activeBatchId && !studentRecordBatchId) {
-            setStudentRecordBatchId(activeBatchId);
+        if (studentData?.student?.enrolledBatches && studentData.student.enrolledBatches.length > 0) {
+            const firstEnrolled = studentData.student.enrolledBatches[0].batchId;
+            if (!studentRecordBatchId || !batches?.some(b => b.batchId === studentRecordBatchId)) {
+                setStudentRecordBatchId(firstEnrolled);
+            }
+        } else if ((activeBatchId || batches?.[0]?.batchId) && !studentRecordBatchId) {
+            setStudentRecordBatchId(activeBatchId || batches![0].batchId);
         }
-    }, [activeBatchId, studentRecordBatchId]);
+    }, [studentData, activeBatchId, studentRecordBatchId, batches]);
 
     // Ensure student picker defaults to first student if none selected
     useEffect(() => {
@@ -533,13 +560,30 @@ export default function AttendancePage() {
 
     // Handlers for Particular Student Attendance Management
     const saveStudentRecord = async () => {
-        if (!selectedStudentId || !studentRecordBatchId) return;
+        if (!selectedStudentId) {
+            showPopup('Please select a student first.', 'error');
+            return;
+        }
+
+        // Determine effective batch: selected record batch, or student's enrolled batch, or active batch, or first available batch
+        const studentEnrolledBatch = studentData?.student?.enrolledBatches?.[0]?.batchId;
+        const targetBatchId = studentRecordBatchId || studentEnrolledBatch || activeBatchId || batches?.[0]?.batchId;
+
+        if (!targetBatchId) {
+            showPopup('No batches found. Please create a batch before recording attendance.', 'error');
+            return;
+        }
+
+        if (studentRecordBatchId !== targetBatchId) {
+            setStudentRecordBatchId(targetBatchId);
+        }
+
         setSaving(true);
         try {
             await api('/attendance', {
                 method: 'POST',
                 body: JSON.stringify({
-                    batchId: studentRecordBatchId,
+                    batchId: targetBatchId,
                     sessionDate: studentRecordDate,
                     studentId: selectedStudentId,
                     status: statusConfig[studentRecordStatus].value,
@@ -547,15 +591,22 @@ export default function AttendancePage() {
                 })
             });
 
-            setMessage(`Attendance recorded on ${formatFriendlyDate(studentRecordDate)}.`);
-            setMessageType('success');
+            const statusLabel = statusConfig[studentRecordStatus].label;
+            const studentName = studentData?.student.name || 'Student';
+            const friendlyDate = formatFriendlyDate(studentRecordDate);
+
+            showPopup(
+                `Attendance recorded successfully for ${studentName} on ${friendlyDate}.`,
+                'success',
+                { studentName, date: friendlyDate, statusLabel }
+            );
+
             setStudentRecordRemarks('');
             reloadStudent();
             reloadDaily();
             reloadRegister();
         } catch (err) {
-            setMessage((err as Error).message);
-            setMessageType('error');
+            showPopup((err as Error).message || 'Failed to save attendance record.', 'error');
         } finally {
             setSaving(false);
         }
@@ -674,10 +725,15 @@ export default function AttendancePage() {
     const openStudentAttendance = (studentId: string) => {
         setSelectedStudentId(studentId);
         setViewMode('student');
+        if (!studentRecordBatchId) {
+            const fallback = activeBatchId || batches?.[0]?.batchId;
+            if (fallback) setStudentRecordBatchId(fallback);
+        }
     };
 
     return (
         <>
+
             <Topbar
                 title="Attendance & Register"
                 subtitle="Daily roll call, student & staff attendance tracking, and batch schedules"
@@ -2032,20 +2088,34 @@ export default function AttendancePage() {
                                                         Batch
                                                     </label>
                                                     <select
-                                                        value={studentRecordBatchId}
+                                                        value={studentRecordBatchId || studentData?.student?.enrolledBatches?.[0]?.batchId || activeBatchId || batches?.[0]?.batchId || ''}
                                                         onChange={e => setStudentRecordBatchId(e.target.value)}
                                                         style={{
-                                                            padding: '6px 10px',
+                                                            padding: '6px 12px',
                                                             borderRadius: '6px',
                                                             border: '1px solid var(--cs-border)',
                                                             fontSize: '12px',
                                                             fontWeight: 600,
-                                                            background: 'var(--cs-surface)'
+                                                            background: 'var(--cs-surface)',
+                                                            minWidth: '150px'
                                                         }}
                                                     >
-                                                        {(batches ?? []).map(b => (
-                                                            <option key={b.batchId} value={b.batchId}>{b.name} {b.branchName ? `(${b.branchName})` : ''}</option>
-                                                        ))}
+                                                        {batches && batches.length > 0 ? (
+                                                            <>
+                                                                {studentData?.student?.enrolledBatches?.filter(eb => !batches.some(b => b.batchId === eb.batchId)).map(eb => (
+                                                                    <option key={eb.batchId} value={eb.batchId}>{eb.name} (Enrolled)</option>
+                                                                ))}
+                                                                {batches.map(b => (
+                                                                    <option key={b.batchId} value={b.batchId}>{b.name} {b.branchName ? `(${b.branchName})` : ''}</option>
+                                                                ))}
+                                                            </>
+                                                        ) : studentData?.student?.enrolledBatches && studentData.student.enrolledBatches.length > 0 ? (
+                                                            studentData.student.enrolledBatches.map(eb => (
+                                                                <option key={eb.batchId} value={eb.batchId}>{eb.name}</option>
+                                                            ))
+                                                        ) : (
+                                                            <option value="">No Batches Available</option>
+                                                        )}
                                                     </select>
                                                 </div>
 
@@ -2103,10 +2173,11 @@ export default function AttendancePage() {
                                                 </div>
 
                                                 {/* Save Button */}
-                                                <div style={{ alignSelf: 'flex-end' }}>
+                                                <div style={{ alignSelf: 'flex-end', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     <button
+                                                        type="button"
                                                         className="btn-primary"
-                                                        style={{ padding: '7px 16px', fontSize: '12px' }}
+                                                        style={{ padding: '7px 18px', fontSize: '12px' }}
                                                         disabled={saving}
                                                         onClick={saveStudentRecord}
                                                     >
@@ -2114,6 +2185,81 @@ export default function AttendancePage() {
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {/* Confirmation Alert / Pop-up Displayed Below Save Button (Theme-Matched) */}
+                                            {popupToast && (
+                                                <div
+                                                    style={{
+                                                        marginTop: '14px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        gap: '12px',
+                                                        padding: '10px 16px',
+                                                        borderRadius: '10px',
+                                                        background: popupToast.type === 'success' ? '#F0FDF4' : '#FEF2F2',
+                                                        border: `1px solid ${popupToast.type === 'success' ? '#86EFAC' : '#FECACA'}`,
+                                                        color: popupToast.type === 'success' ? '#166534' : '#991B1B',
+                                                        boxShadow: '0 2px 8px -2px rgba(16, 185, 129, 0.12)',
+                                                        animation: 'modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                                                        <div style={{
+                                                            width: '28px',
+                                                            height: '28px',
+                                                            borderRadius: '50%',
+                                                            background: popupToast.type === 'success' ? '#DCFCE7' : '#FEE2E2',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            flexShrink: 0
+                                                        }}>
+                                                            {popupToast.type === 'success' ? (
+                                                                <CheckCircle2 size={16} color="#16A34A" />
+                                                            ) : (
+                                                                <AlertCircle size={16} color="#DC2626" />
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                            <span>{popupToast.message}</span>
+                                                            {popupToast.statusLabel && (
+                                                                <span style={{
+                                                                    background: popupToast.type === 'success' ? '#DCFCE7' : '#FEE2E2',
+                                                                    color: popupToast.type === 'success' ? '#166534' : '#991B1B',
+                                                                    padding: '2px 8px',
+                                                                    borderRadius: '6px',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 700
+                                                                }}>
+                                                                    {popupToast.statusLabel}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPopupToast(null)}
+                                                        style={{
+                                                            border: 'none',
+                                                            background: 'transparent',
+                                                            color: popupToast.type === 'success' ? '#16A34A' : '#DC2626',
+                                                            cursor: 'pointer',
+                                                            padding: '4px',
+                                                            borderRadius: '6px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontSize: '14px',
+                                                            fontWeight: 700,
+                                                            lineHeight: 1
+                                                        }}
+                                                        title="Dismiss"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

@@ -11,6 +11,7 @@ import {
 import { api } from '@/lib/api';
 import { can, clearSession, homePath, saveSession, useSession, type SessionState } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
+import LogoutConfirmationModal from '@/components/LogoutConfirmationModal';
 
 const navGroups = [
     {
@@ -73,6 +74,7 @@ export default function Sidebar() {
     const { workspace } = useWorkspace();
     const logoUrl = workspace?.organization.branding.logoUrl;
     const branchScoped = !!session?.session.branchId;
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
     const switchAcademy = async (tenantId: string | null) => {
         const next = await api<SessionState>('/auth/switch', { method: 'POST', body: JSON.stringify({ tenantId }) });
@@ -80,7 +82,8 @@ export default function Sidebar() {
         router.push(homePath(next));
     };
 
-    const signOut = () => {
+    const handleSignOutConfirm = () => {
+        setShowLogoutConfirm(false);
         clearSession();
         router.replace('/login');
     };
@@ -200,7 +203,12 @@ export default function Sidebar() {
                         </div>
                     </Link>
                 )}
-                <button onClick={signOut} className="sidebar-link" style={{ width: '100%', border: 'none', background: 'none', ...(collapsed ? { justifyContent: 'center', padding: '12px' } : {}) }}>
+                <button
+                    type="button"
+                    onClick={() => setShowLogoutConfirm(true)}
+                    className="sidebar-link"
+                    style={{ width: '100%', border: 'none', background: 'none', cursor: 'pointer', ...(collapsed ? { justifyContent: 'center', padding: '12px' } : {}) }}
+                >
                     <LogOut size={18} />
                     {!collapsed && <span>Sign Out</span>}
                 </button>
@@ -232,6 +240,14 @@ export default function Sidebar() {
                 {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             </button>
         </aside>
+
+        <LogoutConfirmationModal
+            isOpen={showLogoutConfirm}
+            onClose={() => setShowLogoutConfirm(false)}
+            onConfirm={handleSignOutConfirm}
+            userName={session?.user.fullName}
+            userEmail={session?.user.email}
+        />
         </>
     );
 }

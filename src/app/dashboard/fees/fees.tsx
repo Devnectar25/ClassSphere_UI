@@ -698,7 +698,6 @@ export default function FeesPage() {
                                                 return (
                                                     <div
                                                         key={fp.planId}
-                                                        onClick={() => canEdit && startEditPlan(fp)}
                                                         style={{
                                                             flex: '0 0 calc(33.333% - 12px)',
                                                             minWidth: '280px',
@@ -712,25 +711,8 @@ export default function FeesPage() {
                                                             flexDirection: 'column',
                                                             justifyContent: 'space-between',
                                                             boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
-                                                            cursor: canEdit ? 'pointer' : 'default',
-                                                            transition: 'all 0.2s ease',
                                                             position: 'relative'
                                                         }}
-                                                        onMouseEnter={e => {
-                                                            if (canEdit) {
-                                                                e.currentTarget.style.borderColor = 'rgba(108, 99, 255, 0.45)';
-                                                                e.currentTarget.style.boxShadow = '0 6px 16px rgba(108, 99, 255, 0.1)';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }
-                                                        }}
-                                                        onMouseLeave={e => {
-                                                            if (canEdit) {
-                                                                e.currentTarget.style.borderColor = 'var(--cs-border)';
-                                                                e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.03)';
-                                                                e.currentTarget.style.transform = 'none';
-                                                            }
-                                                        }}
-                                                        title={canEdit ? `Click to edit ${fp.name}` : undefined}
                                                     >
                                                         {/* Card Header */}
                                                         <div>
@@ -856,20 +838,6 @@ export default function FeesPage() {
                                                                     {formatMoney(finalTotal, currency)}
                                                                 </div>
                                                             </div>
-
-                                                            {canEdit && (
-                                                                <div style={{
-                                                                    fontSize: '11px',
-                                                                    color: 'var(--cs-primary)',
-                                                                    fontWeight: 600,
-                                                                    marginTop: '8px',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '4px'
-                                                                }}>
-                                                                    <Pencil size={11} /> Click card to edit plan
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     </div>
                                                 );
