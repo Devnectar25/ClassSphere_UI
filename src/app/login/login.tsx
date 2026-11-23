@@ -8,6 +8,8 @@ import { homePath, saveSession, type SessionState } from '@/lib/session';
 import AuthBrandPanel from '@/components/AuthBrandPanel';
 import ForgotPasswordPanel from '@/components/ForgotPasswordPanel';
 
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+
 const iconLeft: React.CSSProperties = {
     position: 'absolute',
     left: '14px',
@@ -34,8 +36,16 @@ function LoginForm() {
     const validateIdentifier = (val: string): string | null => {
         const trimmed = val.trim();
         if (!trimmed) return 'Email or mobile number is required.';
-        if (!trimmed.includes('@') && !/^\d{10}$/.test(trimmed)) {
-            return 'Enter a valid 10-digit mobile number or email address.';
+        if (trimmed.includes('@')) {
+            if (/\s/.test(trimmed)) return 'Email address cannot contain spaces.';
+            if (!EMAIL_REGEX.test(trimmed)) return 'Please enter a valid email address.';
+            return null;
+        }
+        if (/[a-zA-Z]/.test(trimmed)) {
+            return 'Enter a valid email address or 10-digit mobile number.';
+        }
+        if (!/^\d{10}$/.test(trimmed)) {
+            return 'Enter a valid 10-digit mobile number.';
         }
         return null;
     };
@@ -48,7 +58,9 @@ function LoginForm() {
         }
         setEmail(val);
         if (notice) setNotice(null);
-        if (identifierError) setIdentifierError(null);
+        if (identifierError) {
+            setIdentifierError(validateIdentifier(val));
+        }
         if (error) setError(null);
     };
 
@@ -57,6 +69,7 @@ function LoginForm() {
         const idErr = validateIdentifier(email);
         if (idErr) {
             setIdentifierError(idErr);
+            document.getElementById('login-identifier')?.focus();
             return;
         }
         setIdentifierError(null);

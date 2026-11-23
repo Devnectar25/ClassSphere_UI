@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
     Search, RefreshCw, Sparkles, Eye, ShieldAlert, Download, CheckCircle2, XCircle,
-    User as UserIcon, ClipboardList, CreditCard, BookOpen, Activity, Ban,
+    User as UserIcon, Users, UserCheck, UserX, ClipboardList, CreditCard, BookOpen, Activity, Ban,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import Modal from '@/components/Modal';
@@ -335,10 +335,46 @@ export default function PlatformAdminUsersPage() {
         );
     };
 
-    const tabs: Array<{ label: string; val: StatusFilter }> = [
-        { label: 'All Users', val: 'all' },
-        { label: 'Active Users', val: 'active' },
-        { label: 'Suspended Users', val: 'suspended' },
+    const tabs: Array<{
+        val: StatusFilter;
+        label: string;
+        icon: typeof Users;
+        activeCard: string;
+        activeBadge: string;
+        activeCount: string;
+        activeLabel: string;
+        inactiveBadge: string;
+    }> = [
+        {
+            val: 'all',
+            label: 'All Users',
+            icon: Users,
+            activeCard: 'bg-indigo-50/80 border-indigo-400 ring-2 ring-indigo-500/20 shadow-xs',
+            activeBadge: 'bg-indigo-600 text-white shadow-xs',
+            activeCount: 'text-indigo-950',
+            activeLabel: 'text-indigo-700',
+            inactiveBadge: 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100',
+        },
+        {
+            val: 'active',
+            label: 'Active Users',
+            icon: UserCheck,
+            activeCard: 'bg-emerald-50/80 border-emerald-400 ring-2 ring-emerald-500/20 shadow-xs',
+            activeBadge: 'bg-emerald-600 text-white shadow-xs',
+            activeCount: 'text-emerald-950',
+            activeLabel: 'text-emerald-700',
+            inactiveBadge: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100',
+        },
+        {
+            val: 'suspended',
+            label: 'Suspended Users',
+            icon: UserX,
+            activeCard: 'bg-rose-50/80 border-rose-400 ring-2 ring-rose-500/20 shadow-xs',
+            activeBadge: 'bg-rose-600 text-white shadow-xs',
+            activeCount: 'text-rose-950',
+            activeLabel: 'text-rose-700',
+            inactiveBadge: 'bg-rose-50 text-rose-600 group-hover:bg-rose-100',
+        },
     ];
 
     return (
@@ -378,20 +414,39 @@ export default function PlatformAdminUsersPage() {
             </div>
 
             {/* Subsections */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 {tabs.map(tab => {
                     const active = statusFilter === tab.val;
+                    const Icon = tab.icon;
                     return (
                         <button
                             key={tab.val}
                             type="button"
-                            onClick={() => setStatusFilter(tab.val)}
-                            className={`text-left px-4 py-3.5 rounded-2xl border transition-all cursor-pointer ${
-                                active ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-200'
+                            onClick={() => {
+                                setStatusFilter(tab.val);
+                                setCurrentPage(1);
+                            }}
+                            className={`group relative flex flex-col items-center justify-center text-center p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer ${
+                                active
+                                    ? tab.activeCard
+                                    : 'bg-white border-slate-200/90 text-slate-700 hover:border-slate-300 hover:shadow-2xs'
                             }`}
                         >
-                            <div className={`text-[11px] font-semibold uppercase tracking-wider ${active ? 'text-indigo-100' : 'text-slate-500'}`}>{tab.label}</div>
-                            <div className="text-2xl font-bold mt-0.5">{counts[tab.val] ?? 0}</div>
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors mb-2 ${
+                                active ? tab.activeBadge : tab.inactiveBadge
+                            }`}>
+                                <Icon size={18} />
+                            </div>
+                            <span className={`text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                                active ? tab.activeLabel : 'text-slate-500 group-hover:text-slate-700'
+                            }`}>
+                                {tab.label}
+                            </span>
+                            <div className={`text-2xl sm:text-3xl font-black mt-0.5 tracking-tight transition-colors ${
+                                active ? tab.activeCount : 'text-slate-900'
+                            }`}>
+                                {counts[tab.val] ?? 0}
+                            </div>
                         </button>
                     );
                 })}

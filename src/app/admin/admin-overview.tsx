@@ -19,9 +19,13 @@ interface DashboardTelemetry {
     pendingAcademies: number;
     totalCourses: number;
     totalRegistrations: number;
+    periodRegistrations?: number;
     successfulPayments: number;
+    periodPayments?: number;
     totalRevenue: number;
+    periodRevenue?: number;
     platformCommission: number;
+    periodCommission?: number;
     recentTransactions: {
         paymentId: string;
         description: string;
@@ -218,7 +222,7 @@ export default function PlatformAdminOverview() {
             icon: ClipboardCheck,
             href: '/admin/registrations',
             color: 'text-cyan-600 bg-cyan-50 border-cyan-100',
-            sub: `${timeframe.toUpperCase()}: ${data?.totalRegistrations ?? 0} enrollments`,
+            sub: `${data?.periodRegistrations ?? data?.totalRegistrations ?? 0} in ${timeframe}`,
         },
         {
             label: 'Successful Payments',
@@ -226,7 +230,7 @@ export default function PlatformAdminOverview() {
             icon: CreditCard,
             href: '/admin/payments',
             color: 'text-emerald-600 bg-emerald-50 border-emerald-100',
-            sub: `${timeframe.toUpperCase()}: ${data?.successfulPayments ?? 0} transactions`,
+            sub: `${data?.periodPayments ?? data?.successfulPayments ?? 0} in ${timeframe}`,
         },
         {
             label: 'Platform Commission',
@@ -234,7 +238,7 @@ export default function PlatformAdminOverview() {
             icon: Activity,
             href: '/admin/payments',
             color: 'text-indigo-600 bg-indigo-50 border-indigo-100',
-            sub: `${formatMoney(data?.totalRevenue ?? 0)} gross in ${timeframe}`,
+            sub: `${formatMoney(data?.periodRevenue ?? data?.totalRevenue ?? 0)} gross in ${timeframe}`,
         },
     ];
 

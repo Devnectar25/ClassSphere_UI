@@ -90,6 +90,13 @@ function PortalRegisterForm() {
     const accent = '#4F46E5';
 
     useEffect(() => {
+        setDone(false);
+        return () => {
+            setDone(false);
+        };
+    }, []);
+
+    useEffect(() => {
         const param = searchParams.get('role');
         if (param === 'student' || param === 'parent') setRole(param);
     }, [searchParams]);
@@ -729,7 +736,10 @@ function PortalRegisterForm() {
                         </p>
                         <button
                             className="btn-primary"
-                            onClick={() => router.replace('/portal')}
+                            onClick={() => {
+                                setDone(false);
+                                router.replace('/portal');
+                            }}
                             style={{ width: '100%', justifyContent: 'center', height: '44px', background: accent, borderColor: accent }}
                         >
                             Open {role === 'student' ? 'Student' : 'Parent'} Portal <ArrowRight size={16} />

@@ -448,9 +448,6 @@ function SettingsForm({ workspace, onSaved }: { workspace: Workspace; onSaved: (
                                 required={true}
                                 placeholder="10-digit mobile number"
                             />
-                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>
-                                10-digit mobile number for academy communication and administrative notifications.
-                            </div>
                         </div>
 
                         <div>
