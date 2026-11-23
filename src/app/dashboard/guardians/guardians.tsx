@@ -281,7 +281,7 @@ function GuardiansContent() {
                 )}
 
                 {/* 1. Four Stat Cards matching Students/Courses theme */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', width: '100%' }}>
                     {stats.map(s => {
                         const isActive = statParam === s.id;
                         return (
@@ -290,42 +290,55 @@ function GuardiansContent() {
                                 className="cs-card"
                                 onClick={() => handleStatCardClick(s.id)}
                                 style={{
-                                    padding: '14px 18px',
+                                    padding: '18px 20px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '12px',
+                                    gap: '14px',
                                     cursor: 'pointer',
-                                    border: isActive ? `1.5px solid ${s.color}` : '1px solid var(--cs-border)',
-                                    background: isActive ? `${s.color}08` : 'var(--cs-surface)',
-                                    transition: 'all 0.15s ease'
+                                    borderRadius: '16px',
+                                    border: isActive ? `2px solid ${s.color}` : '1px solid var(--cs-border)',
+                                    background: isActive ? `${s.color}0a` : 'var(--cs-surface)',
+                                    boxShadow: isActive ? `0 4px 14px ${s.color}22` : '0 1px 3px rgba(0, 0, 0, 0.04)',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.transform = 'translateY(-1px)';
+                                    if (!isActive) e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.transform = 'none';
+                                    if (!isActive) e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.04)';
                                 }}
                             >
                                 <div style={{
-                                    width: 38,
-                                    height: 38,
-                                    borderRadius: '10px',
-                                    background: `${s.color}20`,
+                                    width: 44,
+                                    height: 44,
+                                    borderRadius: '12px',
+                                    background: `linear-gradient(135deg, ${s.color}22 0%, ${s.color}0a 100%)`,
+                                    border: `1px solid ${s.color}35`,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     flexShrink: 0
                                 }}>
-                                    <s.icon size={18} color={s.color} />
+                                    <s.icon size={20} color={s.color} />
                                 </div>
                                 <div>
                                     <div style={{
-                                        fontSize: '22px',
+                                        fontSize: '24px',
                                         fontWeight: 800,
                                         color: 'var(--cs-text-primary)',
                                         fontFamily: "'Plus Jakarta Sans', sans-serif",
-                                        lineHeight: 1.1
+                                        lineHeight: 1.1,
+                                        letterSpacing: '-0.02em'
                                     }}>
                                         {s.value}
                                     </div>
                                     <div style={{
                                         fontSize: '12px',
+                                        fontWeight: 500,
                                         color: 'var(--cs-text-secondary)',
-                                        marginTop: '2px'
+                                        marginTop: '3px'
                                     }}>
                                         {s.label}
                                     </div>
@@ -336,18 +349,24 @@ function GuardiansContent() {
                 </div>
 
                 {/* 2. Main Table Card with Toolbar, Selection Bar and DataTable */}
-                <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                <div className="cs-card" style={{
+                    width: '100%',
+                    overflow: 'hidden',
+                    borderRadius: '16px',
+                    border: '1px solid var(--cs-border)',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
+                }}>
                     {/* Toolbar */}
                     <div style={{
-                        padding: '12px 20px',
+                        padding: '16px 20px',
                         borderBottom: '1px solid var(--cs-border)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '12px',
+                        gap: '16px',
                         flexWrap: 'wrap'
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1', minWidth: '280px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: '1', minWidth: '300px' }}>
                             {/* Search */}
                             <div style={{
                                 display: 'flex',
@@ -355,9 +374,9 @@ function GuardiansContent() {
                                 gap: '8px',
                                 background: 'var(--cs-surface-2)',
                                 border: '1px solid var(--cs-border)',
-                                borderRadius: '8px',
-                                padding: '0 10px',
-                                height: '32px',
+                                borderRadius: '10px',
+                                padding: '0 12px',
+                                height: '38px',
                                 boxSizing: 'border-box',
                                 width: '280px',
                                 flexShrink: 0
@@ -371,7 +390,7 @@ function GuardiansContent() {
                                         outline: 'none',
                                         padding: 0,
                                         height: '100%',
-                                        fontSize: '12px',
+                                        fontSize: '13px',
                                         width: '100%',
                                         color: 'var(--cs-text-primary)'
                                     }}
@@ -384,7 +403,7 @@ function GuardiansContent() {
                                         onClick={() => updateQueryParams({ q: null })}
                                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--cs-text-muted)', display: 'flex' }}
                                     >
-                                        <X size={12} />
+                                        <X size={14} />
                                     </button>
                                 )}
                             </div>
@@ -392,7 +411,18 @@ function GuardiansContent() {
                             {/* Payer Filter Select */}
                             <select
                                 className="cs-input"
-                                style={{ height: '32px', fontSize: '12px', padding: '0 8px', width: 'auto', borderRadius: '8px' }}
+                                style={{
+                                    height: '38px',
+                                    fontSize: '12.5px',
+                                    fontWeight: 600,
+                                    padding: '0 12px',
+                                    width: 'auto',
+                                    borderRadius: '10px',
+                                    background: 'var(--cs-surface-2)',
+                                    border: '1px solid var(--cs-border)',
+                                    color: 'var(--cs-text-primary)',
+                                    cursor: 'pointer'
+                                }}
                                 value={payerParam}
                                 onChange={e => updateQueryParams({ payer: e.target.value })}
                             >
@@ -404,7 +434,18 @@ function GuardiansContent() {
                             {/* Login Filter Select */}
                             <select
                                 className="cs-input"
-                                style={{ height: '32px', fontSize: '12px', padding: '0 8px', width: 'auto', borderRadius: '8px' }}
+                                style={{
+                                    height: '38px',
+                                    fontSize: '12.5px',
+                                    fontWeight: 600,
+                                    padding: '0 12px',
+                                    width: 'auto',
+                                    borderRadius: '10px',
+                                    background: 'var(--cs-surface-2)',
+                                    border: '1px solid var(--cs-border)',
+                                    color: 'var(--cs-text-primary)',
+                                    cursor: 'pointer'
+                                }}
                                 value={loginParam}
                                 onChange={e => updateQueryParams({ login: e.target.value })}
                             >
@@ -418,7 +459,18 @@ function GuardiansContent() {
                             {batches && batches.length > 0 && (
                                 <select
                                     className="cs-input"
-                                    style={{ height: '32px', fontSize: '12px', padding: '0 8px', width: 'auto', borderRadius: '8px' }}
+                                    style={{
+                                        height: '38px',
+                                        fontSize: '12.5px',
+                                        fontWeight: 600,
+                                        padding: '0 12px',
+                                        width: 'auto',
+                                        borderRadius: '10px',
+                                        background: 'var(--cs-surface-2)',
+                                        border: '1px solid var(--cs-border)',
+                                        color: 'var(--cs-text-primary)',
+                                        cursor: 'pointer'
+                                    }}
                                     value={batchParam}
                                     onChange={e => updateQueryParams({ batch: e.target.value })}
                                 >
@@ -436,7 +488,8 @@ function GuardiansContent() {
                                     style={{
                                         background: 'none',
                                         border: 'none',
-                                        fontSize: '11px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
                                         color: 'var(--cs-primary)',
                                         cursor: 'pointer',
                                         textDecoration: 'underline'
@@ -448,19 +501,21 @@ function GuardiansContent() {
                         </div>
 
                         {/* Action buttons on the right */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <button
                                 type="button"
                                 className="btn-secondary"
                                 onClick={() => alert('Import parents feature')}
                                 style={{
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '6px',
-                                    height: '32px',
-                                    fontSize: '12px',
-                                    padding: '0 12px',
-                                    borderRadius: '8px'
+                                    height: '38px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    padding: '0 16px',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer'
                                 }}
                             >
                                 <Upload size={14} /> Import
@@ -471,17 +526,19 @@ function GuardiansContent() {
                                     className="btn-primary"
                                     onClick={() => setAdding(true)}
                                     style={{
-                                        display: 'flex',
+                                        display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '6px',
-                                        height: '32px',
-                                        fontSize: '12px',
-                                        padding: '0 14px',
-                                        borderRadius: '8px',
-                                        fontWeight: 600
+                                        height: '38px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        padding: '0 18px',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 2px 8px rgba(108, 99, 255, 0.28)'
                                     }}
                                 >
-                                    <Plus size={14} /> Add parent
+                                    <Plus size={15} /> Add parent
                                 </button>
                             )}
                         </div>

@@ -10,13 +10,20 @@ import { api, useApi, formatMoney, type Plan } from '@/lib/api';
 import { homePath, saveSession, type SessionState } from '@/lib/session';
 import AuthBrandPanel from '@/components/AuthBrandPanel';
 import CountrySelect from '@/components/CountrySelect';
+import { getRecommendedCategories } from '@/lib/academy';
 
 const steps = ['Account', 'Plan', 'Ready'];
 
-// Values are the backend's academy types
-const CATEGORIES = [
-    ['Tuition', 'Tuition / Coaching'], ['Music', 'Music'], ['Dance', 'Dance'], ['Sports', 'Sports / Martial Arts / Yoga'],
-    ['Arts', 'Arts'], ['Test Prep', 'Test Prep'], ['Language', 'Language'], ['Other', 'Other'],
+// Values are the backend's academy types matching the Academy Domains specification
+const CATEGORIES: [string, string][] = [
+    ['Tuition', 'Tuition / Coaching'],
+    ['Music', 'Music Academy'],
+    ['Dance', 'Dance Academy'],
+    ['Sports', 'Sports / Fitness / Yoga'],
+    ['Arts', 'Arts & Crafts'],
+    ['Test Prep', 'Test Preparation'],
+    ['Language', 'Language Institute'],
+    ['Other', 'Other / Custom'],
 ];
 
 // Email: local part of letters/digits/._%+-, a domain of dot-separated labels and a 2+ letter TLD
@@ -76,13 +83,47 @@ function loadRazorpayScript(): Promise<boolean> {
     });
 }
 
+const DEFAULT_PLANS: Plan[] = [
+    {
+        planTier: 'Starter',
+        description: 'For growing independent academies and tutors',
+        priceMonthly: 999,
+        currency: 'INR',
+        maxSeats: 50,
+        maxBranches: 1,
+        features: ['Up to 50 active students', '1 branch included', 'Roll call & attendance tracking', 'Student & guardian profiles', 'Basic fee management'],
+        isPopular: false,
+    },
+    {
+        planTier: 'Professional',
+        description: 'For established multi-class academies',
+        priceMonthly: 2499,
+        currency: 'INR',
+        maxSeats: 250,
+        maxBranches: 3,
+        features: ['Up to 250 active students', '3 branches included', 'Automated fee invoices & receipts', 'Staff & instructor management', 'Batch matrix & scheduling', 'WhatsApp & email alerts'],
+        isPopular: true,
+    },
+    {
+        planTier: 'Enterprise',
+        description: 'For large multi-branch institutes',
+        priceMonthly: 4999,
+        currency: 'INR',
+        maxSeats: 1000,
+        maxBranches: 10,
+        features: ['Unlimited students', 'Up to 10 branches', 'Dedicated account manager', 'Custom reports & analytics', 'Priority 24/7 phone support', 'Full data export & API access'],
+        isPopular: false,
+    },
+];
+
 export default function RegisterPage() {
     const router = useRouter();
     const [step, setStep] = useState(0);
     const [showPassword, setShowPassword] = useState(false);
     const { data: plans } = useApi<Plan[]>('/plans');
+    const displayPlans = plans && plans.length > 0 ? plans : DEFAULT_PLANS;
     const [planTier, setPlanTier] = useState<string | null>(null);
-    const selectedPlan = planTier ?? plans?.find(p => p.isPopular)?.planTier;
+    const selectedPlan = planTier ?? displayPlans.find(p => p.isPopular)?.planTier ?? 'Professional';
     const [form, setForm] = useState({
         academyName: '',
         academyType: 'Tuition',
@@ -140,6 +181,11 @@ export default function RegisterPage() {
                 }
             }
         }
+    }, []);
+
+    // Pre-load Razorpay checkout script in background so payment modal opens immediately
+    useEffect(() => {
+        void loadRazorpayScript();
     }, []);
 
     // Mobile numbers / emails the server reported as already registered (one account per mobile number)
@@ -814,6 +860,17 @@ export default function RegisterPage() {
                                     </p>
                                 )}
 
+                                {form.academyType !== 'Other' && (
+                                    <div style={{ marginTop: '7px', fontSize: '11.5px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontWeight: 600, color: '#4F46E5' }}>Recommended Course Categories:</span>
+                                        {getRecommendedCategories(form.academyType).map(cat => (
+                                            <span key={cat} style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', padding: '1px 7px', borderRadius: '4px', fontSize: '11px', color: '#334155' }}>
+                                                {cat}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {form.academyType === 'Other' && (
                                     <div style={{ marginTop: '10px' }}>
                                         <label className="cs-label" style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
@@ -1134,7 +1191,7 @@ export default function RegisterPage() {
                 {step === 1 && (
                     <>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-                            {plans?.map(p => {
+                            {displayPlans.map(p => {
                                 const selected = p.planTier === selectedPlan;
                                 return (
                                 <label key={p.planTier} style={{

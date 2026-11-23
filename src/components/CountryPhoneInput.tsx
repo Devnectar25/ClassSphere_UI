@@ -71,7 +71,7 @@ export function FlagImage({ code, name }: { code: string; name: string }) {
             width={20}
             height={14}
             alt={name}
-            loading="eager"
+            loading="lazy"
             onError={() => setFailed(true)}
             style={{
                 display: 'inline-block',

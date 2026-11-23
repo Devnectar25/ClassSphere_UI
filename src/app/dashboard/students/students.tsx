@@ -5,7 +5,7 @@ import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import { useState, useRef, useEffect } from 'react';
-import { Search, Phone, Users, UserCheck, UserX, Clock, ChevronLeft, ChevronRight, Plus, Pencil, Upload, Camera, ArrowRight, ArrowLeft, Check, Copy, Send, UserPlus } from 'lucide-react';
+import { Search, Phone, Users, UserCheck, UserX, Clock, ChevronLeft, ChevronRight, Plus, Pencil, Upload, Camera, ArrowRight, ArrowLeft, Check, Copy, Send, UserPlus, MapPin, Calendar as CalendarIcon, X } from 'lucide-react';
 import { api, useApi, formatDate, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -52,7 +52,7 @@ const feesConfig: Record<string, { label: string; cls: string }> = {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
 
-const emptyForm = { firstName: '', lastName: '', email: '', phone: '', photo: '', dateOfBirth: '', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' };
+const emptyForm = { firstName: '', lastName: '', email: '', phone: '', photo: '', dateOfBirth: '', courseId: '', batchId: '', branchId: '', feeStatus: 'none', feeAmount: '' };
 
 interface GuardianFormData {
     mode: 'new' | 'existing';
@@ -332,11 +332,6 @@ export default function StudentsPage() {
             dateOfBirth: validateField('dateOfBirth', form.dateOfBirth),
         };
 
-        if (form.feeStatus !== 'none' && (!form.feeAmount || Number(form.feeAmount) <= 0)) {
-            setFormError('Please enter a valid tuition fee amount.');
-            return;
-        }
-
         const activeErrors = Object.fromEntries(Object.entries(errors).filter(([_, msg]) => Boolean(msg)));
         setFieldErrors(activeErrors);
 
@@ -379,7 +374,8 @@ export default function StudentsPage() {
     if (search) query.set('q', search);
     if (statusFilter !== 'all') query.set('status', statusFilter);
     const { data, error, reload } = useApi<StudentSearch>(`/students?${query}`);
-    const { data: batches } = useApi<Array<{ batchId: string; name: string; courseTitle?: string; tuitionAmount?: number; branchId?: string }>>(showAdd || !!editingStudent ? '/batches' : null);
+    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; branchId?: string | null }>>(showAdd || !!editingStudent ? '/courses' : null);
+    const { data: batches } = useApi<Array<{ batchId: string; name: string; courseTitle?: string; courseId?: string; tuitionAmount?: number; branchId?: string }>>(showAdd || !!editingStudent ? '/batches' : null);
     const { data: rawGuardians } = useApi<Array<{ guardianId: string; firstName: string; lastName: string; phone: string; email: string; relationship: string; householdCode?: string }>>(showAdd ? '/guardians' : null);
 
     const counts = data?.statusCounts ?? {};
@@ -462,8 +458,8 @@ export default function StudentsPage() {
                     countryCode: selectedCountry.dialCode,
                     batchId: form.batchId || undefined,
                     branchId: form.branchId || session?.selectedBranchId || undefined,
-                    feeStatus: form.feeStatus,
-                    feeAmount: form.feeAmount || undefined,
+                    feeStatus: 'none',
+                    feeAmount: undefined,
                     guardian: guardianForm.mode === 'existing' ? {
                         mode: 'existing',
                         guardianId: guardianForm.existingGuardianId,
@@ -611,15 +607,57 @@ export default function StudentsPage() {
             <div className="page-body" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
                 {/* Quick stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', width: '100%', marginBottom: '16px' }}>
                     {stats.map(s => (
-                        <div key={s.label} className="cs-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ width: 38, height: 38, borderRadius: '10px', background: `${s.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <s.icon size={18} color={s.color} />
+                        <div
+                            key={s.label}
+                            className="cs-card"
+                            style={{
+                                padding: '18px 20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '14px',
+                                borderRadius: '16px',
+                                border: '1px solid var(--cs-border)',
+                                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                                transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06)';
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.transform = 'none';
+                                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.04)';
+                            }}
+                        >
+                            <div style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: '12px',
+                                background: `linear-gradient(135deg, ${s.color}22 0%, ${s.color}0a 100%)`,
+                                border: `1px solid ${s.color}35`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                            }}>
+                                <s.icon size={20} color={s.color} />
                             </div>
                             <div>
-                                <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--cs-text-primary)', fontFamily: "'Plus Jakarta Sans', sans-serif", lineHeight: 1.1 }}>{s.value}</div>
-                                <div style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', marginTop: '2px' }}>{s.label} Students</div>
+                                <div style={{
+                                    fontSize: '24px',
+                                    fontWeight: 800,
+                                    color: 'var(--cs-text-primary)',
+                                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                                    lineHeight: 1.1,
+                                    letterSpacing: '-0.02em'
+                                }}>
+                                    {s.value}
+                                </div>
+                                <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--cs-text-secondary)', marginTop: '3px' }}>
+                                    {s.label} Students
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -652,55 +690,121 @@ export default function StudentsPage() {
                 )}
 
                 {/* Table card */}
-                <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                <div className="cs-card" style={{
+                    width: '100%',
+                    overflow: 'hidden',
+                    borderRadius: '16px',
+                    border: '1px solid var(--cs-border)',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
+                }}>
                     {/* Toolbar */}
                     <div style={{
-                        padding: '12px 20px',
+                        padding: '16px 20px',
                         borderBottom: '1px solid var(--cs-border)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '12px',
+                        gap: '16px',
                         flexWrap: 'wrap'
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1', minWidth: '280px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', flex: '1', minWidth: '300px' }}>
+                            {/* Search Input */}
                             <div style={{
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)',
-                                borderRadius: '8px', padding: '0 10px', height: '32px', boxSizing: 'border-box',
-                                width: '280px', flexShrink: 0
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                background: 'var(--cs-surface-2)',
+                                border: '1px solid var(--cs-border)',
+                                borderRadius: '10px',
+                                padding: '0 12px',
+                                height: '38px',
+                                boxSizing: 'border-box',
+                                width: '280px',
+                                flexShrink: 0
                             }}>
                                 <Search size={14} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
                                 <input
                                     placeholder="Search by name, ID or email..."
                                     style={{
-                                        background: 'none', border: 'none', outline: 'none',
-                                        padding: 0, height: '100%', fontSize: '12px', width: '100%',
+                                        background: 'none',
+                                        border: 'none',
+                                        outline: 'none',
+                                        padding: 0,
+                                        height: '100%',
+                                        fontSize: '13px',
+                                        width: '100%',
                                         color: 'var(--cs-text-primary)'
                                     }}
                                     value={search}
                                     onChange={e => { setSearch(e.target.value); setOffset(0); }}
                                 />
+                                {search && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setSearch(''); setOffset(0); }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--cs-text-muted)' }}
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
                             </div>
 
                             {/* Status filter pills */}
-                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                {['all', 'active', 'on-hold', 'inquiry', 'completed', 'withdrawn'].map(s => (
-                                    <button
-                                        key={s}
-                                        onClick={() => { setStatusFilter(s); setOffset(0); }}
-                                        style={{
-                                            padding: '4px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: 600,
-                                            cursor: 'pointer', border: '1px solid',
-                                            background: statusFilter === s ? 'rgba(108,99,255,0.15)' : 'transparent',
-                                            borderColor: statusFilter === s ? 'rgba(108,99,255,0.4)' : 'var(--cs-border)',
-                                            color: statusFilter === s ? '#8B85FF' : 'var(--cs-text-muted)',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {s === 'all' ? 'All' : statusConfig[s].label}
-                                    </button>
-                                ))}
+                            <div style={{
+                                display: 'inline-flex',
+                                background: 'var(--cs-surface-2)',
+                                padding: '3px',
+                                borderRadius: '10px',
+                                border: '1px solid var(--cs-border)',
+                                flexWrap: 'wrap',
+                                gap: '2px'
+                            }}>
+                                {[
+                                    { id: 'all', label: 'All', count: totalStudents },
+                                    { id: 'active', label: 'Active', count: counts.active ?? 0 },
+                                    { id: 'on-hold', label: 'On-Hold', count: counts['on-hold'] ?? 0 },
+                                    { id: 'inquiry', label: 'Inquiry', count: counts.inquiry ?? 0 },
+                                    { id: 'completed', label: 'Completed', count: counts.completed ?? 0 },
+                                    { id: 'withdrawn', label: 'Withdrawn', count: counts.withdrawn ?? 0 },
+                                ].map(s => {
+                                    const isActive = statusFilter === s.id;
+                                    return (
+                                        <button
+                                            key={s.id}
+                                            type="button"
+                                            onClick={() => { setStatusFilter(s.id); setOffset(0); }}
+                                            style={{
+                                                border: 'none',
+                                                background: isActive ? '#ffffff' : 'transparent',
+                                                color: isActive ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                                fontWeight: isActive ? 700 : 500,
+                                                fontSize: '12px',
+                                                padding: '6px 12px',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '5px',
+                                                boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <span>{s.label}</span>
+                                            {s.count !== undefined && (
+                                                <span style={{
+                                                    fontSize: '10.5px',
+                                                    padding: '1px 5px',
+                                                    borderRadius: '8px',
+                                                    background: isActive ? 'rgba(108, 99, 255, 0.12)' : 'rgba(0,0,0,0.05)',
+                                                    color: isActive ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                                    fontWeight: 600
+                                                }}>
+                                                    {s.count}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -710,141 +814,233 @@ export default function StudentsPage() {
                                 className="btn-primary"
                                 onClick={() => setShowAdd(true)}
                                 style={{
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '6px',
                                     whiteSpace: 'nowrap',
-                                    padding: '6px 14px',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
+                                    padding: '0 18px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
                                     cursor: 'pointer',
                                     flexShrink: 0,
-                                    height: '32px',
-                                    borderRadius: '8px'
+                                    height: '38px',
+                                    borderRadius: '10px',
+                                    boxShadow: '0 2px 8px rgba(108, 99, 255, 0.28)'
                                 }}
                             >
-                                <Plus size={14} />
+                                <Plus size={15} />
                                 Add Student
                             </button>
                         )}
                     </div>
 
                     {!data ? <PageState error={error} /> : (
-                        <div style={{ width: '100%', overflow: 'hidden' }}>
-                            <table className="cs-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+                        <div style={{ width: '100%', overflowX: 'auto' }}>
+                            <table className="cs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
-                                    <tr style={{ background: 'var(--cs-surface-2)' }}>
-                                        <th style={{ width: '20%', padding: '9px 8px 9px 18px' }}>Student</th>
-                                        <th style={{ width: '14%', padding: '9px 8px' }}>Branch</th>
-                                        <th style={{ width: '22%', padding: '9px 8px' }}>Batch</th>
-                                        <th style={{ width: '13%', padding: '9px 8px' }}>Guardian</th>
-                                        <th style={{ width: '9%', padding: '9px 8px' }}>Joined</th>
-                                        <th style={{ width: '8%', padding: '9px 6px', textAlign: 'center' }}>Status</th>
-                                        <th style={{ width: '8%', padding: '9px 6px', textAlign: 'center' }}>Fees</th>
-                                        <th style={{ width: '6%', padding: '9px 12px 9px 6px', textAlign: 'center' }}>Action</th>
+                                    <tr style={{ background: 'var(--cs-surface-2)', borderBottom: '1px solid var(--cs-border)' }}>
+                                        <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left', width: '22%' }}>Student</th>
+                                        <th style={{ padding: '14px 14px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left', width: '14%' }}>Branch</th>
+                                        <th style={{ padding: '14px 14px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left', width: '18%' }}>Batch</th>
+                                        <th style={{ padding: '14px 14px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left', width: '14%' }}>Guardian</th>
+                                        <th style={{ padding: '14px 14px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left', width: '11%' }}>Joined</th>
+                                        <th style={{ padding: '14px 10px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'center', width: '8%' }}>Status</th>
+                                        <th style={{ padding: '14px 10px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'center', width: '7%' }}>Fees</th>
+                                        <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'right', width: '6%' }}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {data.students.length === 0 ? (
                                         <tr>
-                                            <td colSpan={8} style={{ textAlign: 'center', padding: '28px 14px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
-                                                No students found.
+                                            <td colSpan={8} style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--cs-text-muted)' }}>
+                                                <div style={{ fontSize: '14px', marginBottom: '14px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                                    No students found matching your search or filter.
+                                                </div>
+                                                {can(session, 'students.write') && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-primary"
+                                                        onClick={() => setShowAdd(true)}
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                                    >
+                                                        <Plus size={14} /> Add First Student
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ) : (
                                         data.students.map(s => {
                                             const name = `${s.firstName} ${s.lastName}`;
                                             return (
-                                                <tr key={s.studentId} style={{ transition: 'background 0.15s' }}>
-                                                    <td style={{ padding: '9px 8px 9px 18px', verticalAlign: 'middle' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <tr key={s.studentId} style={{ borderBottom: '1px solid var(--cs-border)', transition: 'background 0.15s ease' }}>
+                                                    {/* Student Identity */}
+                                                    <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                             {s.photo ? (
                                                                 // eslint-disable-next-line @next/next/no-img-element
                                                                 <img
                                                                     src={s.photo}
                                                                     alt={name}
-                                                                    style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid #E2E8F0' }}
+                                                                    style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid rgba(108, 99, 255, 0.25)' }}
                                                                 />
                                                             ) : (
-                                                                <div className="avatar-placeholder" style={{ width: 32, height: 32, fontSize: '11px', flexShrink: 0 }}>
+                                                                <div style={{
+                                                                    width: 38,
+                                                                    height: 38,
+                                                                    borderRadius: '50%',
+                                                                    background: 'linear-gradient(135deg, #6C63FF 0%, #8B5CF6 100%)',
+                                                                    color: '#ffffff',
+                                                                    fontSize: '12px',
+                                                                    fontWeight: 700,
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    flexShrink: 0,
+                                                                    boxShadow: '0 2px 4px rgba(108, 99, 255, 0.25)'
+                                                                }}>
                                                                     {initials(name)}
                                                                 </div>
                                                             )}
                                                             <div style={{ minWidth: 0 }}>
-                                                                <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--cs-text-primary)', lineHeight: 1.3 }}>
+                                                                <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--cs-text-primary)', letterSpacing: '-0.01em' }}>
                                                                     {name}
                                                                 </div>
-                                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', lineHeight: 1.25, marginTop: '2px' }}>
-                                                                    <code>{s.enrollmentNumber}</code>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                                                    <code style={{ fontSize: '11px', background: 'var(--cs-surface-2)', padding: '1px 5px', borderRadius: '4px', color: 'var(--cs-text-secondary)', fontWeight: 600, border: '1px solid var(--cs-border)' }}>
+                                                                        {s.enrollmentNumber}
+                                                                    </code>
+                                                                    {s.phone && (
+                                                                        <span style={{ fontSize: '11.5px', color: 'var(--cs-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                                                            <Phone size={10} color="var(--cs-primary)" />
+                                                                            <span>{s.phone}</span>
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                                {s.phone && (
-                                                                    <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px', lineHeight: 1.25 }}>
-                                                                        <Phone size={10} />
-                                                                        <span>{s.phone}</span>
-                                                                    </div>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td style={{ padding: '9px 8px', fontSize: '12px', color: 'var(--cs-text-secondary)', verticalAlign: 'middle', lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'normal' }}>
-                                                        {s.branchName ?? '—'}
+
+                                                    {/* Branch */}
+                                                    <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                                                        <span style={{
+                                                            fontSize: '12.5px',
+                                                            color: 'var(--cs-text-secondary)',
+                                                            fontWeight: 600,
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px'
+                                                        }}>
+                                                            <MapPin size={11} color="var(--cs-primary)" />
+                                                            {s.branchName ?? '—'}
+                                                        </span>
                                                     </td>
-                                                    <td style={{ padding: '9px 8px', verticalAlign: 'middle' }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+
+                                                    {/* Batch */}
+                                                    <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                                             {!s.batches ? (
                                                                 <span style={{ color: 'var(--cs-text-muted)', fontSize: '12px' }}>—</span>
                                                             ) : (
                                                                 s.batches.split(', ').map(b => (
                                                                     <span
                                                                         key={b}
-                                                                        className="badge badge-primary"
                                                                         style={{
-                                                                            display: 'inline-block',
-                                                                            whiteSpace: 'normal',
-                                                                            wordBreak: 'normal',
-                                                                            lineHeight: 1.3,
-                                                                            fontSize: '11px',
+                                                                            background: 'rgba(108, 99, 255, 0.08)',
+                                                                            color: 'var(--cs-primary)',
+                                                                            border: '1px solid rgba(108, 99, 255, 0.22)',
                                                                             padding: '3px 8px',
-                                                                            height: 'auto',
                                                                             borderRadius: '6px',
-                                                                            maxWidth: '100%'
+                                                                            fontSize: '11.5px',
+                                                                            fontWeight: 600,
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '4px'
                                                                         }}
                                                                     >
-                                                                        {b}
+                                                                        <CalendarIcon size={11} /> {b}
                                                                     </span>
                                                                 ))
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td style={{ padding: '9px 8px', color: 'var(--cs-text-secondary)', fontSize: '12px', verticalAlign: 'middle', lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'normal' }}>
-                                                        {s.guardianName ?? '—'}
+
+                                                    {/* Guardian */}
+                                                    <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                                                        <span style={{
+                                                            fontSize: '12.5px',
+                                                            fontWeight: 600,
+                                                            color: s.guardianName ? 'var(--cs-text-primary)' : 'var(--cs-text-muted)'
+                                                        }}>
+                                                            {s.guardianName ?? '—'}
+                                                        </span>
                                                     </td>
-                                                    <td style={{ padding: '9px 8px', color: 'var(--cs-text-muted)', fontSize: '11px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                                        {formatDate(s.createdAt)}
+
+                                                    {/* Joined */}
+                                                    <td style={{ padding: '14px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                                        <span style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                                            {formatDate(s.createdAt)}
+                                                        </span>
                                                     </td>
-                                                    <td style={{ padding: '9px 6px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                                        <span className={`badge ${statusConfig[s.status]?.cls ?? 'badge-secondary'}`} style={{ fontSize: '11px', padding: '2px 8px', height: '22px', lineHeight: '22px' }}>
+
+                                                    {/* Status Badge */}
+                                                    <td style={{ padding: '14px 10px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                        <span style={{
+                                                            fontSize: '11px',
+                                                            fontWeight: 600,
+                                                            padding: '3px 9px',
+                                                            borderRadius: '20px',
+                                                            background: s.status === 'active' ? '#ECFDF5' : s.status === 'on-hold' ? '#FFFBEB' : s.status === 'inquiry' ? '#EFF6FF' : '#FEF2F2',
+                                                            color: s.status === 'active' ? '#059669' : s.status === 'on-hold' ? '#D97706' : s.status === 'inquiry' ? '#2563EB' : '#DC2626',
+                                                            border: `1px solid ${s.status === 'active' ? '#A7F3D0' : s.status === 'on-hold' ? '#FDE68A' : s.status === 'inquiry' ? '#BFDBFE' : '#FECACA'}`,
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px'
+                                                        }}>
+                                                            <span style={{
+                                                                width: 6,
+                                                                height: 6,
+                                                                borderRadius: '50%',
+                                                                background: s.status === 'active' ? '#10B981' : s.status === 'on-hold' ? '#F59E0B' : s.status === 'inquiry' ? '#3B82F6' : '#EF4444'
+                                                            }} />
                                                             {statusConfig[s.status]?.label ?? s.status}
                                                         </span>
                                                     </td>
-                                                    <td style={{ padding: '9px 6px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                                        <span className={`badge ${feesConfig[s.feeStatus]?.cls}`} style={{ fontSize: '11px', padding: '2px 8px', height: '22px', lineHeight: '22px' }}>
-                                                            {feesConfig[s.feeStatus]?.label}
-                                                        </span>
+
+                                                    {/* Fees Badge */}
+                                                    <td style={{ padding: '14px 10px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                        {s.feeStatus === 'paid' ? (
+                                                            <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: '#ECFDF5', color: '#059669', border: '1px solid #A7F3D0' }}>
+                                                                Paid
+                                                            </span>
+                                                        ) : s.feeStatus === 'pending' ? (
+                                                            <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>
+                                                                Pending
+                                                            </span>
+                                                        ) : s.feeStatus === 'overdue' ? (
+                                                            <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                                                                Overdue
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ fontSize: '11px', fontWeight: 500, padding: '3px 8px', borderRadius: '6px', background: 'var(--cs-surface-2)', color: 'var(--cs-text-muted)', border: '1px solid var(--cs-border)' }}>
+                                                                —
+                                                            </span>
+                                                        )}
                                                     </td>
-                                                    <td style={{ padding: '9px 12px 9px 6px', textAlign: 'center', verticalAlign: 'middle' }}>
+
+                                                    {/* Action */}
+                                                    <td style={{ padding: '14px 18px', textAlign: 'right', verticalAlign: 'middle' }}>
                                                         {can(session, 'students.write') && (
                                                             <button
-                                                                className="btn-ghost"
+                                                                type="button"
                                                                 onClick={() => startEdit(s)}
                                                                 title={`Edit ${name}`}
                                                                 style={{
-                                                                    width: '28px',
-                                                                    height: '28px',
+                                                                    width: '32px',
+                                                                    height: '32px',
                                                                     padding: 0,
-                                                                    borderRadius: '6px',
+                                                                    borderRadius: '8px',
                                                                     cursor: 'pointer',
-                                                                    color: '#6C63FF',
+                                                                    color: 'var(--cs-primary)',
                                                                     background: 'rgba(108, 99, 255, 0.08)',
                                                                     border: '1px solid rgba(108, 99, 255, 0.25)',
                                                                     display: 'inline-flex',
@@ -871,23 +1067,37 @@ export default function StudentsPage() {
 
                     {/* Pagination */}
                     {data && (
-                        <div style={{ padding: '10px 20px', borderTop: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
-                                Showing {data.total === 0 ? 0 : offset + 1}–{Math.min(offset + data.students.length, data.total)} of {data.total} students (7 per page)
+                        <div style={{
+                            padding: '14px 20px',
+                            borderTop: '1px solid var(--cs-border)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '12px',
+                            background: 'var(--cs-surface-1)'
+                        }}>
+                            <span style={{ fontSize: '12.5px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                Showing <strong style={{ color: 'var(--cs-text-primary)' }}>{data.total === 0 ? 0 : offset + 1}–{Math.min(offset + data.students.length, data.total)}</strong> of <strong style={{ color: 'var(--cs-text-primary)' }}>{data.total}</strong> students ({PAGE_SIZE} per page)
                             </span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <button
+                                    type="button"
                                     className="btn-ghost"
                                     style={{
-                                        padding: '5px 10px',
+                                        padding: '6px 12px',
                                         fontSize: '12px',
+                                        fontWeight: 600,
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         border: '1px solid var(--cs-border)',
-                                        borderRadius: '6px',
+                                        borderRadius: '8px',
                                         cursor: offset === 0 ? 'not-allowed' : 'pointer',
-                                        opacity: offset === 0 ? 0.4 : 1
+                                        opacity: offset === 0 ? 0.4 : 1,
+                                        background: 'var(--cs-surface-2)',
+                                        color: 'var(--cs-text-primary)',
+                                        transition: 'all 0.15s ease'
                                     }}
                                     disabled={offset === 0}
                                     onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
@@ -905,20 +1115,21 @@ export default function StudentsPage() {
                                         return (
                                             <button
                                                 key={pageNum}
+                                                type="button"
                                                 onClick={() => setOffset((pageNum - 1) * PAGE_SIZE)}
                                                 style={{
-                                                    minWidth: '28px',
-                                                    height: '28px',
-                                                    padding: '0 6px',
-                                                    fontSize: '12px',
+                                                    minWidth: '32px',
+                                                    height: '32px',
+                                                    padding: '0 8px',
+                                                    fontSize: '12.5px',
                                                     fontWeight: isCurrent ? 700 : 500,
-                                                    borderRadius: '6px',
+                                                    borderRadius: '8px',
+                                                    border: isCurrent ? '1px solid var(--cs-primary)' : '1px solid var(--cs-border)',
+                                                    background: isCurrent ? 'var(--cs-primary)' : 'var(--cs-surface-2)',
+                                                    color: isCurrent ? '#ffffff' : 'var(--cs-text-primary)',
                                                     cursor: 'pointer',
-                                                    border: '1px solid',
-                                                    background: isCurrent ? 'var(--cs-primary)' : 'transparent',
-                                                    borderColor: isCurrent ? 'var(--cs-primary)' : 'var(--cs-border)',
-                                                    color: isCurrent ? '#FFFFFF' : 'var(--cs-text-secondary)',
-                                                    transition: 'all 0.15s ease'
+                                                    transition: 'all 0.15s ease',
+                                                    boxShadow: isCurrent ? '0 2px 6px rgba(108, 99, 255, 0.25)' : 'none'
                                                 }}
                                             >
                                                 {pageNum}
@@ -928,17 +1139,22 @@ export default function StudentsPage() {
                                 </div>
 
                                 <button
+                                    type="button"
                                     className="btn-ghost"
                                     style={{
-                                        padding: '5px 10px',
+                                        padding: '6px 12px',
                                         fontSize: '12px',
+                                        fontWeight: 600,
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         border: '1px solid var(--cs-border)',
-                                        borderRadius: '6px',
+                                        borderRadius: '8px',
                                         cursor: offset + PAGE_SIZE >= data.total ? 'not-allowed' : 'pointer',
-                                        opacity: offset + PAGE_SIZE >= data.total ? 0.4 : 1
+                                        opacity: offset + PAGE_SIZE >= data.total ? 0.4 : 1,
+                                        background: 'var(--cs-surface-2)',
+                                        color: 'var(--cs-text-primary)',
+                                        transition: 'all 0.15s ease'
                                     }}
                                     disabled={offset + PAGE_SIZE >= data.total}
                                     onClick={() => setOffset(offset + PAGE_SIZE)}
@@ -1138,138 +1354,108 @@ export default function StudentsPage() {
                                         )}
                                     </div>
                                 </div>
-                                {!branchScoped && (workspace?.branches.length ?? 0) > 1 ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                        <div>
-                                            <label className="cs-label">Home Branch</label>
-                                            <select
-                                                className="cs-input"
-                                                value={form.branchId || session?.selectedBranchId || workspace?.branches.find(b => b.isPrimary)?.branchId || ''}
-                                                onChange={e => setForm({ ...form, branchId: e.target.value, batchId: '' })}
-                                            >
-                                                {workspace?.branches.map(b => (
-                                                    <option key={b.branchId} value={b.branchId}>
-                                                        {b.name}{b.isPrimary ? ' (Primary)' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="cs-label">Enroll in Batch (optional)</label>
-                                            <select
-                                                className="cs-input"
-                                                value={form.batchId}
-                                                onChange={e => {
-                                                    const bId = e.target.value;
-                                                    const selected = batches?.find(b => b.batchId === bId);
-                                                    setForm(f => ({
-                                                        ...f,
-                                                        batchId: bId,
-                                                        feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : (bId ? f.feeAmount : ''),
-                                                        feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
-                                                    }));
-                                                }}
-                                            >
-                                                {(() => {
-                                                    const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
-                                                    const branchBatches = batches?.filter(b => !activeBranch || !b.branchId || b.branchId === activeBranch) || [];
-                                                    const placeholder = !batches
-                                                        ? 'Loading batches…'
-                                                        : branchBatches.length > 0
-                                                            ? '— Select a batch (optional) —'
-                                                            : '— No batches available for this branch —';
-                                                    return (
-                                                        <>
-                                                            <option value="">{placeholder}</option>
-                                                            {branchBatches.map(b => (
-                                                                <option key={b.batchId} value={b.batchId}>
-                                                                    {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
-                                                                </option>
-                                                            ))}
-                                                        </>
-                                                    );
-                                                })()}
-                                            </select>
-                                        </div>
-                                    </div>
-                                ) : (
+                                {!branchScoped && (workspace?.branches.length ?? 0) > 1 && (
                                     <div>
-                                        <label className="cs-label">Enroll in Batch (optional)</label>
+                                        <label className="cs-label">Home Branch</label>
                                         <select
                                             className="cs-input"
-                                            value={form.batchId}
-                                            onChange={e => {
-                                                const bId = e.target.value;
-                                                const selected = batches?.find(b => b.batchId === bId);
-                                                setForm(f => ({
-                                                    ...f,
-                                                    batchId: bId,
-                                                    feeAmount: selected && selected.tuitionAmount ? String(selected.tuitionAmount) : (bId ? f.feeAmount : ''),
-                                                    feeStatus: selected && f.feeStatus === 'none' ? 'pending' : f.feeStatus
-                                                }));
-                                            }}
+                                            value={form.branchId || session?.selectedBranchId || workspace?.branches.find(b => b.isPrimary)?.branchId || ''}
+                                            onChange={e => setForm(f => ({ ...f, branchId: e.target.value, courseId: '', batchId: '' }))}
                                         >
-                                            {(() => {
-                                                const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
-                                                const branchBatches = batches?.filter(b => !activeBranch || !b.branchId || b.branchId === activeBranch) || [];
-                                                const placeholder = !batches
-                                                    ? 'Loading batches…'
-                                                    : branchBatches.length > 0
-                                                        ? '— Select a batch (optional) —'
-                                                        : '— No batches available for this branch —';
-                                                return (
-                                                    <>
-                                                        <option value="">{placeholder}</option>
-                                                        {branchBatches.map(b => (
-                                                            <option key={b.batchId} value={b.batchId}>
-                                                                {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''} {b.tuitionAmount ? `— ₹${Number(b.tuitionAmount).toLocaleString('en-IN')}` : ''}
-                                                            </option>
-                                                        ))}
-                                                    </>
-                                                );
-                                            })()}
+                                            {workspace?.branches.map(b => (
+                                                <option key={b.branchId} value={b.branchId}>
+                                                    {b.name}{b.isPrimary ? ' (Primary)' : ''}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                 )}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <div>
-                                        <label className="cs-label">Fee Status</label>
-                                        <select
-                                            className="cs-input"
-                                            value={form.feeStatus}
-                                            onChange={e => {
-                                                const status = e.target.value;
-                                                setForm(f => ({
-                                                    ...f,
-                                                    feeStatus: status,
-                                                    feeAmount: status === 'none' ? '' : f.feeAmount
-                                                }));
-                                            }}
-                                        >
-                                            <option value="none">— No Fee (Exempt) —</option>
-                                            <option value="pending">Pending (Fee Due)</option>
-                                            <option value="paid">Paid (Paid Upfront)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="cs-label">
-                                            Fee / Tuition Amount {form.feeStatus !== 'none' && <span style={{ color: '#EF4444' }}>*</span>}
-                                        </label>
-                                        <input
-                                            className="cs-input"
-                                            type="number"
-                                            min="0"
-                                            step="1"
-                                            placeholder={form.feeStatus === 'none' ? '—' : 'e.g. 5000'}
-                                            disabled={form.feeStatus === 'none'}
-                                            value={form.feeAmount}
-                                            onChange={e => setForm({ ...form, feeAmount: e.target.value })}
-                                            style={{
-                                                opacity: form.feeStatus === 'none' ? 0.6 : 1,
-                                                cursor: form.feeStatus === 'none' ? 'not-allowed' : 'text'
-                                            }}
-                                        />
-                                    </div>
+                                <div>
+                                    <label className="cs-label">Select Course (optional)</label>
+                                    <select
+                                        className="cs-input"
+                                        value={form.courseId}
+                                        onChange={e => {
+                                            const cId = e.target.value;
+                                            setForm(f => ({
+                                                ...f,
+                                                courseId: cId,
+                                                batchId: '',
+                                            }));
+                                        }}
+                                    >
+                                        {(() => {
+                                            const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
+                                            const branchCourses = courses?.filter(c => !activeBranch || !c.branchId || c.branchId === activeBranch) || [];
+                                            const placeholder = !courses
+                                                ? 'Loading courses…'
+                                                : branchCourses.length > 0
+                                                    ? '— Select a course (optional) —'
+                                                    : '— No courses available —';
+                                            return (
+                                                <>
+                                                    <option value="">{placeholder}</option>
+                                                    {branchCourses.map(c => (
+                                                        <option key={c.courseId} value={c.courseId}>
+                                                            {c.title} {c.code ? `(${c.code})` : ''}
+                                                        </option>
+                                                    ))}
+                                                </>
+                                            );
+                                        })()}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="cs-label">Enroll in Batch (optional)</label>
+                                    <select
+                                        className="cs-input"
+                                        value={form.batchId}
+                                        onChange={e => {
+                                            const bId = e.target.value;
+                                            const selected = batches?.find(b => b.batchId === bId);
+                                            const matchingCourse = selected?.courseId
+                                                ? courses?.find(c => c.courseId === selected.courseId)
+                                                : selected?.courseTitle
+                                                    ? courses?.find(c => c.title.toLowerCase() === selected.courseTitle?.toLowerCase())
+                                                    : null;
+                                            setForm(f => ({
+                                                ...f,
+                                                batchId: bId,
+                                                courseId: matchingCourse ? matchingCourse.courseId : f.courseId,
+                                            }));
+                                        }}
+                                    >
+                                        {(() => {
+                                            const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
+                                            const selectedCourseObj = courses?.find(c => c.courseId === form.courseId);
+                                            const filteredBatches = (batches || []).filter(b => {
+                                                const matchesBranch = !activeBranch || !b.branchId || b.branchId === activeBranch;
+                                                if (!matchesBranch) return false;
+                                                if (!form.courseId) return true;
+                                                return (
+                                                    b.courseId === form.courseId ||
+                                                    (selectedCourseObj && b.courseTitle && b.courseTitle.toLowerCase() === selectedCourseObj.title.toLowerCase())
+                                                );
+                                            });
+                                            const placeholder = !batches
+                                                ? 'Loading batches…'
+                                                : filteredBatches.length > 0
+                                                    ? '— Select a batch (optional) —'
+                                                    : form.courseId
+                                                        ? '— No batches available for selected course —'
+                                                        : '— No batches available for this branch —';
+                                            return (
+                                                <>
+                                                    <option value="">{placeholder}</option>
+                                                    {filteredBatches.map(b => (
+                                                        <option key={b.batchId} value={b.batchId}>
+                                                            {b.name} {b.courseTitle ? `(${b.courseTitle})` : ''}
+                                                        </option>
+                                                    ))}
+                                                </>
+                                            );
+                                        })()}
+                                    </select>
                                 </div>
                                 {formError && (
                                     <div style={{

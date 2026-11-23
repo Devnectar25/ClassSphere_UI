@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { MapPin, ArrowLeft, X, Filter, Calendar as CalendarIcon, Plus, Trash2, Pencil } from 'lucide-react';
+import { MapPin, ArrowLeft, X, Filter, Calendar as CalendarIcon, Plus, Trash2, Pencil, Search, Clock, BookOpen } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -103,6 +103,7 @@ function BatchesContent() {
     const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string }>>('/courses');
     const { data: staffList } = useApi<Array<{ userId: string; fullName: string; role: string }>>('/staff');
     const [selectedCourse, setSelectedCourse] = useState<string>('all');
+    const [search, setSearch] = useState('');
 
     // Add Batch modal state
     const [showAddBatch, setShowAddBatch] = useState(false);
@@ -230,10 +231,19 @@ function BatchesContent() {
     };
 
     const filteredBatches = batches?.filter(b => {
-        if (selectedCourse === 'all') return true;
+        if (selectedCourse !== 'all') {
+            const matchesCourse = (b.courseId && b.courseId === selectedCourse) ||
+                b.courseTitle.toLowerCase() === selectedCourse.toLowerCase();
+            if (!matchesCourse) return false;
+        }
+        if (!search) return true;
+        const q = search.toLowerCase();
         return (
-            (b.courseId && b.courseId === selectedCourse) ||
-            b.courseTitle.toLowerCase() === selectedCourse.toLowerCase()
+            b.name.toLowerCase().includes(q) ||
+            b.courseTitle.toLowerCase().includes(q) ||
+            b.branchName.toLowerCase().includes(q) ||
+            (b.instructorName && b.instructorName.toLowerCase().includes(q)) ||
+            (b.room && b.room.toLowerCase().includes(q))
         );
     }) ?? [];
 
@@ -301,55 +311,164 @@ function BatchesContent() {
             )}
 
             {/* Controls Toolbar */}
-            <div style={{
+            <div className="cs-card" style={{
+                padding: '16px 20px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '16px',
                 flexWrap: 'wrap',
+                borderRadius: '16px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                boxSizing: 'border-box',
+                width: '100%',
                 marginBottom: '16px'
             }}>
-                <div className="tab-list">
-                    {[['batches', 'Batches'], ['schedule', 'Weekly Schedule']].map(([id, label]) => (
-                        <button key={id} className={`tab-trigger${activeTab === id ? ' active' : ''}`} onClick={() => setActiveTab(id)}>
-                            {label}
-                        </button>
-                    ))}
+                {/* Left: Segmented Tabs */}
+                <div style={{
+                    display: 'inline-flex',
+                    background: 'var(--cs-surface-2)',
+                    padding: '3px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--cs-border)'
+                }}>
+                    {[
+                        { id: 'batches', label: 'Batches', count: filteredBatches.length },
+                        { id: 'schedule', label: 'Weekly Schedule' }
+                    ].map(tab => {
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveTab(tab.id)}
+                                style={{
+                                    border: 'none',
+                                    background: isActive ? '#ffffff' : 'transparent',
+                                    color: isActive ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                    fontWeight: isActive ? 700 : 500,
+                                    fontSize: '12.5px',
+                                    padding: '7px 16px',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                    transition: 'all 0.15s ease'
+                                }}
+                            >
+                                <span>{tab.label}</span>
+                                {tab.count !== undefined && (
+                                    <span style={{
+                                        fontSize: '11px',
+                                        padding: '1px 6px',
+                                        borderRadius: '10px',
+                                        background: isActive ? 'rgba(108, 99, 255, 0.12)' : 'rgba(0,0,0,0.05)',
+                                        color: isActive ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                        fontWeight: 600
+                                    }}>
+                                        {tab.count}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
 
-                {/* Course Filter + Add Batch button */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
-                        <Filter size={13} color="var(--cs-text-muted)" />
-                        <span>Course:</span>
+                {/* Right Controls: Search, Course Filter, Add Batch Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginLeft: 'auto' }}>
+                    {/* Search Input */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'var(--cs-surface-2)',
+                        border: '1px solid var(--cs-border)',
+                        borderRadius: '10px',
+                        padding: '0 12px',
+                        height: '38px',
+                        minWidth: '220px',
+                        boxSizing: 'border-box'
+                    }}>
+                        <Search size={14} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
+                        <input
+                            placeholder="Search batches..."
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                outline: 'none',
+                                padding: 0,
+                                height: '100%',
+                                fontSize: '13px',
+                                width: '100%',
+                                color: 'var(--cs-text-primary)'
+                            }}
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                        {search && (
+                            <button
+                                type="button"
+                                onClick={() => setSearch('')}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--cs-text-muted)' }}
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
                     </div>
-                    <select
-                        className="cs-input"
-                        value={selectedCourse}
-                        onChange={e => handleCourseChange(e.target.value)}
-                        style={{ width: 'auto', minWidth: '200px', height: '36px', padding: '0 10px', fontSize: '13px' }}
-                    >
-                        <option value="all">All Courses ({batches?.length ?? 0} batches)</option>
-                        {courseOptions.map(c => (
-                            <option key={c.id} value={c.id}>{c.title}</option>
-                        ))}
-                    </select>
 
+                    {/* Course Filter Dropdown */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'var(--cs-surface-2)',
+                        border: '1px solid var(--cs-border)',
+                        borderRadius: '10px',
+                        padding: '0 12px',
+                        height: '38px'
+                    }}>
+                        <Filter size={13} color="var(--cs-primary)" />
+                        <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontWeight: 600 }}>Course:</span>
+                        <select
+                            value={selectedCourse}
+                            onChange={e => handleCourseChange(e.target.value)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                outline: 'none',
+                                fontSize: '12.5px',
+                                fontWeight: 600,
+                                color: 'var(--cs-text-primary)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <option value="all">All Courses ({batches?.length ?? 0} batches)</option>
+                            {courseOptions.map(c => (
+                                <option key={c.id} value={c.id}>{c.title}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Add Batch Button */}
                     {canManage && (
                         <button
+                            type="button"
                             className="btn-primary"
                             onClick={openAddBatch}
                             style={{
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '6px',
                                 whiteSpace: 'nowrap',
-                                padding: '8px 16px',
+                                padding: '0 18px',
                                 fontSize: '13px',
-                                fontWeight: 600,
-                                borderRadius: '8px',
+                                fontWeight: 700,
+                                borderRadius: '10px',
                                 cursor: 'pointer',
-                                height: '36px'
+                                height: '38px',
+                                boxShadow: '0 2px 8px rgba(108, 99, 255, 0.28)'
                             }}
                         >
                             <Plus size={16} /> Add Batch
@@ -359,116 +478,276 @@ function BatchesContent() {
             </div>
 
             {!batches ? <PageState error={error} /> : activeTab === 'batches' ? (
-                <div className="cs-card" style={{ width: '100%', overflow: 'hidden' }}>
+                <div className="cs-card" style={{ width: '100%', overflow: 'hidden', borderRadius: '16px', border: '1px solid var(--cs-border)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
                     <div style={{ overflowX: 'auto', width: '100%' }}>
-                        <table className="cs-table" style={{ width: '100%' }}>
+                        <table className="cs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
-                                <tr>
-                                    <th>Batch</th>
-                                    <th>Course</th>
-                                    <th>Instructor</th>
-                                    <th>Schedule</th>
-                                    <th>Venue</th>
-                                    <th>Capacity</th>
-                                    <th>Status</th>
-                                    <th style={{ width: '60px', textAlign: 'center' }}>Action</th>
+                                <tr style={{ background: 'var(--cs-surface-2)', borderBottom: '1px solid var(--cs-border)' }}>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Batch</th>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Course</th>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Instructor</th>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Schedule</th>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Venue</th>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'left' }}>Capacity</th>
+                                    <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'center' }}>Status</th>
+                                    {canManage && <th style={{ padding: '14px 18px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--cs-text-muted)', textAlign: 'right' }}>Action</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredBatches.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--cs-text-muted)' }}>
-                                            No batches found for this course.
-                                            {selectedCourse !== 'all' ? (
-                                                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                                                    <button type="button" className="btn-secondary" onClick={() => handleCourseChange('all')}>
+                                        <td colSpan={canManage ? 8 : 7} style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--cs-text-muted)' }}>
+                                            <div style={{ fontSize: '14px', marginBottom: '14px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                                {batches.length === 0 ? 'No batches created yet.' : 'No batches match your search or filter.'}
+                                            </div>
+                                            {selectedCourse !== 'all' || search ? (
+                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                                    <button type="button" className="btn-secondary" onClick={() => { handleCourseChange('all'); setSearch(''); }}>
                                                         Show All Batches
                                                     </button>
                                                     {canManage && (
-                                                        <button type="button" className="btn-primary" onClick={openAddBatch}>
-                                                            <Plus size={14} /> Create Batch for this Course
+                                                        <button type="button" className="btn-primary" onClick={openAddBatch} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                            <Plus size={14} /> Create Batch
                                                         </button>
                                                     )}
                                                 </div>
                                             ) : canManage ? (
-                                                <div style={{ marginTop: '10px' }}>
-                                                    <button type="button" className="btn-primary" onClick={openAddBatch}>
-                                                        <Plus size={14} /> Create First Batch
-                                                    </button>
-                                                </div>
+                                                <button type="button" className="btn-primary" onClick={openAddBatch} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                    <Plus size={14} /> Create First Batch
+                                                </button>
                                             ) : null}
                                         </td>
                                     </tr>
                                 ) : (
                                     filteredBatches.map(b => {
                                         const fillPct = b.capacity > 0 ? Math.round((b.enrolledCount / b.capacity) * 100) : 0;
-                                        const fillColor = fillPct >= 90 ? '#EF4444' : fillPct >= 75 ? '#F59E0B' : '#10B981';
+                                        const isHigh = fillPct >= 90;
+                                        const isMed = fillPct >= 75;
+                                        const badgeBg = isHigh ? '#FEF2F2' : isMed ? '#FFFBEB' : '#ECFDF5';
+                                        const badgeColor = isHigh ? '#DC2626' : isMed ? '#D97706' : '#059669';
+                                        const badgeBorder = isHigh ? '#FECACA' : isMed ? '#FDE68A' : '#A7F3D0';
+                                        const progressFill = isHigh ? '#EF4444' : isMed ? '#F59E0B' : '#10B981';
                                         const first = b.schedules[0];
+
                                         return (
-                                            <tr key={b.batchId}>
-                                                <td>
-                                                    <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--cs-text-primary)' }}>{b.name}</div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{b.branchName}</div>
-                                                </td>
-                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>{b.courseTitle}</td>
-                                                <td>
-                                                    {b.instructorName ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            <div className="avatar-placeholder" style={{ width: 26, height: 26, fontSize: '10px' }}>{initials(b.instructorName)}</div>
-                                                            <span className="cell-nowrap" style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>{b.instructorName}</span>
-                                                        </div>
-                                                    ) : '—'}
-                                                </td>
-                                                <td>
-                                                    {first ? (
-                                                        <>
-                                                            <div className="cell-nowrap" style={{ fontSize: '12px', color: 'var(--cs-text-primary)', fontWeight: 600 }}>{first.startTime} – {first.endTime}</div>
-                                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>{b.schedules.map(s => s.day).join(' ')}</div>
-                                                        </>
-                                                    ) : '—'}
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--cs-text-muted)' }}>
-                                                        <MapPin size={11} /> {b.room ?? '—'}
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)', marginBottom: '4px' }}>
-                                                        {b.enrolledCount}/{b.capacity}
-                                                        <span style={{ fontSize: '11px', marginLeft: '4px', color: fillColor }}>({fillPct}%)</span>
-                                                    </div>
-                                                    <div className="progress-bar" style={{ width: '80px' }}>
-                                                        <div className="progress-fill" style={{ width: `${fillPct}%`, background: fillColor }} />
-                                                    </div>
-                                                </td>
-                                                <td><span className={`badge ${b.status === 'active' ? 'badge-success' : 'badge-secondary'}`}>{b.status}</span></td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <button
-                                                        type="button"
-                                                        className="btn-ghost"
-                                                        onClick={() => openEditBatch(b)}
-                                                        title={`Edit ${b.name}`}
-                                                        style={{
-                                                            width: '28px',
-                                                            height: '28px',
-                                                            padding: 0,
-                                                            borderRadius: '6px',
-                                                            cursor: 'pointer',
-                                                            color: '#6C63FF',
-                                                            background: 'rgba(108, 99, 255, 0.08)',
-                                                            border: '1px solid rgba(108, 99, 255, 0.25)',
-                                                            display: 'inline-flex',
+                                            <tr key={b.batchId} style={{ borderBottom: '1px solid var(--cs-border)', transition: 'background 0.15s ease' }}>
+                                                {/* Batch + Branch */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                        <div style={{
+                                                            width: 38,
+                                                            height: 38,
+                                                            borderRadius: '10px',
+                                                            background: 'linear-gradient(135deg, rgba(108,99,255,0.18) 0%, rgba(108,99,255,0.06) 100%)',
+                                                            border: '1px solid rgba(108,99,255,0.25)',
+                                                            display: 'flex',
                                                             alignItems: 'center',
                                                             justifyContent: 'center',
-                                                            transition: 'all 0.15s ease'
-                                                        }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
-                                                        aria-label={`Edit ${b.name}`}
-                                                    >
-                                                        <Pencil size={13} />
-                                                    </button>
+                                                            flexShrink: 0
+                                                        }}>
+                                                            <CalendarIcon size={18} color="var(--cs-primary)" />
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--cs-text-primary)', letterSpacing: '-0.01em' }}>
+                                                                {b.name}
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                                                                <span style={{
+                                                                    fontSize: '11px',
+                                                                    color: 'var(--cs-text-secondary)',
+                                                                    background: 'var(--cs-surface-2)',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '4px',
+                                                                    border: '1px solid var(--cs-border)',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '3px',
+                                                                    fontWeight: 500
+                                                                }}>
+                                                                    <MapPin size={9} color="var(--cs-primary)" /> {b.branchName}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </td>
+
+                                                {/* Course */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                    <span style={{
+                                                        fontSize: '13px',
+                                                        fontWeight: 700,
+                                                        color: 'var(--cs-text-primary)'
+                                                    }}>
+                                                        {b.courseTitle}
+                                                    </span>
+                                                </td>
+
+                                                {/* Instructor */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                    {b.instructorName ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                                                            <div style={{
+                                                                width: 28,
+                                                                height: 28,
+                                                                borderRadius: '50%',
+                                                                background: 'linear-gradient(135deg, #6C63FF 0%, #8B5CF6 100%)',
+                                                                color: '#ffffff',
+                                                                fontSize: '10.5px',
+                                                                fontWeight: 700,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                flexShrink: 0,
+                                                                boxShadow: '0 2px 4px rgba(108, 99, 255, 0.25)'
+                                                            }}>
+                                                                {initials(b.instructorName)}
+                                                            </div>
+                                                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary)' }}>
+                                                                {b.instructorName}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span style={{ color: 'var(--cs-text-muted)', fontSize: '12px' }}>—</span>
+                                                    )}
+                                                </td>
+
+                                                {/* Schedule */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                    {first ? (
+                                                        <div>
+                                                            <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--cs-text-primary)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                                <Clock size={12} color="var(--cs-primary)" /> {first.startTime} – {first.endTime}
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '3px' }}>
+                                                                {b.schedules.map((s, idx) => (
+                                                                    <span key={idx} style={{
+                                                                        fontSize: '10.5px',
+                                                                        fontWeight: 600,
+                                                                        color: 'var(--cs-text-secondary)',
+                                                                        background: 'var(--cs-surface-2)',
+                                                                        border: '1px solid var(--cs-border)',
+                                                                        padding: '1px 5px',
+                                                                        borderRadius: '4px'
+                                                                    }}>
+                                                                        {s.day}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <span style={{ color: 'var(--cs-text-muted)', fontSize: '12px' }}>—</span>
+                                                    )}
+                                                </td>
+
+                                                {/* Venue / Room */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                    {b.room ? (
+                                                        <span style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '5px',
+                                                            fontSize: '12px',
+                                                            fontWeight: 600,
+                                                            padding: '3px 8px',
+                                                            borderRadius: '6px',
+                                                            background: 'var(--cs-surface-2)',
+                                                            border: '1px solid var(--cs-border)',
+                                                            color: 'var(--cs-text-primary)'
+                                                        }}>
+                                                            <MapPin size={11} color="var(--cs-primary)" /> {b.room}
+                                                        </span>
+                                                    ) : (
+                                                        <span style={{ color: 'var(--cs-text-muted)', fontSize: '12px' }}>—</span>
+                                                    )}
+                                                </td>
+
+                                                {/* Capacity Meter */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+                                                        <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--cs-text-primary)' }}>
+                                                            {b.enrolledCount}
+                                                        </span>
+                                                        <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontWeight: 500 }}>
+                                                            /{b.capacity}
+                                                        </span>
+                                                        <span style={{
+                                                            fontSize: '10.5px',
+                                                            fontWeight: 700,
+                                                            padding: '1px 6px',
+                                                            borderRadius: '10px',
+                                                            background: badgeBg,
+                                                            color: badgeColor,
+                                                            border: `1px solid ${badgeBorder}`
+                                                        }}>
+                                                            {fillPct}%
+                                                        </span>
+                                                    </div>
+                                                    <div style={{
+                                                        width: '90px',
+                                                        height: '6px',
+                                                        borderRadius: '99px',
+                                                        background: 'var(--cs-surface-2)',
+                                                        border: '1px solid var(--cs-border)',
+                                                        overflow: 'hidden'
+                                                    }}>
+                                                        <div style={{
+                                                            width: `${Math.min(fillPct, 100)}%`,
+                                                            height: '100%',
+                                                            borderRadius: '99px',
+                                                            background: progressFill,
+                                                            transition: 'width 0.3s ease'
+                                                        }} />
+                                                    </div>
+                                                </td>
+
+                                                {/* Status Badge */}
+                                                <td style={{ padding: '14px 18px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                                    <span style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        padding: '3px 10px',
+                                                        borderRadius: '20px',
+                                                        background: b.status === 'active' ? '#ECFDF5' : 'var(--cs-surface-2)',
+                                                        color: b.status === 'active' ? '#059669' : 'var(--cs-text-muted)',
+                                                        border: b.status === 'active' ? '1px solid #A7F3D0' : '1px solid var(--cs-border)',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '5px'
+                                                    }}>
+                                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.status === 'active' ? '#10B981' : '#9CA3AF' }} />
+                                                        {b.status === 'active' ? 'Active' : b.status || 'Draft'}
+                                                    </span>
+                                                </td>
+
+                                                {/* Action Edit Button */}
+                                                {canManage && (
+                                                    <td style={{ padding: '14px 18px', verticalAlign: 'middle', textAlign: 'right' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openEditBatch(b)}
+                                                            style={{
+                                                                width: '32px',
+                                                                height: '32px',
+                                                                padding: 0,
+                                                                borderRadius: '8px',
+                                                                cursor: 'pointer',
+                                                                color: 'var(--cs-primary)',
+                                                                background: 'rgba(108, 99, 255, 0.08)',
+                                                                border: '1px solid rgba(108, 99, 255, 0.25)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
+                                                            title={`Edit ${b.name}`}
+                                                            aria-label={`Edit ${b.name}`}
+                                                        >
+                                                            <Pencil size={13} />
+                                                        </button>
+                                                    </td>
+                                                )}
                                             </tr>
                                         );
                                     })
@@ -478,16 +757,28 @@ function BatchesContent() {
                     </div>
                 </div>
             ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px', width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px', width: '100%' }}>
                     {WEEKDAYS.map((day, i) => {
                         const sessions = filteredBatches
                             .flatMap(b => b.schedules.filter(s => s.weekday === day.num).map(s => ({ ...s, batch: b })))
                             .sort((a, b) => a.startKey.localeCompare(b.startKey));
                         return (
-                            <div key={day.name} className="cs-card" style={{ padding: '16px' }}>
-                                <div className="section-title" style={{ fontSize: '14px', marginBottom: '12px' }}>{day.name}</div>
-                                {sessions.length === 0 && <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>No sessions</div>}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div key={day.name} className="cs-card" style={{ padding: '18px', borderRadius: '16px', border: '1px solid var(--cs-border)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                                    <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--cs-text-primary)' }}>{day.name}</span>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        padding: '2px 7px',
+                                        borderRadius: '10px',
+                                        background: sessions.length > 0 ? 'rgba(108, 99, 255, 0.1)' : 'var(--cs-surface-2)',
+                                        color: sessions.length > 0 ? 'var(--cs-primary)' : 'var(--cs-text-muted)'
+                                    }}>
+                                        {sessions.length} {sessions.length === 1 ? 'session' : 'sessions'}
+                                    </span>
+                                </div>
+                                {sessions.length === 0 && <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', textAlign: 'center', padding: '16px 0' }}>No scheduled sessions</div>}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {sessions.map(s => (
                                         <div
                                             key={`${s.batch.batchId}-${s.startKey}-${s.weekday}`}
@@ -495,8 +786,8 @@ function BatchesContent() {
                                             style={{
                                                 background: 'var(--cs-surface-2)',
                                                 border: '1px solid var(--cs-border)',
-                                                borderRadius: '8px',
-                                                padding: '10px 12px',
+                                                borderRadius: '10px',
+                                                padding: '12px',
                                                 cursor: 'pointer',
                                                 transition: 'all 0.15s ease',
                                                 position: 'relative'
@@ -514,27 +805,27 @@ function BatchesContent() {
                                             title={`Click to edit ${s.batch.name} schedule`}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                                                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
-                                                    {s.startTime} – {s.endTime}
+                                                <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--cs-text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                    <Clock size={11} color="var(--cs-primary)" /> {s.startTime} – {s.endTime}
                                                 </span>
                                                 <span style={{
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    width: '20px',
-                                                    height: '20px',
-                                                    borderRadius: '4px',
+                                                    width: '22px',
+                                                    height: '22px',
+                                                    borderRadius: '6px',
                                                     background: 'rgba(108,99,255,0.12)',
-                                                    color: '#6C63FF'
+                                                    color: 'var(--cs-primary)'
                                                 }}>
                                                     <Pencil size={11} />
                                                 </span>
                                             </div>
-                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cs-text-secondary)', marginTop: '4px' }}>
+                                            <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--cs-text-secondary)', marginTop: '4px' }}>
                                                 {s.batch.name}
                                             </div>
-                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <MapPin size={10} />
+                                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <MapPin size={10} color="var(--cs-primary)" />
                                                 <span>{s.batch.room ?? s.batch.branchName} • {s.sessionType}</span>
                                             </div>
                                         </div>
