@@ -999,7 +999,7 @@ function ResetPasswordModal({
                             <input
                                 type="text"
                                 className="input-field"
-                                placeholder="Enter custom password (e.g. Pass@123)"
+                                placeholder="Enter custom password (e.g. Parent@1234)"
                                 value={customPassword}
                                 onChange={(e) => setCustomPassword(e.target.value)}
                                 style={{ width: '100%', boxSizing: 'border-box' }}

@@ -22,11 +22,14 @@ import {
     Table as TableIcon,
     Filter,
     Building2,
-    Briefcase
+    Briefcase,
+    GraduationCap,
+    X
 } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
 import { can, useSession, selectBranch } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
+import { VerificationQueue } from '@/components/ConsumptionReview';
 
 interface Register {
     sessions: string[];
@@ -52,7 +55,8 @@ interface DailyAttendanceResponse {
         email: string;
         status: string | null;
         remarks: string | null;
-        overallRate: number;
+        sessionsMarked: number;
+        sessionsAttended: number;
     }>;
 }
 
@@ -68,7 +72,8 @@ interface StaffAttendanceMember {
     batches: string;
     status: 'present' | 'absent' | 'late' | 'excused' | null;
     remarks: string | null;
-    overallRate: number;
+    sessionsMarked: number;
+        sessionsAttended: number;
 }
 
 interface StaffAttendanceResponse {
@@ -104,6 +109,25 @@ interface StudentAttendanceResponse {
         rate: number;
     };
     records: StudentAttendanceRecord[];
+}
+
+const rateColor = (rate: number) => (rate >= 80 ? '#10B981' : rate >= 60 ? '#F59E0B' : '#EF4444');
+
+/** Share of marked sessions attended (present or late), including the mark selected on screen but not saved yet. */
+function OverallRate({ marked, attended, saved, selected }: { marked: number; attended: number; saved: string | null; selected?: StatusKey }) {
+    const current = selected ? statusConfig[selected].value : null;
+    const counts = (status: string | null) => status === 'present' || status === 'late';
+    const total = marked - (saved ? 1 : 0) + (current ? 1 : 0);
+    const present = attended - (counts(saved) ? 1 : 0) + (counts(current) ? 1 : 0);
+    const changed = current !== saved;
+    if (total <= 0) return <span title="No attendance recorded yet" style={{ color: 'var(--cs-text-muted)' }}>—</span>;
+    const rate = Math.round((present / total) * 100);
+    return (
+        <span title={changed ? 'Includes marks that are not saved yet' : undefined}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: rateColor(rate) }}>{rate}%</span>
+            <span style={{ display: 'block', fontSize: '11px', color: 'var(--cs-text-muted)' }}>{present} of {total}{changed ? ' · unsaved' : ''}</span>
+        </span>
+    );
 }
 
 const statusConfig = {
@@ -166,16 +190,17 @@ function windowStart(offsetWeeks: number) {
 
 export default function AttendancePage() {
     const session = useSession();
-    const { workspace } = useWorkspace();
+    const { workspace, currency } = useWorkspace();
     const canMark = can(session, 'attendance.write');
     const today = getTodayIso();
 
-    // Branch selection state
+    // Hierarchical Filter States: Branch -> Course -> Batch
     const [selectedBranchId, setSelectedBranchId] = useState<string>(() => session?.selectedBranchId || session?.session?.branchId || 'all');
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('all');
+    const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
     // Navigation & View Mode
     const [viewMode, setViewMode] = useState<'daily' | 'staff' | 'student' | 'matrix'>('daily');
-    const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
     // Mode 1: Daily Roll Call state (Students)
     const [dailyDate, setDailyDate] = useState<string>(today);
@@ -299,26 +324,53 @@ export default function AttendancePage() {
     };
 
     // Queries
-    const { data: batches, error: batchError, loading: batchesLoading } = useApi<Array<BatchItem>>('/batches');
+    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; branchId?: string | null; isActive?: boolean }>>('/courses');
+    const { data: batches, error: batchError, loading: batchesLoading } = useApi<Array<BatchItem>>('/batches?branchId=all');
     const { data: studentsList } = useApi<{ students: Array<{ studentId: string; firstName: string; lastName: string; email: string; batches?: string; branchId?: string; branchName?: string }> }>(
         `/students?limit=200${selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : ''}`
     );
 
-    // Filter batches according to selected branch
-    const filteredBatches = useMemo(() => {
-        if (!batches) return [];
-        if (selectedBranchId === 'all') return batches;
+    // 1. Dynamic Courses: Filter courses according to selected branch
+    const dynamicCourses = useMemo(() => {
+        if (!courses) return [];
+        if (selectedBranchId === 'all') return courses;
         const targetBranch = workspace?.branches?.find(br => br.branchId === selectedBranchId);
-        return batches.filter(b => {
-            if (b.branchId && b.branchId === selectedBranchId) return true;
-            if (targetBranch && b.branchName && b.branchName.toLowerCase() === targetBranch.name.toLowerCase()) return true;
+        return courses.filter(c => {
+            if (c.branchId && c.branchId === selectedBranchId) return true;
+            if (batches?.some(b => b.courseId === c.courseId && (
+                (b.branchId && b.branchId === selectedBranchId) ||
+                (targetBranch && b.branchName && b.branchName.toLowerCase() === targetBranch.name.toLowerCase())
+            ))) {
+                return true;
+            }
+            if (!c.branchId) return true;
             return false;
         });
-    }, [batches, selectedBranchId, workspace?.branches]);
+    }, [courses, selectedBranchId, batches, workspace?.branches]);
 
-    // Effective batch
+    // 2. Dynamic Batches: Filter batches according to selected branch AND selected course
+    const filteredBatches = useMemo(() => {
+        if (!batches) return [];
+        const targetBranch = workspace?.branches?.find(br => br.branchId === selectedBranchId);
+        return batches.filter(b => {
+            // Branch filter
+            if (selectedBranchId !== 'all') {
+                const matchBranch = (b.branchId && b.branchId === selectedBranchId) ||
+                    (targetBranch && b.branchName && b.branchName.toLowerCase() === targetBranch.name.toLowerCase());
+                if (!matchBranch) return false;
+            }
+            // Course filter
+            if (selectedCourseId !== 'all') {
+                if (b.courseId && b.courseId !== selectedCourseId) return false;
+            }
+            return true;
+        });
+    }, [batches, selectedBranchId, selectedCourseId, workspace?.branches]);
+
+    // 3. Effective batch
     const activeBatchId = selectedBatchId ?? filteredBatches[0]?.batchId ?? null;
-    const activeBatchName = filteredBatches.find(b => b.batchId === activeBatchId)?.name ?? batches?.find(b => b.batchId === activeBatchId)?.name ?? '';
+    const activeBatchObj = batches?.find(b => b.batchId === activeBatchId);
+    const activeBatchName = filteredBatches.find(b => b.batchId === activeBatchId)?.name ?? activeBatchObj?.name ?? '';
 
     // Automatically ensure activeBatchId belongs to the filtered batch list
     useEffect(() => {
@@ -331,6 +383,103 @@ export default function AttendancePage() {
             setSelectedBatchId(null);
         }
     }, [filteredBatches, selectedBatchId]);
+
+    // Dynamic Cascading Handlers
+    const handleBranchFilterChange = (newBranchId: string) => {
+        setSelectedBranchId(newBranchId);
+        selectBranch(newBranchId === 'all' ? null : newBranchId);
+        setMessage(null);
+
+        // Cascading reset: if active course is not in the new branch, reset course to 'all'
+        if (selectedCourseId !== 'all') {
+            const targetBranch = workspace?.branches?.find(br => br.branchId === newBranchId);
+            const courseStillValid = courses?.some(c => {
+                if (c.courseId !== selectedCourseId) return false;
+                if (newBranchId === 'all') return true;
+                if (c.branchId && c.branchId === newBranchId) return true;
+                if (batches?.some(b => b.courseId === c.courseId && (
+                    (b.branchId && b.branchId === newBranchId) ||
+                    (targetBranch && b.branchName && b.branchName.toLowerCase() === targetBranch.name.toLowerCase())
+                ))) return true;
+                if (!c.branchId) return true;
+                return false;
+            });
+            if (!courseStillValid) {
+                setSelectedCourseId('all');
+            }
+        }
+    };
+
+    const handleCourseFilterChange = (newCourseId: string) => {
+        setSelectedCourseId(newCourseId);
+        setMessage(null);
+
+        // Auto-select first batch belonging to the selected course if current batch is not in it
+        if (newCourseId !== 'all') {
+            const currentMatch = filteredBatches.some(b => b.batchId === selectedBatchId && b.courseId === newCourseId);
+            if (!currentMatch) {
+                const targetBranch = workspace?.branches?.find(br => br.branchId === selectedBranchId);
+                const firstBatch = batches?.find(b => {
+                    if (b.courseId !== newCourseId) return false;
+                    if (selectedBranchId !== 'all') {
+                        const matchBranch = (b.branchId && b.branchId === selectedBranchId) ||
+                            (targetBranch && b.branchName && b.branchName.toLowerCase() === targetBranch.name.toLowerCase());
+                        if (!matchBranch) return false;
+                    }
+                    return true;
+                });
+                if (firstBatch) {
+                    setSelectedBatchId(firstBatch.batchId);
+                }
+            }
+        }
+    };
+
+    const handleBatchFilterChange = (newBatchId: string) => {
+        if (newBatchId === 'all') {
+            setSelectedBatchId(filteredBatches[0]?.batchId ?? null);
+        } else {
+            setSelectedBatchId(newBatchId);
+            const batchObj = batches?.find(b => b.batchId === newBatchId);
+            if (batchObj?.courseId && selectedCourseId === 'all') {
+                setSelectedCourseId(batchObj.courseId);
+            }
+        }
+        setMatrixEdits({});
+        setMessage(null);
+    };
+
+    const clearAllAttendanceFilters = () => {
+        setSelectedBranchId('all');
+        selectBranch(null);
+        setSelectedCourseId('all');
+        if (batches && batches.length > 0) {
+            setSelectedBatchId(batches[0].batchId);
+        }
+        setMessage(null);
+    };
+
+    // Filter students for Student View based on selected branch and batch
+    const dynamicStudents = useMemo(() => {
+        if (!studentsList?.students) return [];
+        return studentsList.students.filter(st => {
+            // 1. Branch filter
+            if (selectedBranchId !== 'all') {
+                const targetBranch = workspace?.branches?.find(br => br.branchId === selectedBranchId);
+                const matchBranch = (st.branchId && st.branchId === selectedBranchId) ||
+                    (targetBranch && st.branchName && st.branchName.toLowerCase() === targetBranch.name.toLowerCase());
+                if (!matchBranch) return false;
+            }
+            // 2. Batch filter (if student has enrolled batches)
+            if (activeBatchId && st.batches) {
+                const activeBatchObj = batches?.find(b => b.batchId === activeBatchId);
+                if (activeBatchObj && !st.batches.toLowerCase().includes(activeBatchObj.name.toLowerCase())) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }, [studentsList?.students, selectedBranchId, activeBatchId, batches, workspace?.branches]);
 
     // Register query for matrix
     const start = windowStart(weekOffset);
@@ -400,16 +549,18 @@ export default function AttendancePage() {
         }
     }, [studentData, activeBatchId, studentRecordBatchId, batches]);
 
-    // Ensure student picker defaults to first student if none selected
+    // Ensure student picker defaults to first matching student
     useEffect(() => {
-        if (!selectedStudentId) {
-            if (dailyData?.students && dailyData.students.length > 0) {
+        if (!selectedStudentId || (dynamicStudents.length > 0 && !dynamicStudents.some(s => s.studentId === selectedStudentId))) {
+            if (dynamicStudents.length > 0) {
+                setSelectedStudentId(dynamicStudents[0].studentId);
+            } else if (dailyData?.students && dailyData.students.length > 0) {
                 setSelectedStudentId(dailyData.students[0].studentId);
             } else if (studentsList?.students && studentsList.students.length > 0) {
                 setSelectedStudentId(studentsList.students[0].studentId);
             }
         }
-    }, [selectedStudentId, dailyData, studentsList]);
+    }, [selectedStudentId, dynamicStudents, dailyData, studentsList]);
 
     // Handlers for Daily Roll Call (Students)
     const setDailyStudentStatus = (studentId: string, status: StatusKey) => {
@@ -731,6 +882,143 @@ export default function AttendancePage() {
         }
     };
 
+    // Branch → Course → Batch, shown in front of the date selection of each view (staff has no course or batch)
+    const attendanceFilters = (branchOnly = false) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                {/* 1. Branch Selector */}
+                <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '0 10px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    border: `1px solid ${selectedBranchId !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
+                    background: selectedBranchId !== 'all' ? 'rgba(108, 99, 255, 0.05)' : 'var(--cs-surface-2)',
+                    transition: 'all 0.15s ease'
+                }}>
+                    <Building2 size={14} color={selectedBranchId !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} />
+                    <select
+                        value={selectedBranchId}
+                        onChange={e => { setMatrixEdits({}); handleBranchFilterChange(e.target.value); }}
+                        style={{
+                            border: 'none',
+                            background: 'transparent',
+                            outline: 'none',
+                            fontSize: '12.5px',
+                            fontWeight: selectedBranchId !== 'all' ? 600 : 500,
+                            color: selectedBranchId !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
+                            cursor: 'pointer'
+                        }}
+                        aria-label="Filter attendance by branch"
+                    >
+                        <option value="all">All Branches ({workspace?.branches?.length ?? 0})</option>
+                        {(workspace?.branches ?? []).map(b => (
+                            <option key={b.branchId} value={b.branchId}>
+                                {b.name} {b.code ? `(${b.code})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+            {!branchOnly && (
+                <>
+                    {/* 2. Course Selector (Dynamically Filtered by selected Branch) */}
+                    <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        height: '36px',
+                        borderRadius: '8px',
+                        border: `1px solid ${selectedCourseId !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
+                        background: selectedCourseId !== 'all' ? 'rgba(108, 99, 255, 0.05)' : 'var(--cs-surface-2)',
+                        transition: 'all 0.15s ease'
+                    }}>
+                        <GraduationCap size={14} color={selectedCourseId !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} />
+                        <select
+                            value={selectedCourseId}
+                            onChange={e => { setMatrixEdits({}); handleCourseFilterChange(e.target.value); }}
+                            style={{
+                                border: 'none',
+                                background: 'transparent',
+                                outline: 'none',
+                                fontSize: '12.5px',
+                                fontWeight: selectedCourseId !== 'all' ? 600 : 500,
+                                color: selectedCourseId !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
+                                cursor: 'pointer'
+                            }}
+                            aria-label="Filter attendance by course"
+                        >
+                            <option value="all">
+                                {selectedBranchId !== 'all'
+                                    ? `All Courses (${dynamicCourses.length} in Branch)`
+                                    : `All Courses (${dynamicCourses.length})`}
+                            </option>
+                            {dynamicCourses.map(c => (
+                                <option key={c.courseId} value={c.courseId}>
+                                    {c.title} ({c.code})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* 3. Batch Selector (Dynamically Filtered by Course & Branch) */}
+                    <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        height: '36px',
+                        borderRadius: '8px',
+                        border: `1px solid ${selectedBatchId ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
+                        background: selectedBatchId ? 'rgba(108, 99, 255, 0.05)' : 'var(--cs-surface-2)',
+                        transition: 'all 0.15s ease'
+                    }}>
+                        <Calendar size={14} color={selectedBatchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} />
+                        <select
+                            value={activeBatchId ?? ''}
+                            onChange={e => { setMatrixEdits({}); handleBatchFilterChange(e.target.value); }}
+                            style={{
+                                border: 'none',
+                                background: 'transparent',
+                                outline: 'none',
+                                fontSize: '12.5px',
+                                fontWeight: selectedBatchId ? 600 : 500,
+                                color: selectedBatchId ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
+                                cursor: 'pointer'
+                            }}
+                            aria-label="Select active batch for attendance"
+                        >
+                            {filteredBatches.length === 0 ? (
+                                <option value="" disabled>No batches matching filters</option>
+                            ) : (
+                                filteredBatches.map(b => (
+                                    <option key={b.batchId} value={b.batchId}>
+                                        {b.name} {b.courseTitle ? `• ${b.courseTitle}` : ''} {selectedBranchId === 'all' && b.branchName ? `(${b.branchName})` : ''}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                    </div>
+                </>
+            )}
+
+            {(selectedBranchId !== 'all' || (!branchOnly && selectedCourseId !== 'all')) && (
+                <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ padding: '6px', display: 'inline-flex' }}
+                    onClick={() => { setMatrixEdits({}); clearAllAttendanceFilters(); }}
+                    title="Reset filters"
+                    aria-label="Reset filters"
+                >
+                    <X size={14} />
+                </button>
+            )}
+        </div>
+    );
+
     return (
         <>
 
@@ -782,125 +1070,7 @@ export default function AttendancePage() {
                     </div>
                 )}
 
-                {/* ═══════════════════════════════════════════════════════════════
-                    ACADEMY ADMIN BRANCH SELECTOR BAR
-                    ═══════════════════════════════════════════════════════════════ */}
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '12px',
-                    padding: '12px 18px',
-                    background: 'var(--cs-surface)',
-                    border: '1px solid var(--cs-border)',
-                    borderRadius: '14px',
-                    marginBottom: '16px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: 'var(--cs-primary)',
-                            fontWeight: 700,
-                            fontSize: '13px',
-                            marginRight: '4px'
-                        }}>
-                            <Building2 size={16} />
-                            <span>Branch:</span>
-                        </div>
-
-                        {/* All Branches button */}
-                        <button
-                            onClick={() => {
-                                setSelectedBranchId('all');
-                                selectBranch(null);
-                                setMessage(null);
-                            }}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                padding: '6px 14px',
-                                borderRadius: '20px',
-                                fontSize: '12px',
-                                fontWeight: selectedBranchId === 'all' ? 700 : 500,
-                                cursor: 'pointer',
-                                border: '1px solid',
-                                borderColor: selectedBranchId === 'all' ? 'var(--cs-primary)' : 'var(--cs-border)',
-                                background: selectedBranchId === 'all' ? 'var(--cs-primary)' : 'transparent',
-                                color: selectedBranchId === 'all' ? '#FFFFFF' : 'var(--cs-text-secondary)',
-                                transition: 'all 0.15s ease'
-                            }}
-                        >
-                            <span>All Branches</span>
-                            <span style={{
-                                fontSize: '10px',
-                                padding: '1px 6px',
-                                borderRadius: '10px',
-                                background: selectedBranchId === 'all' ? 'rgba(255,255,255,0.25)' : 'var(--cs-border-subtle)',
-                                color: selectedBranchId === 'all' ? '#FFFFFF' : 'var(--cs-text-muted)'
-                            }}>
-                                {workspace?.branches?.length ?? 0}
-                            </span>
-                        </button>
-
-                        {/* Individual Branch buttons */}
-                        {(workspace?.branches ?? []).map(br => {
-                            const isSelected = selectedBranchId === br.branchId;
-                            return (
-                                <button
-                                    key={br.branchId}
-                                    onClick={() => {
-                                        setSelectedBranchId(br.branchId);
-                                        selectBranch(br.branchId);
-                                        setMessage(null);
-                                    }}
-                                    style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '6px',
-                                        padding: '6px 14px',
-                                        borderRadius: '20px',
-                                        fontSize: '12px',
-                                        fontWeight: isSelected ? 700 : 500,
-                                        cursor: 'pointer',
-                                        border: '1px solid',
-                                        borderColor: isSelected ? 'var(--cs-primary)' : 'var(--cs-border)',
-                                        background: isSelected ? 'var(--cs-primary)' : 'transparent',
-                                        color: isSelected ? '#FFFFFF' : 'var(--cs-text-secondary)',
-                                        transition: 'all 0.15s ease'
-                                    }}
-                                >
-                                    <span>{br.name}</span>
-                                    {br.code && (
-                                        <span style={{
-                                            fontSize: '10px',
-                                            padding: '1px 5px',
-                                            borderRadius: '4px',
-                                            background: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--cs-border-subtle)',
-                                            color: isSelected ? '#FFFFFF' : 'var(--cs-text-muted)'
-                                        }}>
-                                            {br.code}
-                                        </span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Active Scope Label */}
-                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>Active View:</span>
-                        <strong style={{ color: 'var(--cs-text-primary)' }}>
-                            {selectedBranchId === 'all'
-                                ? 'Consolidated (All Branches)'
-                                : (workspace?.branches?.find(b => b.branchId === selectedBranchId)?.name || 'Selected Branch')}
-                        </strong>
-                    </div>
-                </div>
+                {canMark && <VerificationQueue currency={currency} />}
 
                 {/* View Mode Switcher Pills */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
@@ -1012,6 +1182,8 @@ export default function AttendancePage() {
                     <div className="cs-card">
                         {/* Daily Toolbar: Date Picker & Batch Pills */}
                         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                            {attendanceFilters()}
+
                             {/* Date Picker Controls */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button
@@ -1062,39 +1234,6 @@ export default function AttendancePage() {
                                     >
                                         Today
                                     </button>
-                                )}
-                            </div>
-
-                            {/* Batch Pills Filtered by Selected Branch */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-muted)' }}>Batch:</span>
-                                {filteredBatches.length === 0 ? (
-                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontStyle: 'italic' }}>
-                                        No batches in this branch
-                                    </span>
-                                ) : (
-                                    filteredBatches.map(b => (
-                                        <button
-                                            key={b.batchId}
-                                            onClick={() => { setSelectedBatchId(b.batchId); setMessage(null); }}
-                                            style={{
-                                                padding: '5px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600,
-                                                cursor: 'pointer', border: '1px solid',
-                                                borderColor: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.4)' : 'var(--cs-border)',
-                                                background: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
-                                                color: activeBatchId === b.batchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
-                                                transition: 'all 0.2s',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '5px'
-                                            }}
-                                        >
-                                            <span>{b.name}</span>
-                                            {selectedBranchId === 'all' && b.branchName && (
-                                                <span style={{ fontSize: '10px', opacity: 0.7 }}>• {b.branchName}</span>
-                                            )}
-                                        </button>
-                                    ))
                                 )}
                             </div>
 
@@ -1302,13 +1441,7 @@ export default function AttendancePage() {
 
                                                         {/* Overall Rate */}
                                                         <td style={{ textAlign: 'center' }}>
-                                                            <span style={{
-                                                                fontSize: '13px',
-                                                                fontWeight: 700,
-                                                                color: s.overallRate >= 80 ? '#10B981' : s.overallRate >= 60 ? '#F59E0B' : '#EF4444'
-                                                            }}>
-                                                                {s.overallRate}%
-                                                            </span>
+                                                            <OverallRate marked={s.sessionsMarked} attended={s.sessionsAttended} saved={s.status} selected={dailyEdits[s.studentId]?.status} />
                                                         </td>
 
                                                         {/* Actions */}
@@ -1356,6 +1489,8 @@ export default function AttendancePage() {
                     <div className="cs-card">
                         {/* Staff Toolbar: Date Picker & Actions */}
                         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                            {attendanceFilters(true)}
+
                             {/* Date Controls */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button
@@ -1407,17 +1542,6 @@ export default function AttendancePage() {
                                         Today
                                     </button>
                                 )}
-                            </div>
-
-                            {/* Branch indicator */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--cs-text-muted)' }}>
-                                <Building2 size={15} color="var(--cs-primary)" />
-                                <span>Staff Scope:</span>
-                                <strong style={{ color: 'var(--cs-text-primary)' }}>
-                                    {selectedBranchId === 'all'
-                                        ? 'All Branches'
-                                        : (workspace?.branches?.find(b => b.branchId === selectedBranchId)?.name || 'Selected Branch')}
-                                </strong>
                             </div>
 
                             {/* Quick Staff Marking Actions */}
@@ -1594,7 +1718,7 @@ export default function AttendancePage() {
                                                         {/* Batches */}
                                                         <td>
                                                             <div style={{ fontSize: '12px', color: s.batches ? 'var(--cs-text-primary)' : 'var(--cs-text-muted)' }}>
-                                                                {s.batches || '—'}
+                                                                {s.batches ? Array.from(new Set(s.batches.split(/,\s*/).map(b => b.trim()).filter(Boolean))).join(', ') : '—'}
                                                             </div>
                                                         </td>
 
@@ -1665,13 +1789,7 @@ export default function AttendancePage() {
 
                                                         {/* Overall Rate */}
                                                         <td style={{ textAlign: 'center' }}>
-                                                            <span style={{
-                                                                fontSize: '13px',
-                                                                fontWeight: 700,
-                                                                color: s.overallRate >= 80 ? '#10B981' : s.overallRate >= 60 ? '#F59E0B' : '#EF4444'
-                                                            }}>
-                                                                {s.overallRate}%
-                                                            </span>
+                                                            <OverallRate marked={s.sessionsMarked} attended={s.sessionsAttended} saved={s.status} selected={staffEdits[s.userId]?.status} />
                                                         </td>
                                                     </tr>
                                                 );
@@ -1706,6 +1824,7 @@ export default function AttendancePage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         {/* Student Picker & Timeframe Filter Bar */}
                         <div className="cs-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            {attendanceFilters()}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
                                 {/* Student Selector */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1728,11 +1847,15 @@ export default function AttendancePage() {
                                         }}
                                     >
                                         <option value="" disabled>Choose a student to manage…</option>
-                                        {(studentsList?.students ?? []).map(st => (
-                                            <option key={st.studentId} value={st.studentId}>
-                                                {st.firstName} {st.lastName} {st.branchName ? `[${st.branchName}]` : ''} {st.batches ? `(${st.batches})` : ''}
-                                            </option>
-                                        ))}
+                                        {dynamicStudents.length === 0 ? (
+                                            <option value="" disabled>No students found for selected Branch/Batch filters</option>
+                                        ) : (
+                                            dynamicStudents.map(st => (
+                                                <option key={st.studentId} value={st.studentId}>
+                                                    {st.firstName} {st.lastName} {st.branchName ? `[${st.branchName}]` : ''} {st.batches ? `(${Array.from(new Set(st.batches.split(/,\s*/).map(b => b.trim()).filter(Boolean))).join(', ')})` : ''}
+                                                </option>
+                                            ))
+                                        )}
                                     </select>
                                 </div>
 
@@ -2017,9 +2140,9 @@ export default function AttendancePage() {
                                             <div style={{ padding: '10px 16px', borderRadius: '10px', background: 'var(--cs-surface-dim)', textAlign: 'center' }}>
                                                 <div style={{
                                                     fontSize: '22px', fontWeight: 800,
-                                                    color: studentData.summary.rate >= 80 ? '#10B981' : studentData.summary.rate >= 60 ? '#F59E0B' : '#EF4444'
+                                                    color: studentData.summary.total === 0 ? 'var(--cs-text-muted)' : rateColor(studentData.summary.rate)
                                                 }}>
-                                                    {studentData.summary.rate}%
+                                                    {studentData.summary.total > 0 ? `${studentData.summary.rate}%` : '—'}
                                                 </div>
                                                 <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', fontWeight: 600 }}>Attendance Rate</div>
                                             </div>
@@ -2381,40 +2504,7 @@ export default function AttendancePage() {
                 {viewMode === 'matrix' && (
                     <div className="cs-card">
                         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Calendar size={18} color="var(--cs-primary)" />
-                                <span style={{ fontSize: '15px', fontWeight: 700 }}>Batch:</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                {filteredBatches.length === 0 ? (
-                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontStyle: 'italic' }}>
-                                        No batches in this branch
-                                    </span>
-                                ) : (
-                                    filteredBatches.map(b => (
-                                        <button
-                                            key={b.batchId}
-                                            onClick={() => { setSelectedBatchId(b.batchId); setMatrixEdits({}); setMessage(null); }}
-                                            style={{
-                                                padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                                                cursor: 'pointer', border: '1px solid',
-                                                borderColor: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.4)' : 'var(--cs-border)',
-                                                background: activeBatchId === b.batchId ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
-                                                color: activeBatchId === b.batchId ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
-                                                transition: 'all 0.2s',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '5px'
-                                            }}
-                                        >
-                                            <span>{b.name}</span>
-                                            {selectedBranchId === 'all' && b.branchName && (
-                                                <span style={{ fontSize: '10px', opacity: 0.7 }}>• {b.branchName}</span>
-                                            )}
-                                        </button>
-                                    ))
-                                )}
-                            </div>
+                            {attendanceFilters()}
 
                             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button className="btn-ghost" style={{ padding: '6px' }} onClick={() => { setWeekOffset(w => w - 2); setMatrixEdits({}); }}><ChevronLeft size={16} /></button>

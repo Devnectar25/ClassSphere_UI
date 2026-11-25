@@ -8,6 +8,8 @@ import { Search, CreditCard, CheckCircle, Clock, XCircle, AlertCircle, Download,
 import { api, useApi, formatMoney, formatDate, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
+import { downloadInvoicePdf } from '@/lib/invoice-pdf';
+import type { DocAcademy, DocCourse } from '@/lib/fee-documents';
 
 interface PaymentTerm {
     paymentId: string;
@@ -20,6 +22,7 @@ interface PaymentTerm {
 interface Invoice {
     invoiceId: string;
     invoiceNumber: string;
+    studentId: string;
     studentName: string;
     batches: string | null;
     designation: string;
@@ -75,7 +78,7 @@ const PAGE_SIZE = 7;
 export default function InvoicesPage() {
     const session = useSession();
     const canCollect = can(session, 'billing.write');
-    const { workspace, currency } = useWorkspace();
+    const { currency } = useWorkspace();
     const { data, error, reload } = useApi<Ledger>('/invoices');
     const [search, setSearch] = useState('');
     const [activeTab, setActiveTab] = useState('pending');
@@ -127,522 +130,19 @@ export default function InvoicesPage() {
         const invId = inv.invoiceId || inv.invoiceNumber;
         setDownloadingId(invId);
         try {
-            // Load jsPDF UMD build to avoid Turbopack optional ESM dependency resolution (canvg / html2canvas)
-            // @ts-expect-error - jsPDF UMD bundle
-            const jspdfModule = await import('jspdf/dist/jspdf.umd.min.js');
-            const jsPDFConstructor = jspdfModule.jsPDF || (jspdfModule as any).default?.jsPDF || (jspdfModule as any).default;
-            if (!jsPDFConstructor) {
-                throw new Error('PDF generator library (jsPDF) could not be loaded.');
-            }
-            const doc = new jsPDFConstructor({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
+            // The PDF is built from the student's billing record, like the Finance and Guardian invoices
+            const record = await api<{
+                academy: DocAcademy; courses: DocCourse[]; guardians: Array<{ fullName: string }>;
+                student: { fullName: string; enrollmentNumber: string; branchName: string | null };
+            }>(`/payments?studentId=${encodeURIComponent(inv.studentId)}`);
+            const course = record.courses.find(c => c.installments.some(i => i.invoiceId === inv.invoiceId));
+            const installment = course?.installments.find(i => i.invoiceId === inv.invoiceId);
+            if (!course || !installment) throw new Error('This invoice is void or no longer part of the billing record.');
+            await downloadInvoicePdf(installment, course, {
+                academy: record.academy, studentName: record.student.fullName, studentCode: record.student.enrollmentNumber,
+                branchName: record.student.branchName, guardianName: record.guardians[0]?.fullName ?? null, currency,
             });
-
-            const pageWidth = 210;
-            const margin = 16;
-            const contentWidth = pageWidth - (margin * 2); // 178mm
-
-            const orgName = workspace?.organization?.name || 'devnectar';
-            const orgType = workspace?.organization?.academyType || 'Tuition Academy';
-            const orgEmail = workspace?.organization?.settings?.email || 'dev@nectar.com';
-            const orgPhone = workspace?.organization?.settings?.phone || '+91 98765 43210';
-            const orgAddress = workspace?.organization?.settings?.address || 'Main Campus';
-
-            const studentName = inv.studentName || 'Student';
-            const invoiceNumber = inv.invoiceNumber || 'INV-0000';
-            const feeDesignation = inv.designation || 'Tuition Fee';
-
-            const paidAmt = Number(inv.paidAmount !== undefined ? inv.paidAmount : Math.max(0, inv.totalAmount - (inv.balanceAmount || 0)));
-            const balanceAmt = Number(inv.balanceAmount || 0);
-            const totalAmt = Number(inv.totalAmount || 0);
-
-            const isPaid = inv.status === 'paid' || (balanceAmt === 0 && totalAmt > 0);
-            const isOverdue = inv.status === 'overdue';
-            const isPartiallyPaid = balanceAmt > 0 && paidAmt > 0;
-
-            const fmtMoney = (v: number) => 'Rs. ' + Number(v || 0).toLocaleString('en-IN');
-            const fmtDate = (d: string | null) => {
-                if (!d) return '—';
-                try {
-                    return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-                } catch {
-                    return String(d);
-                }
-            };
-
-            const dueDateStr = fmtDate(inv.dueDate);
-            const paidDateStr = inv.paidOn ? fmtDate(inv.paidOn) : (isPaid ? dueDateStr : '—');
-            const totalFormatted = fmtMoney(totalAmt);
-            const balanceFormatted = fmtMoney(balanceAmt);
-            const paidFormatted = fmtMoney(paidAmt);
-
-            // Cohesive Color Palette
-            const primaryColor: [number, number, number] = [108, 99, 255]; // #6C63FF
-            const darkText: [number, number, number] = [15, 23, 42]; // #0f172a
-            const mutedText: [number, number, number] = [100, 116, 139]; // #64748b
-            const lightBg: [number, number, number] = [248, 250, 252]; // #f8fafc
-            const borderColor: [number, number, number] = [226, 232, 240]; // #e2e8f0
-
-            const statusColor: [number, number, number] = isPaid ? [16, 185, 129] : isPartiallyPaid ? [99, 102, 241] : isOverdue ? [239, 68, 68] : [245, 158, 11];
-            const statusBg: [number, number, number] = isPaid ? [220, 252, 231] : isPartiallyPaid ? [238, 242, 255] : isOverdue ? [254, 226, 226] : [254, 243, 199];
-            const statusText: [number, number, number] = isPaid ? [22, 101, 52] : isPartiallyPaid ? [67, 56, 202] : isOverdue ? [153, 27, 27] : [146, 64, 14];
-            const statusTitle = isPaid ? 'PAID IN FULL' : isPartiallyPaid ? 'PARTIALLY PAID' : isOverdue ? 'OVERDUE' : 'PENDING';
-
-            // 1. Top Decorative Brand Bar
-            doc.setFillColor(...primaryColor);
-            doc.rect(0, 0, pageWidth, 5, 'F');
-
-            // 2. Header Section
-            let y = 16;
-
-            // Org Logo Avatar
-            doc.setFillColor(...primaryColor);
-            doc.roundedRect(margin, y, 13, 13, 3, 3, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(16);
-            doc.text(orgName.charAt(0) || 'C', margin + 3.8, y + 9.5);
-
-            // Organization Info
-            doc.setTextColor(...darkText);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(13.5);
-            doc.text(orgName, margin + 17, y + 4.5);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(...mutedText);
-            doc.text(`${orgType} • ${orgEmail} • ${orgPhone}`, margin + 17, y + 9);
-            doc.text(orgAddress, margin + 17, y + 13);
-
-            // Right Header: Invoice Title & Status
-            doc.setTextColor(...primaryColor);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(15);
-            doc.text(isPaid ? 'RECEIPT & TAX INVOICE' : 'FEE STATEMENT & INVOICE', pageWidth - margin, y + 4, { align: 'right' });
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(10.5);
-            doc.setTextColor(...darkText);
-            doc.text(invoiceNumber, pageWidth - margin, y + 9.5, { align: 'right' });
-
-            // Status Pill
-            const pillW = isPartiallyPaid ? 30 : isPaid ? 26 : 22;
-            doc.setFillColor(...statusBg);
-            doc.roundedRect(pageWidth - margin - pillW, y + 12, pillW, 6, 2, 2, 'F');
-            doc.setTextColor(...statusText);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.text(statusTitle, pageWidth - margin - (pillW / 2), y + 16.2, { align: 'center' });
-
-            // Header Divider
-            y = 35;
-            doc.setDrawColor(...borderColor);
-            doc.setLineWidth(0.4);
-            doc.line(margin, y, pageWidth - margin, y);
-
-            // 3. Information Cards: Billed To (Left) & Invoice Info (Right)
-            y = 40;
-            const cardWidth = (contentWidth - 6) / 2; // 86mm
-            const cardHeight = 36;
-
-            // Billed To Card
-            doc.setFillColor(...lightBg);
-            doc.roundedRect(margin, y, cardWidth, cardHeight, 3, 3, 'F');
-            doc.setDrawColor(...borderColor);
-            doc.setLineWidth(0.3);
-            doc.roundedRect(margin, y, cardWidth, cardHeight, 3, 3, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor(...mutedText);
-            doc.text('BILLED TO (STUDENT)', margin + 6, y + 6);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(10.5);
-            doc.setTextColor(...darkText);
-            doc.text(studentName, margin + 6, y + 12);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(...mutedText);
-            const batchLine = inv.batches ? `Batch: ${inv.batches}` : 'Batch: General Enrollment';
-            const batchLines = doc.splitTextToSize(batchLine, cardWidth - 12);
-            doc.text(batchLines[0], margin + 6, y + 17.5);
-
-            const feeLine = `Fee Structure: ${feeDesignation}`;
-            const feeLines = doc.splitTextToSize(feeLine, cardWidth - 12);
-            doc.text(feeLines[0], margin + 6, y + 22.5);
-            if (feeLines[1]) {
-                doc.text(feeLines[1], margin + 6, y + 27);
-            }
-
-            // Build Term Rows dynamically from payments or balances
-            const paymentList = (inv.payments && inv.payments.length > 0) ? inv.payments : [];
-            const termRows: Array<{
-                term: string;
-                date: string;
-                mode: string;
-                receipt: string;
-                amount: number;
-                status: 'PAID' | 'OVERDUE' | 'DUE' | 'UPCOMING';
-            }> = [];
-
-            if (paymentList.length > 0) {
-                paymentList.forEach((p, idx) => {
-                    termRows.push({
-                        term: `Term ${idx + 1}`,
-                        date: fmtDate(p.createdAt),
-                        mode: p.paymentMethod || 'Online/Cash',
-                        receipt: p.receiptNumber || '—',
-                        amount: p.amount,
-                        status: 'PAID'
-                    });
-                });
-
-                if (balanceAmt > 0) {
-                    termRows.push({
-                        term: `Term ${paymentList.length + 1} (Balance)`,
-                        date: dueDateStr,
-                        mode: 'Pending Collection',
-                        receipt: '—',
-                        amount: balanceAmt,
-                        status: isOverdue ? 'OVERDUE' : 'DUE'
-                    });
-                }
-            } else if (paidAmt > 0 && balanceAmt > 0) {
-                termRows.push({
-                    term: 'Term 1 (First Installment)',
-                    date: paidDateStr,
-                    mode: 'Recorded Payment',
-                    receipt: 'RCP-TERM-01',
-                    amount: paidAmt,
-                    status: 'PAID'
-                });
-                termRows.push({
-                    term: 'Term 2 (Remaining Balance)',
-                    date: dueDateStr,
-                    mode: 'Pending Collection',
-                    receipt: '—',
-                    amount: balanceAmt,
-                    status: isOverdue ? 'OVERDUE' : 'DUE'
-                });
-            } else if (isPaid) {
-                termRows.push({
-                    term: 'Term 1 (Full Settle)',
-                    date: paidDateStr,
-                    mode: 'Paid in Full',
-                    receipt: 'RCP-PAID-FULL',
-                    amount: totalAmt,
-                    status: 'PAID'
-                });
-            } else {
-                if (totalAmt > 600) {
-                    const t1 = Math.round(totalAmt / 2);
-                    termRows.push({
-                        term: 'Term 1 (Installment 1 of 2)',
-                        date: dueDateStr,
-                        mode: 'Pending',
-                        receipt: '—',
-                        amount: t1,
-                        status: isOverdue ? 'OVERDUE' : 'DUE'
-                    });
-                    termRows.push({
-                        term: 'Term 2 (Installment 2 of 2)',
-                        date: 'Subsequent Term',
-                        mode: 'Scheduled',
-                        receipt: '—',
-                        amount: totalAmt - t1,
-                        status: 'UPCOMING'
-                    });
-                } else {
-                    termRows.push({
-                        term: 'Term 1 (Single Settle)',
-                        date: dueDateStr,
-                        mode: 'Pending',
-                        receipt: '—',
-                        amount: totalAmt,
-                        status: isOverdue ? 'OVERDUE' : 'DUE'
-                    });
-                }
-            }
-
-            // Invoice Info Card
-            const rightCardX = margin + cardWidth + 6;
-            doc.setFillColor(...lightBg);
-            doc.roundedRect(rightCardX, y, cardWidth, cardHeight, 3, 3, 'F');
-            doc.setDrawColor(...borderColor);
-            doc.roundedRect(rightCardX, y, cardWidth, cardHeight, 3, 3, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor(...mutedText);
-            doc.text('INVOICE INFORMATION', rightCardX + 6, y + 6);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(...darkText);
-
-            doc.text('Invoice Number: ', rightCardX + 6, y + 12);
-            doc.setFont('helvetica', 'bold');
-            doc.text(invoiceNumber, rightCardX + 32, y + 12);
-
-            doc.setFont('helvetica', 'normal');
-            doc.text('Due Date: ', rightCardX + 6, y + 17.5);
-            doc.text(dueDateStr, rightCardX + 32, y + 17.5);
-
-            const paidTermsCount = termRows.filter(r => r.status === 'PAID').length;
-            doc.text('Payment Plan: ', rightCardX + 6, y + 23);
-            doc.setTextColor(...statusColor);
-            doc.setFont('helvetica', 'bold');
-            doc.text(`${paidTermsCount} of ${termRows.length} Terms Settled`, rightCardX + 32, y + 23);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(...darkText);
-            doc.text('Payment Status: ', rightCardX + 6, y + 28.5);
-            doc.setTextColor(...statusColor);
-            doc.setFont('helvetica', 'bold');
-            doc.text(statusTitle, rightCardX + 32, y + 28.5);
-
-            // 4. Academic Program / Course Description Row
-            y = 81;
-            doc.setFillColor(...lightBg);
-            doc.rect(margin, y, contentWidth, 7, 'F');
-            doc.setDrawColor(...borderColor);
-            doc.setLineWidth(0.3);
-            doc.rect(margin, y, contentWidth, 7, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(8);
-            doc.setTextColor(...mutedText);
-            doc.text('ACADEMIC PROGRAM / FEE STRUCTURE', margin + 6, y + 4.8);
-            doc.text('TOTAL COURSE FEE', pageWidth - margin - 6, y + 4.8, { align: 'right' });
-
-            y += 7;
-            const courseRowH = 14;
-            doc.rect(margin, y, contentWidth, courseRowH, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.setTextColor(...darkText);
-            doc.text(feeDesignation, margin + 6, y + 5.5);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7.5);
-            doc.setTextColor(...mutedText);
-            doc.text(`${inv.batches || 'Enrolled Academic Program'} • Comprehensive Tuition & Studio Fee`, margin + 6, y + 10);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(10.5);
-            doc.setTextColor(...darkText);
-            doc.text(totalFormatted, pageWidth - margin - 6, y + 7.5, { align: 'right' });
-
-            // 5. Payment Terms & Installments Breakdown Table
-            y += courseRowH + 8;
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(9.5);
-            doc.setTextColor(...primaryColor);
-            doc.text('PAYMENT TERMS & INSTALLMENTS BREAKDOWN', margin, y);
-            y += 4;
-
-            // Proportional column coordinates (Total width: 178mm, with 0 overlap)
-            const cTerm = margin + 5;           // 21mm (Term Label)
-            const cDate = margin + 46;          // 62mm (Date)
-            const cMode = margin + 74;          // 90mm (Payment Mode)
-            const cReceipt = margin + 102;      // 118mm (Receipt No.)
-            const cAmountRight = margin + 152;  // 168mm (AMOUNT - RIGHT ALIGNED)
-            const cStatusCenter = margin + 165; // 181mm (STATUS PILL - CENTERED)
-
-            // Table Header
-            doc.setFillColor(...lightBg);
-            doc.rect(margin, y, contentWidth, 7, 'F');
-            doc.setDrawColor(...borderColor);
-            doc.rect(margin, y, contentWidth, 7, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor(...mutedText);
-
-            doc.text('INSTALLMENT / TERM', cTerm, y + 4.8);
-            doc.text('DATE', cDate, y + 4.8);
-            doc.text('PAYMENT MODE', cMode, y + 4.8);
-            doc.text('RECEIPT NO.', cReceipt, y + 4.8);
-            doc.text('AMOUNT', cAmountRight, y + 4.8, { align: 'right' });
-            doc.text('STATUS', cStatusCenter + 6, y + 4.8, { align: 'center' });
-
-            y += 7;
-
-            // Render Term Rows
-            termRows.forEach((tr, i) => {
-                const trHeight = 9;
-                doc.setFillColor(i % 2 === 0 ? 255 : 250, i % 2 === 0 ? 255 : 250, i % 2 === 0 ? 255 : 252);
-                doc.rect(margin, y, contentWidth, trHeight, 'F');
-                doc.setDrawColor(...borderColor);
-                doc.rect(margin, y, contentWidth, trHeight, 'S');
-
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(8.5);
-                doc.setTextColor(...darkText);
-                doc.text(tr.term, cTerm, y + 5.8);
-
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(7.5);
-                doc.setTextColor(...mutedText);
-                doc.text(tr.date, cDate, y + 5.8);
-                doc.text(tr.mode, cMode, y + 5.8);
-
-                doc.setFont('helvetica', 'bold');
-                doc.setTextColor(51, 65, 85);
-                doc.text(tr.receipt, cReceipt, y + 5.8);
-
-                // Amount: Cleanly right-aligned with 13mm buffer before status pill
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(8.5);
-                doc.setTextColor(...darkText);
-                doc.text(fmtMoney(tr.amount), cAmountRight, y + 5.8, { align: 'right' });
-
-                // Status pill badge centered in its dedicated space
-                const tColor: [number, number, number] = tr.status === 'PAID' ? [16, 185, 129] : tr.status === 'OVERDUE' ? [239, 68, 68] : tr.status === 'DUE' ? [245, 158, 11] : [148, 163, 184];
-                const tBg: [number, number, number] = tr.status === 'PAID' ? [220, 252, 231] : tr.status === 'OVERDUE' ? [254, 226, 226] : tr.status === 'DUE' ? [254, 243, 199] : [241, 245, 249];
-                const tText: [number, number, number] = tr.status === 'PAID' ? [22, 101, 52] : tr.status === 'OVERDUE' ? [153, 27, 27] : tr.status === 'DUE' ? [146, 64, 14] : [71, 85, 105];
-
-                const sPillW = 16;
-                doc.setFillColor(...tBg);
-                doc.roundedRect(cStatusCenter - 2, y + 2.2, sPillW, 4.8, 1.2, 1.2, 'F');
-                doc.setTextColor(...tText);
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(6.8);
-                doc.text(tr.status, cStatusCenter + 6, y + 5.6, { align: 'center' });
-
-                y += trHeight;
-            });
-
-            // 6. Summary Box (Right Aligned)
-            y += 8;
-            const summaryWidth = 84;
-            const summaryX = pageWidth - margin - summaryWidth;
-
-            doc.setFillColor(...lightBg);
-            doc.roundedRect(summaryX, y, summaryWidth, 29, 2, 2, 'F');
-            doc.setDrawColor(...borderColor);
-            doc.roundedRect(summaryX, y, summaryWidth, 29, 2, 2, 'S');
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(...mutedText);
-            doc.text('Total Course Fee:', summaryX + 6, y + 6.5);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...darkText);
-            doc.text(totalFormatted, pageWidth - margin - 6, y + 6.5, { align: 'right' });
-
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(...mutedText);
-            doc.text('Total Paid Across Terms:', summaryX + 6, y + 13);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(16, 185, 129);
-            doc.text(paidFormatted, pageWidth - margin - 6, y + 13, { align: 'right' });
-
-            doc.setDrawColor(...borderColor);
-            doc.line(summaryX + 6, y + 17.5, pageWidth - margin - 6, y + 17.5);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.setTextColor(...darkText);
-            doc.text('Remaining Balance Due:', summaryX + 6, y + 24);
-            doc.setTextColor(balanceAmt > 0 ? 239 : 16, balanceAmt > 0 ? 68 : 185, balanceAmt > 0 ? 68 : 129);
-            doc.text(balanceFormatted, pageWidth - margin - 6, y + 24, { align: 'right' });
-
-            // 7. Official Certification & Stamp Box (Properly Wrapped to Avoid Collision)
-            y += 37;
-            const certBoxH = 20;
-            doc.setFillColor(...statusBg);
-            doc.roundedRect(margin, y, contentWidth, certBoxH, 2.5, 2.5, 'F');
-            doc.setDrawColor(...statusColor);
-            doc.setLineWidth(0.4);
-            doc.roundedRect(margin, y, contentWidth, certBoxH, 2.5, 2.5, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(8.5);
-            doc.setTextColor(...statusText);
-            const certTitle = isPaid
-                ? 'Official Payment Receipt & Full Settlement Certification'
-                : isPartiallyPaid
-                ? 'Official Partial Payment Statement & Term Receipt'
-                : 'Official Fee Notice & Term Invoice';
-            doc.text(certTitle, margin + 6, y + 6.5);
-
-            // Text wrapping with max width so it NEVER collides with the right-hand stamp
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7.5);
-            doc.setTextColor(...statusText);
-            const certDesc = isPaid
-                ? `This document certifies that full fee settlement of ${totalFormatted} across all scheduled terms has been completed and verified.`
-                : isPartiallyPaid
-                ? `This document certifies payment of ${paidFormatted} received to date across terms. Balance of ${balanceFormatted} remains due for subsequent terms.`
-                : `This document certifies fee billing of ${totalFormatted} (Balance Due: ${balanceFormatted}) for student ${studentName}.`;
-
-            const maxTextWidth = contentWidth - 44; // leaves 44mm for stamp on the right
-            const descLines = doc.splitTextToSize(certDesc, maxTextWidth);
-            doc.text(descLines[0], margin + 6, y + 12);
-            if (descLines[1]) {
-                doc.text(descLines[1], margin + 6, y + 16);
-            }
-
-            // Stamp Badge on Right
-            const stampW = isPartiallyPaid ? 30 : 24;
-            doc.setFillColor(...statusColor);
-            doc.roundedRect(pageWidth - margin - stampW - 5, y + 5.5, stampW, 9, 1.5, 1.5, 'F');
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor(255, 255, 255);
-            doc.text(statusTitle, pageWidth - margin - 5 - (stampW / 2), y + 11.2, { align: 'center' });
-
-            // 8. Footer
-            y = 270;
-            doc.setDrawColor(...borderColor);
-            doc.setLineWidth(0.3);
-            doc.line(margin, y, pageWidth - margin, y);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7.5);
-            doc.setTextColor(...mutedText);
-            doc.text(`Thank you for being part of ${orgName}. This is a computer-generated tax invoice and requires no physical signature.`, pageWidth / 2, y + 6, { align: 'center' });
-            doc.text(`For accounts & payment inquiries, contact ${orgEmail} • ${orgPhone}`, pageWidth / 2, y + 10.5, { align: 'center' });
-
-            // Robust multi-method download execution
-            const fileName = `Invoice-${invoiceNumber}.pdf`;
-            let downloaded = false;
-
-            if (typeof window !== 'undefined' && window.URL && window.URL.createObjectURL) {
-                try {
-                    const blob = doc.output('blob');
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.style.display = 'none';
-                    link.href = blobUrl;
-                    link.setAttribute('download', fileName);
-                    document.body.appendChild(link);
-                    link.click();
-                    setTimeout(() => {
-                        try {
-                            document.body.removeChild(link);
-                            window.URL.revokeObjectURL(blobUrl);
-                        } catch {}
-                    }, 1500);
-                    downloaded = true;
-                } catch (blobErr) {
-                    console.warn('Direct blob anchor download failed, falling back to doc.save:', blobErr);
-                }
-            }
-
-            if (!downloaded) {
-                doc.save(fileName);
-            }
-
-            setNotice(`Invoice ${invoiceNumber} downloaded successfully.`);
+            setNotice(`Invoice ${inv.invoiceNumber} downloaded successfully.`);
         } catch (err) {
             console.error('Invoice download error:', err);
             const msg = (err as Error).message || 'Failed to generate and download invoice';
@@ -678,42 +178,12 @@ export default function InvoicesPage() {
         if (!collecting) return;
         setBusy(true);
         try {
-            const res = await api<{
-                paymentId?: string;
-                receiptNumber: string;
-                amountPaid?: number;
-                remainingBalance?: number;
-                invoiceStatus?: string;
-            }>('/payments', {
+            const res = await api<{ message: string }>('/payments', {
                 method: 'POST',
                 headers: { 'Idempotency-Key': crypto.randomUUID() },
                 body: JSON.stringify({ invoiceId: collecting.invoiceId, amount: Number(payment.amount), paymentMethod: payment.paymentMethod }),
             });
-
-            const paidAmt = Number(payment.amount);
-            const newBal = Math.max(0, collecting.balanceAmount - paidAmt);
-            const isFull = newBal === 0;
-
-            const existingPayments = collecting.payments || [];
-            const newPaymentEntry: PaymentTerm = {
-                paymentId: res.paymentId || crypto.randomUUID(),
-                amount: paidAmt,
-                paymentMethod: payment.paymentMethod,
-                receiptNumber: res.receiptNumber,
-                createdAt: new Date().toISOString()
-            };
-
-            const updatedInv: Invoice = {
-                ...collecting,
-                status: isFull ? 'paid' : 'partially_paid',
-                balanceAmount: newBal,
-                paidAmount: (collecting.paidAmount || (collecting.totalAmount - collecting.balanceAmount)) + paidAmt,
-                paidOn: new Date().toISOString(),
-                payments: [...existingPayments, newPaymentEntry]
-            };
-
-            const termNo = existingPayments.length + 1;
-            setNotice(`Payment of ${money(paidAmt)} recorded for ${collecting.invoiceNumber} (Term ${termNo}). Receipt ${res.receiptNumber}.`);
+            setNotice(`${collecting.invoiceNumber}: ${res.message}`);
             setCollecting(null);
             reload();
         } catch (err) {
@@ -1121,9 +591,9 @@ export default function InvoicesPage() {
                                                                 <span style={{ color: 'var(--cs-text-muted)', fontSize: '13px' }}>—</span>
                                                             ) : (
                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                                                                    {inv.batches.split(', ').map(b => (
+                                                                    {Array.from(new Set(inv.batches.split(/,\s*/).map(b => b.trim()).filter(Boolean))).map((b, idx) => (
                                                                         <span
-                                                                            key={b}
+                                                                            key={`${b}-${idx}`}
                                                                             style={{
                                                                                 display: 'inline-flex',
                                                                                 alignItems: 'center',

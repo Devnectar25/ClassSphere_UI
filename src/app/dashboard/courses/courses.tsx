@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil, LayoutGrid, List, Trash2, AlertTriangle, Building2 } from 'lucide-react';
+import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil, LayoutGrid, List, Trash2, AlertTriangle, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, useApi, formatMoney } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -22,6 +22,7 @@ interface Course {
     isActive: boolean;
     branchId?: string | null;
     branchName?: string;
+    startDate?: string | null;
     batchCount: number;
     studentCount: number;
     subjects: Array<{ subjectId: string; name: string }>;
@@ -41,7 +42,7 @@ interface BatchItem {
     schedules: Array<{ day: string; startTime: string; endTime: string }>;
 }
 
-const emptyCourse = { title: '', code: '', category: '', level: '', branchId: '', durationMonths: '12', tuitionAmount: '', billingPeriod: 'monthly', isActive: true, subjects: [] as string[] };
+const emptyCourse = { title: '', code: '', category: '', level: '', branchId: '', startDate: '', durationMonths: '12', tuitionAmount: '', billingPeriod: 'monthly', isActive: true, subjects: [] as string[] };
 
 export default function CoursesPage() {
     const session = useSession();
@@ -58,6 +59,8 @@ export default function CoursesPage() {
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'draft'>('all');
     const [branchFilter, setBranchFilter] = useState<string>('all');
     const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+    const PAGE_SIZE = 7;
+    const [offset, setOffset] = useState(0);
     const canManage = can(session, 'courses.write');
 
     const openCreateCourse = () => {
@@ -80,6 +83,7 @@ export default function CoursesPage() {
         category: '',
         level: '',
         branchId: '',
+        startDate: '',
         durationMonths: '12',
         tuitionAmount: '',
         billingPeriod: 'monthly',
@@ -164,6 +168,7 @@ export default function CoursesPage() {
                     code: cleanCode,
                     level: form.level ? form.level.trim() : null,
                     branchId: form.branchId || null,
+                    startDate: form.startDate ? form.startDate : null,
                     isActive: form.isActive
                 })
             });
@@ -189,6 +194,7 @@ export default function CoursesPage() {
             category: course.category,
             level: course.level || '',
             branchId: course.branchId || '',
+            startDate: course.startDate ? course.startDate.split('T')[0] : '',
             durationMonths: course.durationMonths ? String(course.durationMonths) : '12',
             tuitionAmount: String(course.tuitionAmount),
             billingPeriod: course.billingPeriod || 'monthly',
@@ -228,6 +234,7 @@ export default function CoursesPage() {
                     code: cleanCode,
                     level: editForm.level ? editForm.level.trim() : null,
                     branchId: editForm.branchId || null,
+                    startDate: editForm.startDate ? editForm.startDate : null,
                     durationMonths: editForm.durationMonths ? Number(editForm.durationMonths) : null,
                     tuitionAmount: Number(editForm.tuitionAmount)
                 })
@@ -273,27 +280,43 @@ export default function CoursesPage() {
         );
     }) ?? [];
 
+    const totalPages = Math.ceil(filteredCourses.length / PAGE_SIZE) || 1;
+    const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+    const paginatedCourses = filteredCourses.slice(offset, offset + PAGE_SIZE);
+
+    const getVisiblePages = (curr: number, total: number): (number | string)[] => {
+        if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+        const pages: (number | string)[] = [1];
+        if (curr > 3) pages.push('...');
+        const start = Math.max(2, curr - 1);
+        const end = Math.min(total - 1, curr + 1);
+        for (let i = start; i <= end; i++) pages.push(i);
+        if (curr < total - 2) pages.push('...');
+        pages.push(total);
+        return pages;
+    };
+
     return (
         <>
             <Topbar title="Courses" subtitle="Course catalogue with subjects, tuition and enrollment" />
-            <div className="page-body" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="page-body" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {/* Courses Toolbar */}
                 <div className="cs-card" style={{
-                    padding: '16px 24px',
+                    padding: '10px 18px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    gap: '16px',
+                    gap: '12px',
                     flexWrap: 'wrap',
                     width: '100%',
                     boxSizing: 'border-box'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                         <div style={{
                             display: 'flex', alignItems: 'center', gap: '8px',
                             background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)',
                             borderRadius: '10px', padding: '0 12px', height: '34px', boxSizing: 'border-box',
-                            width: '300px'
+                            width: '260px'
                         }}>
                             <Search size={14} color="var(--cs-text-muted)" style={{ flexShrink: 0 }} />
                             <input
@@ -304,12 +327,18 @@ export default function CoursesPage() {
                                     color: 'var(--cs-text-primary)'
                                 }}
                                 value={search}
-                                onChange={e => setSearch(e.target.value)}
+                                onChange={e => {
+                                    setSearch(e.target.value);
+                                    setOffset(0);
+                                }}
                             />
                             {search && (
                                 <button
                                     type="button"
-                                    onClick={() => setSearch('')}
+                                    onClick={() => {
+                                        setSearch('');
+                                        setOffset(0);
+                                    }}
                                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--cs-text-muted)' }}
                                 >
                                     <X size={14} />
@@ -322,7 +351,10 @@ export default function CoursesPage() {
                                 <button
                                     key={s}
                                     type="button"
-                                    onClick={() => setStatusFilter(s)}
+                                    onClick={() => {
+                                        setStatusFilter(s);
+                                        setOffset(0);
+                                    }}
                                     style={{
                                         border: 'none',
                                         background: statusFilter === s ? 'rgba(108, 99, 255, 0.15)' : 'none',
@@ -342,75 +374,77 @@ export default function CoursesPage() {
                         </div>
 
                         {/* Branch filter */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cs-text-secondary)', whiteSpace: 'nowrap' }}>
-                                To view courses by branch, please select a branch:
-                            </span>
-                            <div
-                                style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    background: 'var(--cs-surface-2)',
-                                    border: `1px solid ${branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
-                                    borderRadius: '10px',
-                                    padding: '0 12px',
-                                    height: '34px',
-                                    boxSizing: 'border-box',
-                                    transition: 'all 0.15s ease',
-                                    boxShadow: branchFilter !== 'all' ? '0 0 0 2px rgba(108, 99, 255, 0.12)' : 'none'
+                        <div
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: 'var(--cs-surface-2)',
+                                border: `1px solid ${branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
+                                borderRadius: '10px',
+                                padding: '0 10px',
+                                height: '34px',
+                                boxSizing: 'border-box',
+                                transition: 'all 0.15s ease',
+                                boxShadow: branchFilter !== 'all' ? '0 0 0 2px rgba(108, 99, 255, 0.12)' : 'none'
+                            }}
+                            title="Filter by Branch"
+                        >
+                            <Building2 size={13} color={branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} style={{ flexShrink: 0 }} />
+                            <select
+                                value={branchFilter}
+                                onChange={e => {
+                                    setBranchFilter(e.target.value);
+                                    setOffset(0);
                                 }}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    outline: 'none',
+                                    fontSize: '12px',
+                                    fontWeight: branchFilter !== 'all' ? 600 : 500,
+                                    color: branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
+                                    cursor: 'pointer',
+                                    padding: '0 4px 0 0'
+                                }}
+                                aria-label="Filter courses by branch"
                             >
-                                <Building2 size={14} color={branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} style={{ flexShrink: 0 }} />
-                                <select
-                                    value={branchFilter}
-                                    onChange={e => setBranchFilter(e.target.value)}
-                                    style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        outline: 'none',
-                                        fontSize: '12px',
-                                        fontWeight: branchFilter !== 'all' ? 600 : 500,
-                                        color: branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
-                                        cursor: 'pointer',
-                                        padding: '0 4px 0 0'
+                                <option value="all">All Branches</option>
+                                <option value="academy_wide">Global Courses (Academy-wide only)</option>
+                                {branches.map(b => (
+                                    <option key={b.branchId} value={b.branchId}>
+                                        {b.name} Branch
+                                    </option>
+                                ))}
+                            </select>
+                            {branchFilter !== 'all' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setBranchFilter('all');
+                                        setOffset(0);
                                     }}
-                                    aria-label="Filter courses by branch"
+                                    style={{
+                                        background: 'rgba(108, 99, 255, 0.12)',
+                                        border: 'none',
+                                        borderRadius: '50%',
+                                        width: '16px',
+                                        height: '16px',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'var(--cs-primary)',
+                                        marginLeft: '2px',
+                                        flexShrink: 0
+                                    }}
+                                    title="Reset filter to All Branches"
+                                    aria-label="Reset filter to All Branches"
                                 >
-                                    <option value="all">All Branches</option>
-                                    <option value="academy_wide">Global Courses (Academy-wide only)</option>
-                                    {branches.map(b => (
-                                        <option key={b.branchId} value={b.branchId}>
-                                            {b.name} Branch
-                                        </option>
-                                    ))}
-                                </select>
-                                {branchFilter !== 'all' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setBranchFilter('all')}
-                                        style={{
-                                            background: 'rgba(108, 99, 255, 0.12)',
-                                            border: 'none',
-                                            borderRadius: '50%',
-                                            width: '18px',
-                                            height: '18px',
-                                            cursor: 'pointer',
-                                            padding: 0,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: 'var(--cs-primary)',
-                                            marginLeft: '2px',
-                                            flexShrink: 0
-                                        }}
-                                        title="Reset filter to All Branches"
-                                        aria-label="Reset filter to All Branches"
-                                    >
-                                        <X size={11} />
-                                    </button>
-                                )}
-                            </div>
+                                    <X size={10} />
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -493,24 +527,24 @@ export default function CoursesPage() {
                             <table className="cs-table" style={{ width: '100%' }}>
                                 <thead>
                                     <tr>
-                                        <th>Course</th>
-                                        <th>Code</th>
-                                        <th>Category</th>
-                                        <th>Level</th>
-                                        <th>Branch</th>
-                                        <th>Fee</th>
-                                        <th>Billing</th>
-                                        <th>Duration</th>
-                                        <th>Batches</th>
-                                        <th>Status</th>
-                                        <th style={{ width: '80px', textAlign: 'center' }}>Action</th>
+                                        <th style={{ padding: '8px 12px' }}>Course</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Code</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Category</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Level</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Branch</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Fee</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Billing</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Duration</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Batches</th>
+                                        <th style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Status</th>
+                                        <th style={{ width: '76px', textAlign: 'center', padding: '8px 10px', whiteSpace: 'nowrap' }}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredCourses.length === 0 ? (
                                         <tr>
-                                            <td colSpan={11} style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--cs-text-muted)' }}>
-                                                <div style={{ fontSize: '14px', marginBottom: '14px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                            <td colSpan={11} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--cs-text-muted)' }}>
+                                                <div style={{ fontSize: '13.5px', marginBottom: '12px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
                                                     {courses.length === 0
                                                         ? 'No courses created yet.'
                                                         : branchFilter !== 'all'
@@ -530,52 +564,55 @@ export default function CoursesPage() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredCourses.map(c => (
+                                        paginatedCourses.map(c => (
                                             <tr key={c.courseId}>
-                                                <td>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                        <div style={{ width: 32, height: 32, borderRadius: '8px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                            <BookOpen size={16} color="#6C63FF" />
+                                                <td style={{ padding: '8px 12px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <div style={{ width: 28, height: 28, borderRadius: '7px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                            <BookOpen size={14} color="#6C63FF" />
                                                         </div>
-                                                        <div>
-                                                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--cs-text-primary)' }}>{c.title}</div>
-                                                            {c.subjects.length > 0 && (
-                                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
-                                                                    {c.subjects.slice(0, 3).map(s => (
-                                                                        <span key={s.subjectId} style={{ background: 'var(--cs-surface-2)', padding: '1px 5px', borderRadius: '4px' }}>{s.name}</span>
-                                                                    ))}
-                                                                    {c.subjects.length > 3 && <span>+{c.subjects.length - 3}</span>}
-                                                                </div>
-                                                            )}
+                                                        <div style={{ minWidth: 0 }}>
+                                                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--cs-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }} title={c.title}>{c.title}</div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginTop: '1px' }}>
+                                                                {c.startDate && (
+                                                                    <span style={{ fontSize: '10.5px', color: 'var(--cs-primary)', display: 'inline-flex', alignItems: 'center', gap: '2px', whiteSpace: 'nowrap' }}>
+                                                                        <Calendar size={10} /> Starts: {new Date(c.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                    </span>
+                                                                )}
+                                                                {c.subjects.slice(0, 2).map(s => (
+                                                                    <span key={s.subjectId} style={{ fontSize: '10px', background: 'var(--cs-surface-2)', padding: '1px 5px', borderRadius: '4px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap' }}>{s.name}</span>
+                                                                ))}
+                                                                {c.subjects.length > 2 && <span style={{ fontSize: '10px', color: 'var(--cs-text-muted)' }}>+{c.subjects.length - 2}</span>}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td>
-                                                    <code style={{ fontSize: '11px', color: 'var(--cs-text-muted)', background: 'var(--cs-surface-2)', padding: '2px 6px', borderRadius: '4px' }}>{c.code}</code>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                                    <code style={{ fontSize: '11px', color: 'var(--cs-text-muted)', background: 'var(--cs-surface-2)', padding: '2px 5px', borderRadius: '4px' }}>{c.code}</code>
                                                 </td>
-                                                <td>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                                                     <span className="badge badge-secondary" style={{ fontSize: '11px' }}>
                                                         <Tag size={10} style={{ marginRight: '4px' }} />{c.category}
                                                     </span>
                                                 </td>
-                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontSize: '12.5px', color: 'var(--cs-text-secondary)' }}>
                                                     {c.level || '—'}
                                                 </td>
-                                                <td>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                                                     <span className="badge badge-secondary" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                                         <Building2 size={10} /> {c.branchName || 'All Branches'}
                                                     </span>
                                                 </td>
-                                                <td style={{ fontSize: '13px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontSize: '12.5px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
                                                     {formatMoney(c.tuitionAmount, currency)}
                                                 </td>
-                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)', textTransform: 'capitalize' }}>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontSize: '12.5px', color: 'var(--cs-text-secondary)', textTransform: 'capitalize' }}>
                                                     {c.billingPeriod}
                                                 </td>
-                                                <td style={{ fontSize: '13px', color: 'var(--cs-text-muted)' }}>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontSize: '12.5px', color: 'var(--cs-text-muted)' }}>
                                                     {c.durationMonths ? `${c.durationMonths} mo` : '—'}
                                                 </td>
-                                                <td>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                                                     <button
                                                         type="button"
                                                         onClick={() => setViewingBatchesCourse(c)}
@@ -583,33 +620,33 @@ export default function CoursesPage() {
                                                             background: 'none',
                                                             border: 'none',
                                                             color: 'var(--cs-primary)',
-                                                            fontSize: '12px',
+                                                            fontSize: '11.5px',
                                                             fontWeight: 600,
                                                             cursor: 'pointer',
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
-                                                            gap: '4px',
+                                                            gap: '3px',
                                                             padding: 0
                                                         }}
                                                         title="Click to view batches for this course"
                                                     >
-                                                        <Calendar size={12} /> {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'}
+                                                        <Calendar size={11} /> {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'}
                                                     </button>
                                                 </td>
-                                                <td>
-                                                    <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`}>
+                                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                                    <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`} style={{ fontSize: '11px' }}>
                                                         {c.isActive ? 'active' : 'draft'}
                                                     </span>
                                                 </td>
-                                                <td style={{ textAlign: 'center' }}>
+                                                <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     {canManage && (
-                                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => startEdit(c)}
                                                                 style={{
-                                                                    width: '28px',
-                                                                    height: '28px',
+                                                                    width: '26px',
+                                                                    height: '26px',
                                                                     padding: 0,
                                                                     borderRadius: '6px',
                                                                     cursor: 'pointer',
@@ -626,14 +663,14 @@ export default function CoursesPage() {
                                                                 title={`Edit ${c.title}`}
                                                                 aria-label={`Edit ${c.title}`}
                                                             >
-                                                                <Pencil size={13} />
+                                                                <Pencil size={12} />
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openDeleteConfirm(c)}
                                                                 style={{
-                                                                    width: '28px',
-                                                                    height: '28px',
+                                                                    width: '26px',
+                                                                    height: '26px',
                                                                     padding: 0,
                                                                     borderRadius: '6px',
                                                                     cursor: 'pointer',
@@ -650,7 +687,7 @@ export default function CoursesPage() {
                                                                 title={`Delete ${c.title}`}
                                                                 aria-label={`Delete ${c.title}`}
                                                             >
-                                                                <Trash2 size={13} />
+                                                                <Trash2 size={12} />
                                                             </button>
                                                         </div>
                                                     )}
@@ -661,159 +698,369 @@ export default function CoursesPage() {
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', width: '100%' }}>
-                        {filteredCourses.length === 0 ? (
-                            <div className="cs-card" style={{ padding: '48px 24px', textAlign: 'center', width: '100%', gridColumn: '1 / -1' }}>
-                                <div style={{ fontSize: '14px', marginBottom: '14px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
-                                    {courses.length === 0
-                                        ? 'No courses created yet.'
-                                        : branchFilter !== 'all'
-                                            ? `No courses found for ${branches.find(b => b.branchId === branchFilter)?.name || 'the selected branch'}.`
-                                            : 'No courses match your search or filter.'}
-                                </div>
-                                {canManage && (
+
+                        {/* Pagination Bar */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 18px',
+                            borderTop: '1px solid var(--cs-border-subtle)',
+                            background: 'var(--cs-surface)',
+                            flexWrap: 'wrap',
+                            gap: '10px'
+                        }}>
+                            <span style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                Showing {filteredCourses.length === 0 ? 0 : offset + 1}–{Math.min(offset + PAGE_SIZE, filteredCourses.length)} of {filteredCourses.length} courses
+                            </span>
+                            {totalPages > 1 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <button
                                         type="button"
-                                        className="btn-primary"
-                                        onClick={openCreateCourse}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                        className="btn-ghost"
+                                        style={{
+                                            padding: '5px 10px',
+                                            fontSize: '12px',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            border: '1px solid var(--cs-border)',
+                                            borderRadius: '8px',
+                                            cursor: offset === 0 ? 'not-allowed' : 'pointer',
+                                            opacity: offset === 0 ? 0.4 : 1,
+                                            background: 'var(--cs-surface-2)',
+                                            color: 'var(--cs-text-primary)',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        disabled={offset === 0}
+                                        onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                                     >
-                                        <Plus size={14} /> {courses.length === 0 ? 'Create First Course' : 'Create Course'}
+                                        <ChevronLeft size={14} /> Previous
                                     </button>
-                                )}
-                            </div>
-                        ) : (
-                            filteredCourses.map(c => (
-                                <div key={c.courseId} className="cs-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
-                                            <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                <BookOpen size={18} color="#6C63FF" />
-                                            </div>
-                                            <div style={{ minWidth: 0 }}>
-                                                <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--cs-text-primary)' }}>{c.title}</div>
-                                                <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{c.code} • {formatMoney(c.tuitionAmount, currency)} / {c.billingPeriod}</div>
-                                            </div>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                                            <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`}>{c.isActive ? 'active' : 'draft'}</span>
-                                            {canManage && (
-                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => startEdit(c)}
-                                                        style={{
-                                                            width: '28px',
-                                                            height: '28px',
-                                                            padding: 0,
-                                                            borderRadius: '7px',
-                                                            cursor: 'pointer',
-                                                            color: '#6C63FF',
-                                                            background: 'rgba(108, 99, 255, 0.08)',
-                                                            border: '1px solid rgba(108, 99, 255, 0.25)',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            transition: 'all 0.15s ease'
-                                                        }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
-                                                        title={`Edit ${c.title}`}
-                                                        aria-label={`Edit ${c.title}`}
-                                                    >
-                                                        <Pencil size={13} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => openDeleteConfirm(c)}
-                                                        style={{
-                                                            width: '28px',
-                                                            height: '28px',
-                                                            padding: 0,
-                                                            borderRadius: '7px',
-                                                            cursor: 'pointer',
-                                                            color: '#EF4444',
-                                                            background: 'rgba(239, 68, 68, 0.08)',
-                                                            border: '1px solid rgba(239, 68, 68, 0.25)',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            transition: 'all 0.15s ease'
-                                                        }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)')}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)')}
-                                                        title={`Delete ${c.title}`}
-                                                        aria-label={`Delete ${c.title}`}
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                        <span className="badge badge-secondary"><Tag size={10} /> {c.category}</span>
-                                        <span className="badge badge-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                            <Building2 size={10} /> {c.branchName || 'All Branches'}
-                                        </span>
-                                        {c.level && <span className="badge badge-info"><Users size={10} /> {c.level}</span>}
-                                        {c.durationMonths && <span className="badge badge-secondary"><Clock size={10} /> {c.durationMonths} months</span>}
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cs-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Subjects</div>
-                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                            {c.subjects.length === 0 && <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>No subjects yet</span>}
-                                            {c.subjects.map(s => <span key={s.subjectId} className="badge badge-primary">{s.name}</span>)}
-                                            {canManage && (
-                                                <button className="badge badge-secondary" style={{ border: '1px dashed var(--cs-border)', cursor: 'pointer' }} onClick={() => addSubjectToCourse(c)}>
-                                                    <Plus size={10} /> Subject
+
+                                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                        {getVisiblePages(currentPage, totalPages).map((p, idx) => {
+                                            if (p === '...') {
+                                                return <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: 'var(--cs-text-muted)', fontSize: '12px' }}>...</span>;
+                                            }
+                                            const pageNum = Number(p);
+                                            const isCurrent = pageNum === currentPage;
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    type="button"
+                                                    onClick={() => setOffset((pageNum - 1) * PAGE_SIZE)}
+                                                    style={{
+                                                        minWidth: '30px',
+                                                        height: '30px',
+                                                        padding: '0 6px',
+                                                        fontSize: '12px',
+                                                        fontWeight: isCurrent ? 700 : 500,
+                                                        borderRadius: '6px',
+                                                        border: isCurrent ? '1px solid var(--cs-primary)' : '1px solid var(--cs-border)',
+                                                        background: isCurrent ? 'var(--cs-primary)' : 'var(--cs-surface-2)',
+                                                        color: isCurrent ? '#ffffff' : 'var(--cs-text-primary)',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.15s ease',
+                                                        boxShadow: isCurrent ? '0 2px 6px rgba(108, 99, 255, 0.25)' : 'none'
+                                                    }}
+                                                >
+                                                    {pageNum}
                                                 </button>
-                                            )}
-                                        </div>
+                                            );
+                                        })}
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--cs-text-secondary)', borderTop: '1px solid var(--cs-border)', paddingTop: '10px', marginTop: 'auto' }}>
+
+                                    <button
+                                        type="button"
+                                        className="btn-ghost"
+                                        style={{
+                                            padding: '5px 10px',
+                                            fontSize: '12px',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            border: '1px solid var(--cs-border)',
+                                            borderRadius: '8px',
+                                            cursor: offset + PAGE_SIZE >= filteredCourses.length ? 'not-allowed' : 'pointer',
+                                            opacity: offset + PAGE_SIZE >= filteredCourses.length ? 0.4 : 1,
+                                            background: 'var(--cs-surface-2)',
+                                            color: 'var(--cs-text-primary)',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        disabled={offset + PAGE_SIZE >= filteredCourses.length}
+                                        onClick={() => setOffset(offset + PAGE_SIZE)}
+                                    >
+                                        Next <ChevronRight size={14} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px', width: '100%' }}>
+                            {filteredCourses.length === 0 ? (
+                                <div className="cs-card" style={{ padding: '40px 20px', textAlign: 'center', width: '100%', gridColumn: '1 / -1' }}>
+                                    <div style={{ fontSize: '13.5px', marginBottom: '12px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                        {courses.length === 0
+                                            ? 'No courses created yet.'
+                                            : branchFilter !== 'all'
+                                                ? `No courses found for ${branches.find(b => b.branchId === branchFilter)?.name || 'the selected branch'}.`
+                                                : 'No courses match your search or filter.'}
+                                    </div>
+                                    {canManage && (
                                         <button
                                             type="button"
-                                            onClick={() => setViewingBatchesCourse(c)}
-                                            style={{
-                                                background: 'none',
-                                                border: 'none',
-                                                padding: 0,
-                                                cursor: 'pointer',
-                                                fontSize: '12px',
-                                                color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
-                                                fontWeight: c.batchCount > 0 ? 600 : 400,
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                            title="Click to view batches for this course"
+                                            className="btn-primary"
+                                            onClick={openCreateCourse}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                                         >
-                                            {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'} • {c.studentCount} students
+                                            <Plus size={14} /> {courses.length === 0 ? 'Create First Course' : 'Create Course'}
                                         </button>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <Link
-                                                href={`/dashboard/batches?courseId=${c.courseId}&courseTitle=${encodeURIComponent(c.title)}`}
+                                    )}
+                                </div>
+                            ) : (
+                                paginatedCourses.map(c => (
+                                    <div key={c.courseId} className="cs-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
+                                                <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <BookOpen size={18} color="#6C63FF" />
+                                                </div>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--cs-text-primary)' }}>{c.title}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{c.code} • {formatMoney(c.tuitionAmount, currency)} / {c.billingPeriod}</div>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                                <span className={`badge ${c.isActive ? 'badge-success' : 'badge-secondary'}`}>{c.isActive ? 'active' : 'draft'}</span>
+                                                {canManage && (
+                                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => startEdit(c)}
+                                                            style={{
+                                                                width: '28px',
+                                                                height: '28px',
+                                                                padding: 0,
+                                                                borderRadius: '7px',
+                                                                cursor: 'pointer',
+                                                                color: '#6C63FF',
+                                                                background: 'rgba(108, 99, 255, 0.08)',
+                                                                border: '1px solid rgba(108, 99, 255, 0.25)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.2)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(108, 99, 255, 0.08)')}
+                                                            title={`Edit ${c.title}`}
+                                                            aria-label={`Edit ${c.title}`}
+                                                        >
+                                                            <Pencil size={13} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openDeleteConfirm(c)}
+                                                            style={{
+                                                                width: '28px',
+                                                                height: '28px',
+                                                                padding: 0,
+                                                                borderRadius: '7px',
+                                                                cursor: 'pointer',
+                                                                color: '#EF4444',
+                                                                background: 'rgba(239, 68, 68, 0.08)',
+                                                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)')}
+                                                            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)')}
+                                                            title={`Delete ${c.title}`}
+                                                            aria-label={`Delete ${c.title}`}
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            <span className="badge badge-secondary"><Tag size={10} /> {c.category}</span>
+                                            <span className="badge badge-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                <Building2 size={10} /> {c.branchName || 'All Branches'}
+                                            </span>
+                                            {c.startDate && (
+                                                <span className="badge badge-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                    <Calendar size={10} /> Starts {new Date(c.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                </span>
+                                            )}
+                                            {c.level && <span className="badge badge-info"><Users size={10} /> {c.level}</span>}
+                                            {c.durationMonths && <span className="badge badge-secondary"><Clock size={10} /> {c.durationMonths} months</span>}
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cs-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Subjects</div>
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                {c.subjects.length === 0 && <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>No subjects yet</span>}
+                                                {c.subjects.map(s => <span key={s.subjectId} className="badge badge-primary">{s.name}</span>)}
+                                                {canManage && (
+                                                    <button className="badge badge-secondary" style={{ border: '1px dashed var(--cs-border)', cursor: 'pointer' }} onClick={() => addSubjectToCourse(c)}>
+                                                        <Plus size={10} /> Subject
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--cs-text-secondary)', borderTop: '1px solid var(--cs-border)', paddingTop: '10px', marginTop: 'auto' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setViewingBatchesCourse(c)}
                                                 style={{
-                                                    display: 'flex',
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    cursor: 'pointer',
+                                                    fontSize: '12px',
+                                                    color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                                    fontWeight: c.batchCount > 0 ? 600 : 400,
+                                                    display: 'inline-flex',
                                                     alignItems: 'center',
-                                                    gap: '4px',
-                                                    color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
-                                                    fontWeight: 600,
-                                                    textDecoration: 'none'
+                                                    gap: '4px'
                                                 }}
-                                                title={`View ${c.title} batches in Batches & Schedule`}
+                                                title="Click to view batches for this course"
                                             >
-                                                <Calendar size={12} /> Batches
-                                            </Link>
+                                                {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'} • {c.studentCount} students
+                                            </button>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <Link
+                                                    href={`/dashboard/batches?courseId=${c.courseId}&courseTitle=${encodeURIComponent(c.title)}`}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        color: c.batchCount > 0 ? 'var(--cs-primary)' : 'var(--cs-text-muted)',
+                                                        fontWeight: 600,
+                                                        textDecoration: 'none'
+                                                    }}
+                                                    title={`View ${c.title} batches in Batches & Schedule`}
+                                                >
+                                                    <Calendar size={12} /> Batches
+                                                </Link>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))
+                                ))
+                            )}
+                        </div>
+
+                        {/* Grid Pagination Bar */}
+                        {filteredCourses.length > 0 && (
+                            <div className="cs-card" style={{
+                                width: '100%',
+                                overflow: 'hidden',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '10px 18px',
+                                background: 'var(--cs-surface)',
+                                flexWrap: 'wrap',
+                                gap: '10px'
+                            }}>
+                                <span style={{ fontSize: '12px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                    Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, filteredCourses.length)} of {filteredCourses.length} courses
+                                </span>
+                                {totalPages > 1 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <button
+                                            type="button"
+                                            className="btn-ghost"
+                                            style={{
+                                                padding: '5px 10px',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                border: '1px solid var(--cs-border)',
+                                                borderRadius: '8px',
+                                                cursor: offset === 0 ? 'not-allowed' : 'pointer',
+                                                opacity: offset === 0 ? 0.4 : 1,
+                                                background: 'var(--cs-surface-2)',
+                                                color: 'var(--cs-text-primary)',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            disabled={offset === 0}
+                                            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                                        >
+                                            <ChevronLeft size={14} /> Previous
+                                        </button>
+
+                                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                            {getVisiblePages(currentPage, totalPages).map((p, idx) => {
+                                                if (p === '...') {
+                                                    return <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: 'var(--cs-text-muted)', fontSize: '12px' }}>...</span>;
+                                                }
+                                                const pageNum = Number(p);
+                                                const isCurrent = pageNum === currentPage;
+                                                return (
+                                                    <button
+                                                        key={pageNum}
+                                                        type="button"
+                                                        onClick={() => setOffset((pageNum - 1) * PAGE_SIZE)}
+                                                        style={{
+                                                            minWidth: '30px',
+                                                            height: '30px',
+                                                            padding: '0 6px',
+                                                            fontSize: '12px',
+                                                            fontWeight: isCurrent ? 700 : 500,
+                                                            borderRadius: '6px',
+                                                            border: isCurrent ? '1px solid var(--cs-primary)' : '1px solid var(--cs-border)',
+                                                            background: isCurrent ? 'var(--cs-primary)' : 'var(--cs-surface-2)',
+                                                            color: isCurrent ? '#ffffff' : 'var(--cs-text-primary)',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.15s ease',
+                                                            boxShadow: isCurrent ? '0 2px 6px rgba(108, 99, 255, 0.25)' : 'none'
+                                                        }}
+                                                    >
+                                                        {pageNum}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            className="btn-ghost"
+                                            style={{
+                                                padding: '5px 10px',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                border: '1px solid var(--cs-border)',
+                                                borderRadius: '8px',
+                                                cursor: offset + PAGE_SIZE >= filteredCourses.length ? 'not-allowed' : 'pointer',
+                                                opacity: offset + PAGE_SIZE >= filteredCourses.length ? 0.4 : 1,
+                                                background: 'var(--cs-surface-2)',
+                                                color: 'var(--cs-text-primary)',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            disabled={offset + PAGE_SIZE >= filteredCourses.length}
+                                            onClick={() => setOffset(offset + PAGE_SIZE)}
+                                        >
+                                            Next <ChevronRight size={14} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         )}
-                    </div>
+                    </>
                 )}
             </div>
 
@@ -948,22 +1195,36 @@ export default function CoursesPage() {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="cs-label">Branch</label>
-                            <select
-                                className="cs-input"
-                                value={form.branchId || 'all'}
-                                onChange={e => setForm({ ...form, branchId: e.target.value === 'all' ? '' : e.target.value })}
-                            >
-                                <option value="all">— All Branches (Academy-wide) —</option>
-                                {branches.map(b => (
-                                    <option key={b.branchId} value={b.branchId}>
-                                        {b.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
-                                Select the branch offering this course, or leave as All Branches
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div>
+                                <label className="cs-label">Branch</label>
+                                <select
+                                    className="cs-input"
+                                    value={form.branchId || 'all'}
+                                    onChange={e => setForm({ ...form, branchId: e.target.value === 'all' ? '' : e.target.value })}
+                                >
+                                    <option value="all">— All Branches (Academy-wide) —</option>
+                                    {branches.map(b => (
+                                        <option key={b.branchId} value={b.branchId}>
+                                            {b.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
+                                    Select the branch offering this course, or leave as All Branches
+                                </div>
+                            </div>
+                            <div>
+                                <label className="cs-label">Start Date</label>
+                                <input
+                                    type="date"
+                                    className="cs-input"
+                                    value={form.startDate}
+                                    onChange={e => setForm({ ...form, startDate: e.target.value })}
+                                />
+                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
+                                    Select the date when this course starts
+                                </div>
                             </div>
                         </div>
 
@@ -1109,22 +1370,36 @@ export default function CoursesPage() {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="cs-label">Branch</label>
-                            <select
-                                className="cs-input"
-                                value={editForm.branchId || 'all'}
-                                onChange={e => setEditForm({ ...editForm, branchId: e.target.value === 'all' ? '' : e.target.value })}
-                            >
-                                <option value="all">— All Branches (Academy-wide) —</option>
-                                {branches.map(b => (
-                                    <option key={b.branchId} value={b.branchId}>
-                                        {b.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
-                                Select the branch offering this course, or leave as All Branches
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div>
+                                <label className="cs-label">Branch</label>
+                                <select
+                                    className="cs-input"
+                                    value={editForm.branchId || 'all'}
+                                    onChange={e => setEditForm({ ...editForm, branchId: e.target.value === 'all' ? '' : e.target.value })}
+                                >
+                                    <option value="all">— All Branches (Academy-wide) —</option>
+                                    {branches.map(b => (
+                                        <option key={b.branchId} value={b.branchId}>
+                                            {b.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
+                                    Select the branch offering this course, or leave as All Branches
+                                </div>
+                            </div>
+                            <div>
+                                <label className="cs-label">Start Date</label>
+                                <input
+                                    type="date"
+                                    className="cs-input"
+                                    value={editForm.startDate}
+                                    onChange={e => setEditForm({ ...editForm, startDate: e.target.value })}
+                                />
+                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
+                                    Date when this course is scheduled to start
+                                </div>
                             </div>
                         </div>
 

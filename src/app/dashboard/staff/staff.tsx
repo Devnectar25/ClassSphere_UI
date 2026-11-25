@@ -13,6 +13,7 @@ import {
 import { api, useApi, formatDate, initials } from '@/lib/api';
 import { can, ROLE_LABELS, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
+import { NO_ASSIGNMENTS, StaffAccessDialog, StaffAccessFields, type StaffAssignments } from '@/components/StaffAccess';
 
 interface StaffMember {
     membershipId: string;
@@ -21,8 +22,10 @@ interface StaffMember {
     phone: string | null;
     role: string;
     title: string | null;
+    branchId?: string | null;
     branchName: string | null;
     batches: string | null;
+    assignments?: StaffAssignments;
     isActive: boolean;
     lastLoginAt: string | null;
 }
@@ -418,7 +421,7 @@ const buildDefaultAccessMap = (): RolePageAccessMap => {
     return map;
 };
 
-const emptyUser = { fullName: '', email: '', phone: '', title: '', role: 'Instructor', branchId: '', password: '' };
+const emptyUser = { fullName: '', email: '', phone: '', title: '', role: 'Instructor', branchId: '', password: '', assignments: NO_ASSIGNMENTS };
 
 interface PaginationControlsProps {
     currentPage: number;
@@ -571,6 +574,8 @@ export default function StaffPage() {
     const session = useSession();
     const { workspace } = useWorkspace();
     const { data: staff, error, reload } = useApi<StaffMember[]>('/staff');
+    const { data: branchList, error: branchError, reload: reloadBranches } = useApi<Array<{ branchId: string; name: string }>>('/branches');
+    const branches = branchList ?? workspace?.branches.filter(b => b.isActive) ?? null;
     const [activeTab, setActiveTab] = useState<'users' | 'access'>('users');
     const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('Instructor');
     const [pageFilter, setPageFilter] = useState<'accessible' | 'restricted' | 'all'>('accessible');
@@ -607,6 +612,7 @@ export default function StaffPage() {
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [togglingId, setTogglingId] = useState<string | null>(null);
+    const [accessOf, setAccessOf] = useState<StaffMember | null>(null);
     const canManage = can(session, 'staff.write');
 
     const stats = [
@@ -757,7 +763,7 @@ export default function StaffPage() {
         setBusy(true);
         try {
             const finalPhone = phoneDigits ? `${phoneCountry.dialCode} ${phoneDigits}`.trim() : null;
-            await api('/staff', { method: 'POST', body: JSON.stringify({ ...form, phone: finalPhone, branchId: form.branchId || null }) });
+            await api('/staff', { method: 'POST', body: JSON.stringify({ ...form, phone: finalPhone, branchId: form.branchId || null, assignments: form.role === 'Staff' ? form.assignments : undefined }) });
             setMessage(`${form.fullName} can now sign in as ${form.email} with the temporary password.`);
             setAdding(false);
             setForm(emptyUser);
@@ -918,7 +924,20 @@ export default function StaffPage() {
                                                     </td>
                                                     <td><span className={`badge ${roleColors[s.role] ?? 'badge-secondary'}`}><Shield size={10} /> {ROLE_LABELS[s.role] ?? s.role}</span></td>
                                                     <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>{s.branchName ?? 'All Branches'}</td>
-                                                    <td><BadgeList value={s.batches} className="badge-secondary" /></td>
+                                                    <td>
+                                                        {s.role !== 'Staff' ? <BadgeList value={s.batches} className="badge-secondary" /> : (() => {
+                                                            const a = s.assignments ?? NO_ASSIGNMENTS;
+                                                            const none = a.courseIds.length === 0 && a.batchIds.length === 0;
+                                                            return (
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
+                                                                    <span className={`badge ${none && s.branchName ? 'badge-warning' : 'badge-secondary'}`}>
+                                                                        {none ? (s.branchName ? 'None assigned' : 'All courses') : `${a.courseIds.length} course${a.courseIds.length === 1 ? '' : 's'} · ${a.batchIds.length > 0 ? `${a.batchIds.length} batch${a.batchIds.length === 1 ? '' : 'es'}` : 'all batches'}`}
+                                                                    </span>
+                                                                    {canManage && <button type="button" className="btn-secondary" style={{ padding: '3px 10px', fontSize: '11.5px', height: 'auto' }} onClick={() => setAccessOf(s)}>Assign courses &amp; batches</button>}
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </td>
                                                     <td>
                                                         <span className={`badge ${s.isActive ? 'badge-success' : 'badge-secondary'}`}>{s.isActive ? 'active' : 'inactive'}</span>
                                                         <div className="cell-nowrap" style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>Last login {formatDate(s.lastLoginAt)}</div>
@@ -1562,6 +1581,11 @@ export default function StaffPage() {
                 </Modal>
             )}
 
+            {accessOf && (
+                <StaffAccessDialog member={accessOf} branches={branches ?? []} onClose={() => setAccessOf(null)}
+                    onSaved={() => { setToastMessage({ text: `Access of ${accessOf.fullName} saved.`, type: 'success' }); setTimeout(() => setToastMessage(null), 4000); setAccessOf(null); reload(); }} />
+            )}
+
             {adding && (
                 <Modal
                     title="Add Academy User"
@@ -1621,18 +1645,25 @@ export default function StaffPage() {
                             <div>
                                 <label className="cs-label">Branch</label>
                                 <select className="cs-input" value={form.branchId} required={form.role === 'BranchManager'}
-                                    onChange={e => setForm({ ...form, branchId: e.target.value })}>
-                                    <option value="">All branches</option>
-                                    {workspace?.branches.map(b => <option key={b.branchId} value={b.branchId}>{b.name}</option>)}
+                                    onChange={e => setForm({ ...form, branchId: e.target.value, assignments: NO_ASSIGNMENTS })}>
+                                    <option value="">{!branches && !branchError ? 'Loading branches…' : form.role === 'BranchManager' ? 'Select a branch' : 'All branches'}</option>
+                                    {branches?.map(b => <option key={b.branchId} value={b.branchId}>{b.name}</option>)}
                                 </select>
+                                {!branches && branchError && (
+                                    <p role="alert" style={{ color: 'var(--cs-danger)', fontSize: '11px', marginTop: '3px' }}>
+                                        Branches could not be loaded.{' '}
+                                        <button type="button" className="btn-ghost" style={{ padding: 0, fontSize: '11px', color: 'var(--cs-primary)' }} onClick={reloadBranches}>Try again</button>
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{ROLE_HELP[form.role]}</div>
+                        {form.role === 'Staff' && <StaffAccessFields branchId={form.branchId} value={form.assignments} onChange={assignments => setForm(f => ({ ...f, assignments }))} />}
                         <div>
                             <label className="cs-label">Temporary Password (min. 8 characters)</label>
                             <input className="cs-input" required minLength={8} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
                         </div>
-                        <button className="btn-primary" type="submit" disabled={busy} style={{ alignSelf: 'flex-end' }}>
+                        <button className="btn-primary" type="submit" disabled={busy || !branches} style={{ alignSelf: 'flex-end' }}>
                             {busy ? 'Creating…' : 'Create User'}
                         </button>
                     </form>
