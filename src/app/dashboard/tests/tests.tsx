@@ -258,18 +258,36 @@ export default function TestsPage() {
 
 function ScheduleTest({ onClose, onScheduled }: { onClose: () => void; onScheduled: () => void }) {
     const { data: batches } = useApi<Array<{ batchId: string; name: string; courseId: string; courseTitle: string }>>('/batches');
-    const { data: courses } = useApi<Array<{ courseId: string; subjects: Array<{ subjectId: string; name: string }> }>>('/courses');
+    const { data: courses } = useApi<Array<{ courseId: string; title: string; code?: string; subjects: Array<{ subjectId: string; name: string }> }>>('/courses');
+    const [selectedCourseId, setSelectedCourseId] = useState('');
     const [form, setForm] = useState({ batchId: '', title: '', testType: TEST_TYPES[0], testDate: new Date().toISOString().split('T')[0] });
     const [maxMarks, setMaxMarks] = useState<Record<string, string>>({});
     const [error, setError] = useState<string | null>(null);
 
+    // Filter batches by the selected course
+    const filteredBatches = selectedCourseId
+        ? (batches?.filter(b => b.courseId === selectedCourseId) ?? [])
+        : [];
+
     const batch = batches?.find(b => b.batchId === form.batchId);
-    const subjects = courses?.find(c => c.courseId === batch?.courseId)?.subjects ?? [];
+    const subjects = courses?.find(c => c.courseId === (selectedCourseId || batch?.courseId))?.subjects ?? [];
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        if (!selectedCourseId) {
+            setError('Please select a course first.');
+            return;
+        }
+        if (!form.batchId) {
+            setError('Please select a batch.');
+            return;
+        }
         const chosen = Object.entries(maxMarks).filter(([, v]) => Number(v) > 0).map(([subjectId, v]) => ({ subjectId, maxMarks: Number(v) }));
+        if (chosen.length === 0) {
+            setError('Please select at least one subject with maximum marks.');
+            return;
+        }
         try {
             await api('/tests', { method: 'POST', body: JSON.stringify({ ...form, subjects: chosen }) });
             onScheduled();
@@ -281,11 +299,54 @@ function ScheduleTest({ onClose, onScheduled }: { onClose: () => void; onSchedul
     return (
         <Modal title="Schedule Test" onClose={onClose} maxWidth="680px">
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Course Selection First */}
+                <div>
+                    <label className="cs-label">Course</label>
+                    <select
+                        className="cs-input"
+                        required
+                        value={selectedCourseId}
+                        onChange={e => {
+                            const newCourseId = e.target.value;
+                            setSelectedCourseId(newCourseId);
+                            setForm(f => ({ ...f, batchId: '' }));
+                            setMaxMarks({});
+                        }}
+                    >
+                        <option value="">Select a course…</option>
+                        {courses?.map(c => (
+                            <option key={c.courseId} value={c.courseId}>
+                                {c.title || 'Course'}{c.code ? ` (${c.code})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Batch Selection Then */}
                 <div>
                     <label className="cs-label">Batch</label>
-                    <select className="cs-input" required value={form.batchId} onChange={e => { setForm({ ...form, batchId: e.target.value }); setMaxMarks({}); }}>
-                        <option value="">Select a batch…</option>
-                        {batches?.map(b => <option key={b.batchId} value={b.batchId}>{b.name} — {b.courseTitle}</option>)}
+                    <select
+                        className="cs-input"
+                        required
+                        disabled={!selectedCourseId}
+                        value={form.batchId}
+                        onChange={e => {
+                            setForm({ ...form, batchId: e.target.value });
+                            setMaxMarks({});
+                        }}
+                    >
+                        <option value="">
+                            {!selectedCourseId
+                                ? '— Select a course first to view batches —'
+                                : filteredBatches.length === 0
+                                ? 'No batches available for this course'
+                                : 'Select a batch…'}
+                        </option>
+                        {filteredBatches.map(b => (
+                            <option key={b.batchId} value={b.batchId}>
+                                {b.name}
+                            </option>
+                        ))}
                     </select>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px' }}>
@@ -328,7 +389,7 @@ function ScheduleTest({ onClose, onScheduled }: { onClose: () => void; onSchedul
                     </div>
                 )}
                 {error && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{error}</div>}
-                <button className="btn-primary" type="submit" disabled={Object.keys(maxMarks).length === 0} style={{ alignSelf: 'flex-end' }}>Schedule</button>
+                <button className="btn-primary" type="submit" disabled={!selectedCourseId || !form.batchId || Object.keys(maxMarks).length === 0} style={{ alignSelf: 'flex-end' }}>Schedule</button>
             </form>
         </Modal>
     );

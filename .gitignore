@@ -65,10 +65,15 @@ next-env.d.ts
 # additional temporary, backup, and scratch files
 *.temp
 *.sql.bak
+*.sql.tmp
 *.seed.sql
 *.test.sql
 *.test.log
 *.dump
+inspect_*.js
+inspect_*.ts
+temp_*.js
+temp_*.ts
 tmp/
 temp/
 scratch/

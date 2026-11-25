@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 import { useApi } from '@/lib/api';
 
 export interface Branch {
@@ -43,13 +43,21 @@ export interface Workspace {
     subscription: { planTier: string; status: string; maxSeats: number; maxBranches: number } | null;
     actor: { fullName: string; email: string; role: string | null; title: string | null } | null;
     branches: Branch[];
+    /** Staff limited to assigned courses and batches; null for everyone else */
+    staffAccess?: { courses: number; batches: number } | null;
     entitlements: { seats: { current: number; maximum: number }; branches: { current: number; maximum: number } };
 }
 
 const WorkspaceContext = createContext<{ workspace: Workspace | null; reload: () => void }>({ workspace: null, reload: () => {} });
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-    const { data, reload } = useApi<Workspace>('/tenants');
+    const { data, error, reload } = useApi<Workspace>('/tenants');
+    // Every page depends on the workspace: recover from a failed load instead of staying empty until a page refresh
+    useEffect(() => {
+        if (!error) return;
+        const timer = setInterval(reload, 5000);
+        return () => clearInterval(timer);
+    }, [error, reload]);
     return <WorkspaceContext.Provider value={{ workspace: data, reload }}>{children}</WorkspaceContext.Provider>;
 }
 
