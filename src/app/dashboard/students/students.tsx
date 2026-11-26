@@ -1238,7 +1238,7 @@ export default function StudentsPage() {
                     phone: formattedPhone,
                     countryCode: selectedCountry.dialCode,
                     batchId: form.batchId || undefined,
-                    branchId: form.branchId || session?.selectedBranchId || undefined,
+                    branchId: form.branchId || session?.session.branchId || session?.selectedBranchId || undefined,
                     feeStatus: feePlanForm.collectInitialPayment && Number(feePlanForm.initialPaymentAmount) >= feePlanForm.finalFee ? 'paid' : (feePlanForm.finalFee > 0 ? 'pending' : 'none'),
                     feeAmount: feePlanForm.finalFee > 0 ? feePlanForm.finalFee : undefined,
                     feeStructure: {
@@ -2662,7 +2662,7 @@ export default function StudentsPage() {
                                         }}
                                     >
                                         {(() => {
-                                            const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
+                                            const activeBranch = form.branchId || session?.session.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
                                             const branchCourses = filterCourses(courses, batches, activeBranch);
                                             const placeholder = !courses
                                                 ? 'Loading courses…'
@@ -2701,7 +2701,7 @@ export default function StudentsPage() {
                                         }}
                                     >
                                         {(() => {
-                                            const activeBranch = form.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
+                                            const activeBranch = form.branchId || session?.session.branchId || session?.selectedBranchId || workspace?.branches.find(br => br.isPrimary)?.branchId;
 
                                             if (!form.courseId) {
                                                 return (

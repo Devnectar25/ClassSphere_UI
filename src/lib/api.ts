@@ -28,6 +28,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
     try {
         const res = await fetch(`${BASE_URL}${path}`, {
+            cache: 'no-store',
             ...init,
             signal: init?.signal || controller.signal,
             headers: {

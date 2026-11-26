@@ -300,8 +300,9 @@ export default function FeesPage() {
     const { data: branches } = useApi<Array<{ branchId: string; name: string }>>('/branches');
     const { data: batches } = useApi<Array<{ batchId: string; name: string; courseId?: string }>>('/batches');
 
+    const branchScoped = !!session?.session.branchId;
     const [overdueSearch, setOverdueSearch] = useState('');
-    const [selectedBranch, setSelectedBranch] = useState('');
+    const [selectedBranch, setSelectedBranch] = useState(() => session?.session.branchId || '');
     const [selectedCourse, setSelectedCourse] = useState('');
     const [selectedBatch, setSelectedBatch] = useState('');
     const [minDaysFilter, setMinDaysFilter] = useState('');
@@ -1648,7 +1649,7 @@ export default function FeesPage() {
                                                     />
                                                 </div>
 
-                                                {branches && branches.length > 1 && (
+                                                {!branchScoped && branches && branches.length > 1 && (
                                                     <select
                                                         className="cs-input"
                                                         style={{ width: 'auto', padding: '6px 12px', fontSize: '12.5px', height: '36px' }}

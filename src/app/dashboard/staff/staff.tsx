@@ -574,9 +574,11 @@ function PaginationControls({
 export default function StaffPage() {
     const session = useSession();
     const { workspace } = useWorkspace();
-    const { data: staff, error, reload } = useApi<StaffMember[]>('/staff');
+    const { data: staff, error, reload } = useApi<StaffMember[]>('/staff?branchId=all');
     const { data: branchList, error: branchError, reload: reloadBranches } = useApi<Array<{ branchId: string; name: string }>>('/branches');
     const branches = branchList ?? workspace?.branches.filter(b => b.isActive) ?? null;
+    const [userBranchFilter, setUserBranchFilter] = useState<string>('all');
+    const [userSearch, setUserSearch] = useState<string>('');
     const [activeTab, setActiveTab] = useState<'users' | 'access'>('users');
     const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('Instructor');
     const [pageFilter, setPageFilter] = useState<'accessible' | 'restricted' | 'all'>('accessible');
@@ -709,13 +711,52 @@ export default function StaffPage() {
         });
     }, [currentRolePages, pageFilter, searchQuery, selectedRoleFilter]);
 
-    const totalUsers = staff?.length ?? 0;
+    const filteredStaffList = useMemo(() => {
+        if (!staff) return [];
+        const list = staff.filter(s => {
+            if (userBranchFilter !== 'all') {
+                if (s.branchId !== userBranchFilter && s.branchName !== userBranchFilter) return false;
+            }
+            if (userSearch.trim()) {
+                const q = userSearch.toLowerCase().trim();
+                const matchName = s.fullName.toLowerCase().includes(q);
+                const matchEmail = s.email.toLowerCase().includes(q);
+                const matchRole = s.role.toLowerCase().includes(q) || (ROLE_LABELS[s.role] && ROLE_LABELS[s.role].toLowerCase().includes(q));
+                const matchBranch = s.branchName && s.branchName.toLowerCase().includes(q);
+                if (!matchName && !matchEmail && !matchRole && !matchBranch) return false;
+            }
+            return true;
+        });
+
+        const roleRank: Record<string, number> = {
+            TenantAdmin: 1,      // Academy Admin always displayed on the 1st number!
+            BranchManager: 2,
+            Finance: 3,
+            Instructor: 4,
+            Staff: 5,
+        };
+
+        return [...list].sort((a, b) => {
+            const rankA = roleRank[a.role] ?? 99;
+            const rankB = roleRank[b.role] ?? 99;
+            if (rankA !== rankB) return rankA - rankB;
+
+            // Prioritize logged-in user if multiple admins
+            if (session?.user?.email) {
+                if (a.email === session.user.email) return -1;
+                if (b.email === session.user.email) return 1;
+            }
+
+            return a.fullName.localeCompare(b.fullName);
+        });
+    }, [staff, userBranchFilter, userSearch, session?.user?.email]);
+
+    const totalUsers = filteredStaffList.length;
     const safeUserPage = Math.min(Math.max(1, userPage), Math.max(1, Math.ceil(totalUsers / userPageSize)));
     const paginatedStaff = useMemo(() => {
-        if (!staff) return [];
         const start = (safeUserPage - 1) * userPageSize;
-        return staff.slice(start, start + userPageSize);
-    }, [staff, safeUserPage, userPageSize]);
+        return filteredStaffList.slice(start, start + userPageSize);
+    }, [filteredStaffList, safeUserPage, userPageSize]);
 
     const totalDisplayedPages = displayedPages.length;
     const safeAccessPage = Math.min(Math.max(1, accessPage), Math.max(1, Math.ceil(totalDisplayedPages / accessPageSize)));
@@ -764,7 +805,15 @@ export default function StaffPage() {
         setBusy(true);
         try {
             const finalPhone = phoneDigits ? `${phoneCountry.dialCode} ${phoneDigits}`.trim() : null;
-            await api('/staff', { method: 'POST', body: JSON.stringify({ ...form, phone: finalPhone, branchId: form.branchId || null, assignments: form.role === 'Staff' ? form.assignments : undefined }) });
+            await api('/staff', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ...form,
+                    phone: finalPhone,
+                    branchId: form.branchId || null,
+                    assignments: ['Instructor', 'Staff'].includes(form.role) ? form.assignments : undefined
+                })
+            });
             setMessage(`${form.fullName} can now sign in as ${form.email} with the temporary password.`);
             setAdding(false);
             setForm(emptyUser);
@@ -881,14 +930,42 @@ export default function StaffPage() {
                 {activeTab === 'users' && (
                     !staff ? <PageState error={error} /> : (
                         <div className="cs-card">
-                            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--cs-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
                                 <div>
                                     <div className="section-title">Academy Users</div>
                                     <div className="section-subtitle">Active staff accounts and assigned roles per campus branch</div>
                                 </div>
-                                <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>
-                                    {staff.length} {staff.length === 1 ? 'user' : 'users'} total
-                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                    {branches && branches.length > 0 && (
+                                        <select
+                                            className="cs-input"
+                                            value={userBranchFilter}
+                                            onChange={e => { setUserBranchFilter(e.target.value); setUserPage(1); }}
+                                            style={{ width: 'auto', minWidth: '150px', height: '36px', fontSize: '12.5px', padding: '0 10px' }}
+                                        >
+                                            <option value="all">All Branches ({staff.length})</option>
+                                            {branches.map(b => (
+                                                <option key={b.branchId} value={b.branchId}>
+                                                    {b.name} ({staff.filter(s => s.branchId === b.branchId).length})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    <div style={{ position: 'relative', width: '200px' }}>
+                                        <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--cs-text-muted)' }} />
+                                        <input
+                                            type="text"
+                                            className="cs-input"
+                                            placeholder="Search users..."
+                                            value={userSearch}
+                                            onChange={e => { setUserSearch(e.target.value); setUserPage(1); }}
+                                            style={{ height: '36px', paddingLeft: '32px', fontSize: '12.5px' }}
+                                        />
+                                    </div>
+                                    <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', whiteSpace: 'nowrap' }}>
+                                        {filteredStaffList.length} {filteredStaffList.length === 1 ? 'user' : 'users'}
+                                    </span>
+                                </div>
                             </div>
                             <div style={{ overflowX: 'auto' }}>
                                 <table className="cs-table">
@@ -926,8 +1003,10 @@ export default function StaffPage() {
                                                     <td><span className={`badge ${roleColors[s.role] ?? 'badge-secondary'}`}><Shield size={10} /> {ROLE_LABELS[s.role] ?? s.role}</span></td>
                                                     <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>{s.branchName ?? 'All Branches'}</td>
                                                     <td>
-                                                        {s.role !== 'Staff' ? <BadgeList value={s.batches} className="badge-secondary" /> : (() => {
-                                                            const items = s.assignedTo ?? [];
+                                                        {s.role !== 'Staff' && s.role !== 'Instructor' ? <BadgeList value={s.batches} className="badge-secondary" /> : (() => {
+                                                            const batchItems = s.batches ? s.batches.split(', ').map(b => b.trim()).filter(Boolean) : [];
+                                                            const assignedItems = s.assignedTo ?? [];
+                                                            const items = batchItems.length > 0 ? batchItems : assignedItems;
                                                             return (
                                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
                                                                     {items.length === 0
@@ -1043,7 +1122,7 @@ export default function StaffPage() {
                             </div>
                             <PaginationControls
                                 currentPage={safeUserPage}
-                                totalItems={staff.length}
+                                totalItems={totalUsers}
                                 pageSize={userPageSize}
                                 onPageChange={setUserPage}
                                 onPageSizeChange={(newSize) => { setUserPageSize(newSize); setUserPage(1); }}
@@ -1591,8 +1670,7 @@ export default function StaffPage() {
                 <Modal
                     title="Add Academy User"
                     onClose={() => { setAdding(false); setPhoneError(''); setPhoneTouched(false); }}
-                    maxWidth="580px"
-                    style={form.role === 'Staff' ? undefined : { overflow: 'visible' }}
+                    maxWidth="680px"
                 >
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1659,7 +1737,15 @@ export default function StaffPage() {
                             </div>
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)' }}>{ROLE_HELP[form.role]}</div>
-                        {form.role === 'Staff' && <StaffAccessFields branchId={form.branchId} value={form.assignments} onChange={assignments => setForm(f => ({ ...f, assignments }))} />}
+                        {['Instructor', 'Staff'].includes(form.role) && (
+                            <StaffAccessFields
+                                branchId={form.branchId}
+                                value={form.assignments}
+                                onChange={assignments => setForm(f => ({ ...f, assignments }))}
+                                role={form.role}
+                                branchName={branches?.find(b => b.branchId === form.branchId)?.name}
+                            />
+                        )}
                         <div>
                             <label className="cs-label">Temporary Password (min. 8 characters)</label>
                             <input className="cs-input" required minLength={8} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
