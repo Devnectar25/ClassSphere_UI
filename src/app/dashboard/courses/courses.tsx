@@ -4,11 +4,40 @@ import { useState } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil, LayoutGrid, List, Trash2, AlertTriangle, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil, LayoutGrid, List, Trash2, AlertTriangle, Building2, ChevronLeft, ChevronRight, Award, CheckCircle2 } from 'lucide-react';
 import { api, useApi, formatMoney } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
-import { COURSE_CATALOGUE } from '@/lib/academy';
+import CategorySelect from '@/components/CategorySelect';
+import { COURSE_CATALOGUE, getDomainKey, getRecommendedCategories } from '@/lib/academy';
+
+export interface CourseCompletionPolicy {
+    enabled: boolean;
+    minAttendancePct: number;
+    requiredSessions: number;
+    requiredAssessments: number;
+    minPassingMarks: number;
+    requireApproval: boolean;
+    checkAttendance: boolean;
+    checkAssessments: boolean;
+    checkMarks: boolean;
+    checkSessions: boolean;
+    checkDuration: boolean;
+}
+
+export const defaultCompletionPolicy: CourseCompletionPolicy = {
+    enabled: true,
+    minAttendancePct: 75,
+    requiredSessions: 0,
+    requiredAssessments: 1,
+    minPassingMarks: 40,
+    requireApproval: true,
+    checkAttendance: true,
+    checkAssessments: true,
+    checkMarks: true,
+    checkSessions: false,
+    checkDuration: false,
+};
 
 interface Course {
     courseId: string;
@@ -26,6 +55,8 @@ interface Course {
     batchCount: number;
     studentCount: number;
     subjects: Array<{ subjectId: string; name: string }>;
+    completionPolicy?: CourseCompletionPolicy;
+    completion_policy?: CourseCompletionPolicy;
 }
 
 interface BatchItem {
@@ -42,7 +73,20 @@ interface BatchItem {
     schedules: Array<{ day: string; startTime: string; endTime: string }>;
 }
 
-const emptyCourse = { title: '', code: '', category: '', level: '', branchId: '', startDate: '', durationMonths: '12', tuitionAmount: '', billingPeriod: 'monthly', isActive: true, subjects: [] as string[] };
+const emptyCourse = {
+    title: '',
+    code: '',
+    category: '',
+    level: '',
+    branchId: '',
+    startDate: '',
+    durationMonths: '12',
+    tuitionAmount: '',
+    billingPeriod: 'monthly',
+    isActive: true,
+    subjects: [] as string[],
+    completionPolicy: { ...defaultCompletionPolicy }
+};
 
 export default function CoursesPage() {
     const session = useSession();
@@ -88,7 +132,8 @@ export default function CoursesPage() {
         tuitionAmount: '',
         billingPeriod: 'monthly',
         isActive: true,
-        subjects: [] as string[]
+        subjects: [] as string[],
+        completionPolicy: { ...defaultCompletionPolicy }
     });
     const [editSubjectInput, setEditSubjectInput] = useState('');
 
@@ -122,7 +167,12 @@ export default function CoursesPage() {
         }
     };
 
-    const catalogue = COURSE_CATALOGUE[workspace?.organization.academyType ?? 'Other'] ?? COURSE_CATALOGUE.Other;
+    const catalogue = COURSE_CATALOGUE[getDomainKey(workspace?.organization.academyType ?? 'Other')] ?? COURSE_CATALOGUE.Other;
+    // Categories of this type of academy, then those its courses already use
+    const categories = [...new Set([
+        ...getRecommendedCategories(workspace?.organization.academyType ?? 'Other'),
+        ...(courses ?? []).map(c => c.category?.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    ])];
     const suggestions = (catalogue[form.category] ?? []).filter(s => !form.subjects.includes(s));
     const editSuggestions = (catalogue[editForm.category] ?? []).filter(s => !editForm.subjects.includes(s));
 
@@ -169,7 +219,8 @@ export default function CoursesPage() {
                     level: form.level ? form.level.trim() : null,
                     branchId: form.branchId || null,
                     startDate: form.startDate ? form.startDate : null,
-                    isActive: form.isActive
+                    isActive: form.isActive,
+                    completionPolicy: form.completionPolicy
                 })
             });
             if (form.isActive === false && statusFilter === 'active') {
@@ -199,7 +250,8 @@ export default function CoursesPage() {
             tuitionAmount: String(course.tuitionAmount),
             billingPeriod: course.billingPeriod || 'monthly',
             isActive: course.isActive,
-            subjects: course.subjects.map(s => s.name)
+            subjects: course.subjects.map(s => s.name),
+            completionPolicy: course.completionPolicy || course.completion_policy || { ...defaultCompletionPolicy }
         });
         setEditingCourse(course);
     };
@@ -236,7 +288,8 @@ export default function CoursesPage() {
                     branchId: editForm.branchId || null,
                     startDate: editForm.startDate ? editForm.startDate : null,
                     durationMonths: editForm.durationMonths ? Number(editForm.durationMonths) : null,
-                    tuitionAmount: Number(editForm.tuitionAmount)
+                    tuitionAmount: Number(editForm.tuitionAmount),
+                    completionPolicy: editForm.completionPolicy
                 })
             });
             setEditingCourse(null);
@@ -1165,12 +1218,8 @@ export default function CoursesPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="cs-label">Category</label>
-                                <input className="cs-input" required list="course-categories" value={form.category}
-                                    onChange={e => setForm({ ...form, category: e.target.value })} />
-                                <datalist id="course-categories">
-                                    {Object.keys(catalogue).map(c => <option key={c} value={c} />)}
-                                </datalist>
+                                <label className="cs-label" htmlFor="course-categories">Category</label>
+                                <CategorySelect id="course-categories" value={form.category} options={categories} onChange={category => setForm(f => ({ ...f, category }))} />
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1300,6 +1349,171 @@ export default function CoursesPage() {
                                 </div>
                             )}
                         </div>
+
+                        {/* Course Completion Settings */}
+                        <div style={{
+                            border: '1px solid var(--cs-border, #e2e8f0)',
+                            borderRadius: '10px',
+                            padding: '14px',
+                            background: 'var(--cs-card-bg, #ffffff)',
+                            marginTop: '4px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Award size={18} style={{ color: '#4f46e5' }} />
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary, #0f172a)' }}>
+                                            Course Completion Criteria
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--cs-text-muted, #64748b)' }}>
+                                            Configure automatic eligibility requirements for students to graduate
+                                        </div>
+                                    </div>
+                                </div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={form.completionPolicy?.enabled ?? true}
+                                        onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, enabled: e.target.checked } }))}
+                                        style={{ width: '16px', height: '16px', accentColor: '#4f46e5', cursor: 'pointer' }}
+                                    />
+                                    <span>Enable Policy</span>
+                                </label>
+                            </div>
+
+                            {(form.completionPolicy?.enabled ?? true) && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                                        {/* Attendance */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.completionPolicy?.checkAttendance ?? true}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkAttendance: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Min Attendance
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="100"
+                                                    disabled={!(form.completionPolicy?.checkAttendance ?? true)}
+                                                    value={form.completionPolicy?.minAttendancePct ?? 75}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, minAttendancePct: Math.max(1, Math.min(100, Number(e.target.value))) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>%</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Assessments */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.completionPolicy?.checkAssessments ?? true}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkAssessments: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Required Tests
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="50"
+                                                    disabled={!(form.completionPolicy?.checkAssessments ?? true)}
+                                                    value={form.completionPolicy?.requiredAssessments ?? 1}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, requiredAssessments: Math.max(0, Number(e.target.value)) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>tests</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Passing Marks */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.completionPolicy?.checkMarks ?? true}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkMarks: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Passing Marks
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="100"
+                                                    disabled={!(form.completionPolicy?.checkMarks ?? true)}
+                                                    value={form.completionPolicy?.minPassingMarks ?? 40}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, minPassingMarks: Math.max(1, Math.min(100, Number(e.target.value))) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>%</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Required Sessions */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.completionPolicy?.checkSessions ?? false}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkSessions: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Min Sessions
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="500"
+                                                    disabled={!(form.completionPolicy?.checkSessions ?? false)}
+                                                    value={form.completionPolicy?.requiredSessions ?? 0}
+                                                    onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, requiredSessions: Math.max(0, Number(e.target.value)) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>classes</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Duration & Approval */}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '2px', fontSize: '12px', color: '#334155' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={form.completionPolicy?.checkDuration ?? false}
+                                                onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkDuration: e.target.checked } }))}
+                                                style={{ accentColor: '#4f46e5' }}
+                                            />
+                                            <span>Require course duration ({form.durationMonths || '12'} mo) to elapse</span>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={form.completionPolicy?.requireApproval ?? true}
+                                                onChange={e => setForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, requireApproval: e.target.checked } }))}
+                                                style={{ accentColor: '#4f46e5' }}
+                                            />
+                                            <span>Require teacher / branch manager approval</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         {message && <div style={{ color: 'var(--cs-danger)', fontSize: '13px' }}>{message}</div>}
                         <button className="btn-primary" type="submit" disabled={form.subjects.length === 0} style={{ alignSelf: 'flex-end' }}>
                             {form.isActive ? 'Create Course' : 'Save Draft Course'}
@@ -1340,12 +1554,8 @@ export default function CoursesPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="cs-label">Category</label>
-                                <input className="cs-input" required list="edit-course-categories" value={editForm.category}
-                                    onChange={e => setEditForm({ ...editForm, category: e.target.value })} />
-                                <datalist id="edit-course-categories">
-                                    {Object.keys(catalogue).map(c => <option key={c} value={c} />)}
-                                </datalist>
+                                <label className="cs-label" htmlFor="edit-course-categories">Category</label>
+                                <CategorySelect id="edit-course-categories" value={editForm.category} options={categories} onChange={category => setEditForm(f => ({ ...f, category }))} />
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1473,6 +1683,170 @@ export default function CoursesPage() {
                                             <Plus size={10} /> {s}
                                         </button>
                                     ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Course Completion Settings */}
+                        <div style={{
+                            border: '1px solid var(--cs-border, #e2e8f0)',
+                            borderRadius: '10px',
+                            padding: '14px',
+                            background: 'var(--cs-card-bg, #ffffff)',
+                            marginTop: '4px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Award size={18} style={{ color: '#4f46e5' }} />
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cs-text-primary, #0f172a)' }}>
+                                            Course Completion Criteria
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--cs-text-muted, #64748b)' }}>
+                                            Configure automatic eligibility requirements for students to graduate
+                                        </div>
+                                    </div>
+                                </div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={editForm.completionPolicy?.enabled ?? true}
+                                        onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, enabled: e.target.checked } }))}
+                                        style={{ width: '16px', height: '16px', accentColor: '#4f46e5', cursor: 'pointer' }}
+                                    />
+                                    <span>Enable Policy</span>
+                                </label>
+                            </div>
+
+                            {(editForm.completionPolicy?.enabled ?? true) && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                                        {/* Attendance */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editForm.completionPolicy?.checkAttendance ?? true}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkAttendance: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Min Attendance
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="100"
+                                                    disabled={!(editForm.completionPolicy?.checkAttendance ?? true)}
+                                                    value={editForm.completionPolicy?.minAttendancePct ?? 75}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, minAttendancePct: Math.max(1, Math.min(100, Number(e.target.value))) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>%</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Assessments */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editForm.completionPolicy?.checkAssessments ?? true}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkAssessments: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Required Tests
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="50"
+                                                    disabled={!(editForm.completionPolicy?.checkAssessments ?? true)}
+                                                    value={editForm.completionPolicy?.requiredAssessments ?? 1}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, requiredAssessments: Math.max(0, Number(e.target.value)) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>tests</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Passing Marks */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editForm.completionPolicy?.checkMarks ?? true}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkMarks: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Passing Marks
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="100"
+                                                    disabled={!(editForm.completionPolicy?.checkMarks ?? true)}
+                                                    value={editForm.completionPolicy?.minPassingMarks ?? 40}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, minPassingMarks: Math.max(1, Math.min(100, Number(e.target.value))) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>%</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Required Sessions */}
+                                        <div style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editForm.completionPolicy?.checkSessions ?? false}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkSessions: e.target.checked } }))}
+                                                    style={{ accentColor: '#4f46e5' }}
+                                                />
+                                                Min Sessions
+                                            </label>
+                                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="500"
+                                                    disabled={!(editForm.completionPolicy?.checkSessions ?? false)}
+                                                    value={editForm.completionPolicy?.requiredSessions ?? 0}
+                                                    onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, requiredSessions: Math.max(0, Number(e.target.value)) } }))}
+                                                    className="cs-input"
+                                                    style={{ height: '30px', fontSize: '12px' }}
+                                                />
+                                                <span style={{ fontSize: '12px', color: '#64748b' }}>classes</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Duration & Approval */}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '2px', fontSize: '12px', color: '#334155' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={editForm.completionPolicy?.checkDuration ?? false}
+                                                onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, checkDuration: e.target.checked } }))}
+                                                style={{ accentColor: '#4f46e5' }}
+                                            />
+                                            <span>Require course duration ({editForm.durationMonths || '12'} mo) to elapse</span>
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={editForm.completionPolicy?.requireApproval ?? true}
+                                                onChange={e => setEditForm(f => ({ ...f, completionPolicy: { ...f.completionPolicy, requireApproval: e.target.checked } }))}
+                                                style={{ accentColor: '#4f46e5' }}
+                                            />
+                                            <span>Require teacher / branch manager approval</span>
+                                        </label>
+                                    </div>
                                 </div>
                             )}
                         </div>

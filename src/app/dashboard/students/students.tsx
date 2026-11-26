@@ -5,7 +5,7 @@ import Modal from '@/components/Modal';
 import BadgeList from '@/components/BadgeList';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, Phone, Users, UserCheck, UserX, Clock, ChevronLeft, ChevronRight, Plus, Pencil, Upload, Camera, ArrowRight, ArrowLeft, Check, Copy, Send, UserPlus, MapPin, Calendar as CalendarIcon, X, Eye, BookOpen, GraduationCap, DollarSign, AlertCircle, Building, Mail, CheckCircle, Shield, ArrowRightLeft, AlertTriangle, Building2, Filter } from 'lucide-react';
+import { Search, Phone, Users, UserCheck, UserX, Clock, ChevronLeft, ChevronRight, Plus, Pencil, Upload, Camera, ArrowRight, ArrowLeft, Check, Copy, Send, UserPlus, MapPin, Calendar as CalendarIcon, X, Eye, BookOpen, GraduationCap, DollarSign, AlertCircle, Building, Mail, CheckCircle, Shield, ArrowRightLeft, AlertTriangle, Building2, Filter, Award, CheckCircle2 } from 'lucide-react';
 import { api, useApi, formatDate, formatMoney, initials } from '@/lib/api';
 import { can, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -13,6 +13,8 @@ import { dateInDays, fittingInstallments, frequencyChoices, installmentDates, pe
 import { CREDIT_STATUS, PLAN_STATUS, emptyFinanceForm, planPayload, planProblem, reviewPayload, type FinanceForm } from '@/components/TransferFinance';
 import { TransferFeeStep, TransferSummaryStep, availableCredit, feeStepProblem, type TransferPreview } from '@/components/TransferSteps';
 import ConsumptionReview, { type ConsumptionView } from '@/components/ConsumptionReview';
+import CourseCompletionReviewModal from '@/components/CourseCompletionReviewModal';
+import CourseCompletionQueueModal from '@/components/CourseCompletionQueueModal';
 
 interface Student {
     studentId: string;
@@ -58,6 +60,7 @@ interface StudentCourseEnrollment {
     transferReason?: string | null;
     remarks?: string | null;
     transferredAt?: string | null;
+    academicProgress?: any;
 }
 
 interface CourseTransferHistoryRecord {
@@ -354,6 +357,9 @@ export default function StudentsPage() {
     const [transferSaving, setTransferSaving] = useState(false);
     const [transferError, setTransferError] = useState<string | null>(null);
     const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+    const [reviewingEnrollmentId, setReviewingEnrollmentId] = useState<string | null>(null);
+    const [showCompletionQueue, setShowCompletionQueue] = useState(false);
+    const [enrollmentFilterTab, setEnrollmentFilterTab] = useState<'all' | 'active' | 'completed' | 'transferred'>('all');
     const validateField = (name: string, value: string, country: CountryOption = selectedCountry): string => {
         const val = value.trim();
         switch (name) {
@@ -1719,30 +1725,56 @@ export default function StudentsPage() {
                             </div>
                         </div>
 
-                        {/* Add Student button */}
-                        {can(session, 'students.write') && (
+                        {/* Action buttons: Completion Queue & Add Student */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                             <button
-                                className="btn-primary"
-                                onClick={() => setShowAdd(true)}
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => setShowCompletionQueue(true)}
                                 style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '6px',
                                     whiteSpace: 'nowrap',
-                                    padding: '0 18px',
-                                    fontSize: '13px',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    flexShrink: 0,
+                                    padding: '0 14px',
                                     height: '38px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
                                     borderRadius: '10px',
-                                    boxShadow: '0 2px 8px rgba(108, 99, 255, 0.28)'
+                                    border: '1px solid #C7D2FE',
+                                    background: '#EEF2FF',
+                                    color: '#4338CA',
+                                    cursor: 'pointer'
                                 }}
                             >
-                                <Plus size={15} />
-                                Add Student
+                                <Award size={15} />
+                                Completion Queue
                             </button>
-                        )}
+
+                            {can(session, 'students.write') && (
+                                <button
+                                    className="btn-primary"
+                                    onClick={() => setShowAdd(true)}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        whiteSpace: 'nowrap',
+                                        padding: '0 18px',
+                                        fontSize: '13px',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        flexShrink: 0,
+                                        height: '38px',
+                                        borderRadius: '10px',
+                                        boxShadow: '0 2px 8px rgba(108, 99, 255, 0.28)'
+                                    }}
+                                >
+                                    <Plus size={15} />
+                                    Add Student
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Dynamic Filters Bar: Branch, Course, Batch */}
@@ -4045,6 +4077,49 @@ export default function StudentsPage() {
                             </div>
                         )}
 
+                        {/* Status filter tabs: All, Active, Completed, Transferred */}
+                        {profileData?.enrollments && profileData.enrollments.length > 0 && (
+                            <div style={{ display: 'flex', gap: '6px', marginBottom: '2px', flexWrap: 'wrap' }}>
+                                {[
+                                    { key: 'all', label: 'All Courses', count: profileData.enrollments.length },
+                                    { key: 'active', label: 'Active', count: profileData.enrollments.filter(e => ['enrolled', 'confirmed', 'active', 'approved'].includes(e.status?.toLowerCase())).length },
+                                    { key: 'completed', label: 'Completed', count: profileData.enrollments.filter(e => e.status?.toLowerCase() === 'completed').length },
+                                    { key: 'transferred', label: 'Transferred', count: profileData.enrollments.filter(e => e.status?.toLowerCase() === 'transferred').length }
+                                ].map(tab => (
+                                    <button
+                                        key={tab.key}
+                                        type="button"
+                                        onClick={() => setEnrollmentFilterTab(tab.key as any)}
+                                        style={{
+                                            border: '1px solid',
+                                            borderColor: enrollmentFilterTab === tab.key ? 'var(--cs-primary)' : 'var(--cs-border)',
+                                            background: enrollmentFilterTab === tab.key ? 'rgba(108, 99, 255, 0.08)' : 'var(--cs-surface-1)',
+                                            color: enrollmentFilterTab === tab.key ? 'var(--cs-primary)' : 'var(--cs-text-secondary)',
+                                            fontWeight: enrollmentFilterTab === tab.key ? 700 : 500,
+                                            fontSize: '12px',
+                                            padding: '4px 10px',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '5px'
+                                        }}
+                                    >
+                                        <span>{tab.label}</span>
+                                        <span style={{
+                                            fontSize: '10.5px',
+                                            background: enrollmentFilterTab === tab.key ? 'var(--cs-primary)' : 'var(--cs-surface-2)',
+                                            color: enrollmentFilterTab === tab.key ? '#fff' : 'var(--cs-text-muted)',
+                                            padding: '1px 5px',
+                                            borderRadius: '10px'
+                                        }}>
+                                            {tab.count}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
                         {/* Enrollments Table */}
                         <div style={{
                             background: 'var(--cs-surface-1)',
@@ -4067,16 +4142,22 @@ export default function StudentsPage() {
                                     <thead>
                                         <tr style={{ background: 'var(--cs-surface-2)', borderBottom: '1px solid var(--cs-border)', textAlign: 'left' }}>
                                             <th style={{ padding: '10px 16px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Course</th>
-                                            <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Branch</th>
-                                            <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Batch</th>
-                                            <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Enrolled Date</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Branch & Batch</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Academic Progress & Result</th>
                                             <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)' }}>Fee</th>
                                             <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)', textAlign: 'center' }}>Status</th>
                                             <th style={{ padding: '10px 16px', fontWeight: 700, fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--cs-text-secondary)', textAlign: 'center' }}>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {profileData.enrollments.map(enr => {
+                                        {profileData.enrollments
+                                            .filter(enr => {
+                                                if (enrollmentFilterTab === 'active') return ['enrolled', 'confirmed', 'active', 'approved'].includes(enr.status?.toLowerCase());
+                                                if (enrollmentFilterTab === 'completed') return enr.status?.toLowerCase() === 'completed';
+                                                if (enrollmentFilterTab === 'transferred') return enr.status?.toLowerCase() === 'transferred';
+                                                return true;
+                                            })
+                                            .map(enr => {
                                             const stCfg = enrollmentStatusConfig[enr.status.toLowerCase()] || {
                                                 label: enr.status,
                                                 bg: 'var(--cs-surface-2)',
@@ -4085,6 +4166,9 @@ export default function StudentsPage() {
                                             };
                                             const isActive = ['enrolled', 'confirmed', 'active', 'approved'].includes(enr.status.toLowerCase());
                                             const isTransferred = enr.status.toLowerCase() === 'transferred';
+                                            const isComp = enr.status.toLowerCase() === 'completed';
+                                            const prog = enr.academicProgress;
+
                                             return (
                                                 <tr key={enr.enrollmentId} style={{ borderBottom: '1px solid var(--cs-border)' }}>
                                                     <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
@@ -4095,22 +4179,58 @@ export default function StudentsPage() {
                                                             {enr.courseCode}
                                                         </code>
                                                     </td>
-                                                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', color: 'var(--cs-text-secondary)' }}>
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12.5px' }}>
-                                                            <MapPin size={11} color="var(--cs-primary)" />
-                                                            {enr.branchName}
-                                                        </span>
-                                                    </td>
                                                     <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                                                         <div style={{ fontWeight: 600, color: 'var(--cs-text-primary)', fontSize: '12.5px' }}>
                                                             {enr.batchName}
                                                         </div>
-                                                        <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>
-                                                            {enr.enrolledCount}/{enr.capacity} seats
+                                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px', color: 'var(--cs-text-secondary)' }}>
+                                                            <MapPin size={10} color="var(--cs-primary)" />
+                                                            {enr.branchName}
                                                         </div>
                                                     </td>
-                                                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', color: 'var(--cs-text-secondary)', fontSize: '12px' }}>
-                                                        {formatDate(enr.enrolledAt)}
+                                                    {/* Academic Progress & Completion Result */}
+                                                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', minWidth: '170px' }}>
+                                                        {prog ? (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px' }}>
+                                                                    {isComp ? (
+                                                                        <span style={{ fontWeight: 700, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                                                            <Award size={12} /> {prog.completionRecord?.finalResult || 'Passed'}
+                                                                        </span>
+                                                                    ) : prog.isEligible ? (
+                                                                        <span style={{ fontWeight: 700, color: '#1d4ed8', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                                                            <CheckCircle2 size={12} /> Eligible for Review
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span style={{ color: '#64748b', fontWeight: 600 }}>
+                                                                            Progress
+                                                                        </span>
+                                                                    )}
+                                                                    <span style={{ fontWeight: 700, color: isComp ? '#15803d' : '#4f46e5' }}>
+                                                                        {prog.overallProgressPct}%
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ width: '100%', height: '5px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                                                    <div style={{
+                                                                        width: `${Math.min(100, prog.overallProgressPct)}%`,
+                                                                        height: '100%',
+                                                                        background: isComp ? '#10b981' : '#6366f1',
+                                                                        borderRadius: '4px'
+                                                                    }} />
+                                                                </div>
+                                                                <div style={{ fontSize: '10.5px', color: '#64748b', display: 'flex', justifyContent: 'space-between', marginTop: '1px' }}>
+                                                                    <span>Att: <b>{prog.attendanceRate}%</b></span>
+                                                                    <span>Tests: <b>{prog.assessmentsCompleted}/{prog.assessmentsTotal}</b></span>
+                                                                </div>
+                                                                {isComp && prog.completionRecord?.completionDate && (
+                                                                    <div style={{ fontSize: '10px', color: '#15803d' }}>
+                                                                        Completed: {formatDate(prog.completionRecord.completionDate)}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>—</span>
+                                                        )}
                                                     </td>
                                                     <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: 600, color: 'var(--cs-text-primary)', fontSize: '12.5px' }}>
                                                         {enr.tuitionAmount > 0 ? formatMoney(enr.tuitionAmount) : '—'}
@@ -4129,53 +4249,54 @@ export default function StudentsPage() {
                                                         </span>
                                                     </td>
                                                     <td style={{ padding: '12px 16px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                                        {isActive ? (
-                                                            can(session, 'students.write') && (
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                                            {/* Review Progress / View Completion Details button */}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setReviewingEnrollmentId(enr.enrollmentId)}
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    fontSize: '11.5px',
+                                                                    fontWeight: 600,
+                                                                    padding: '4px 9px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid #c7d2fe',
+                                                                    background: '#eef2ff',
+                                                                    color: '#4338ca',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                title="View academic progress and review completion"
+                                                            >
+                                                                <Award size={12} />
+                                                                {isComp ? 'Graduation' : 'Review'}
+                                                            </button>
+
+                                                            {isActive && can(session, 'students.write') && (
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => openTransferModal(enr)}
                                                                     style={{
                                                                         display: 'inline-flex',
                                                                         alignItems: 'center',
-                                                                        gap: '5px',
+                                                                        gap: '4px',
                                                                         fontSize: '11.5px',
                                                                         fontWeight: 600,
-                                                                        padding: '4px 10px',
+                                                                        padding: '4px 9px',
                                                                         borderRadius: '6px',
-                                                                        border: '1px solid #C7D2FE',
-                                                                        background: '#EEF2FF',
-                                                                        color: '#4F46E5',
-                                                                        cursor: 'pointer',
-                                                                        transition: 'all 0.15s ease'
+                                                                        border: '1px solid #fed7aa',
+                                                                        background: '#fff7ed',
+                                                                        color: '#c2410c',
+                                                                        cursor: 'pointer'
                                                                     }}
                                                                     title="Transfer course or batch"
                                                                 >
-                                                                    <ArrowRightLeft size={12} />
+                                                                    <ArrowRightLeft size={11} />
                                                                     Transfer
                                                                 </button>
-                                                            )
-                                                        ) : isTransferred ? (
-                                                            <span
-                                                                style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '4px',
-                                                                    fontSize: '11px',
-                                                                    fontWeight: 600,
-                                                                    color: '#6B21A8',
-                                                                    background: '#FAF5FF',
-                                                                    border: '1px solid #E9D5FF',
-                                                                    padding: '3px 8px',
-                                                                    borderRadius: '6px'
-                                                                }}
-                                                                title={enr.transferReason ? `Transfer Reason: ${enr.transferReason}${enr.remarks ? ` (${enr.remarks})` : ''}` : 'Transferred'}
-                                                            >
-                                                                <ArrowRightLeft size={10} />
-                                                                {enr.transferReason ? (enr.transferReason.length > 14 ? `${enr.transferReason.slice(0, 14)}...` : enr.transferReason) : 'Transferred'}
-                                                            </span>
-                                                        ) : (
-                                                            <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }}>—</span>
-                                                        )}
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -5269,6 +5390,30 @@ export default function StudentsPage() {
                 <CredentialsDialog
                     credentials={createdCredentials}
                     onClose={() => setCreatedCredentials(null)}
+                />
+            )}
+
+            {/* Course Completion Review Modal */}
+            {reviewingEnrollmentId && (
+                <CourseCompletionReviewModal
+                    enrollmentId={reviewingEnrollmentId}
+                    canManage={can(session, 'students.write')}
+                    onClose={() => setReviewingEnrollmentId(null)}
+                    onCompleted={() => {
+                        setReviewingEnrollmentId(null);
+                        reloadProfile();
+                    }}
+                />
+            )}
+
+            {/* Academy Course Completion Queue Modal */}
+            {showCompletionQueue && (
+                <CourseCompletionQueueModal
+                    canManage={can(session, 'students.write')}
+                    onClose={() => {
+                        setShowCompletionQueue(false);
+                        reloadProfile();
+                    }}
                 />
             )}
         </>
