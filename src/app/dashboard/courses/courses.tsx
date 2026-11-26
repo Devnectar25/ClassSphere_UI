@@ -1,12 +1,13 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import { BookOpen, Clock, Users, Tag, Calendar, Plus, X, Search, Pencil, LayoutGrid, List, Trash2, AlertTriangle, Building2, ChevronLeft, ChevronRight, Award, CheckCircle2 } from 'lucide-react';
 import { api, useApi, formatMoney } from '@/lib/api';
-import { can, useSession } from '@/lib/session';
+import { can, selectBranch, useSession } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 import CategorySelect from '@/components/CategorySelect';
 import { COURSE_CATALOGUE, getDomainKey, getRecommendedCategories } from '@/lib/academy';
@@ -90,9 +91,13 @@ const emptyCourse = {
 
 export default function CoursesPage() {
     const session = useSession();
+    const branchScoped = !!session?.session.branchId;
+    const userBranchId = session?.session.branchId;
+    const searchParams = useSearchParams();
+    const branchParam = searchParams.get('branchId');
     const { workspace, currency } = useWorkspace();
-    const { data: courses, error, reload } = useApi<Course[]>('/courses');
-    const { data: allBatches } = useApi<BatchItem[]>('/batches');
+    const { data: courses, error, reload } = useApi<Course[]>('/courses?branchId=all');
+    const { data: allBatches } = useApi<BatchItem[]>('/batches?branchId=all');
     const { data: branchesData } = useApi<Array<{ branchId: string; name: string; code?: string }>>('/branches');
     const branches = branchesData ?? workspace?.branches ?? [];
     const [creating, setCreating] = useState(false);
@@ -101,18 +106,31 @@ export default function CoursesPage() {
     const [message, setMessage] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'draft'>('all');
-    const [branchFilter, setBranchFilter] = useState<string>('all');
+    const [branchFilter, setBranchFilter] = useState<string>(() => {
+        if (branchParam && branchParam !== 'all') return branchParam;
+        return userBranchId || 'all';
+    });
     const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
     const PAGE_SIZE = 7;
     const [offset, setOffset] = useState(0);
     const canManage = can(session, 'courses.write');
+
+    useEffect(() => {
+        if (branchParam && branchParam !== 'all') {
+            setBranchFilter(branchParam);
+            setOffset(0);
+        } else if (!branchParam) {
+            setBranchFilter(userBranchId || 'all');
+            setOffset(0);
+        }
+    }, [branchParam, userBranchId]);
 
     const openCreateCourse = () => {
         setMessage(null);
         setForm({
             ...emptyCourse,
             category: Object.keys(catalogue)[0] ?? '',
-            branchId: (branchFilter !== 'all' && branchFilter !== 'academy_wide') ? branchFilter : '',
+            branchId: branchScoped ? (userBranchId || '') : (branchFilter !== 'all' ? branchFilter : ''),
             isActive: statusFilter === 'draft' ? false : true
         });
         setCreating(true);
@@ -315,12 +333,10 @@ export default function CoursesPage() {
             if (statusFilter === 'active' && !c.isActive) return false;
             if (statusFilter === 'draft' && c.isActive) return false;
         }
-        if (branchFilter !== 'all') {
-            if (branchFilter === 'academy_wide') {
-                if (c.branchId) return false;
-            } else {
-                if (c.branchId !== branchFilter) return false;
-            }
+        if (branchScoped && userBranchId) {
+            if (c.branchId !== userBranchId) return false;
+        } else if (branchFilter !== 'all') {
+            if (c.branchId !== branchFilter) return false;
         }
         if (!search) return true;
         const q = search.toLowerCase();
@@ -426,79 +442,86 @@ export default function CoursesPage() {
                             ))}
                         </div>
 
-                        {/* Branch filter */}
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                background: 'var(--cs-surface-2)',
-                                border: `1px solid ${branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
-                                borderRadius: '10px',
-                                padding: '0 10px',
-                                height: '34px',
-                                boxSizing: 'border-box',
-                                transition: 'all 0.15s ease',
-                                boxShadow: branchFilter !== 'all' ? '0 0 0 2px rgba(108, 99, 255, 0.12)' : 'none'
-                            }}
-                            title="Filter by Branch"
-                        >
-                            <Building2 size={13} color={branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} style={{ flexShrink: 0 }} />
-                            <select
-                                value={branchFilter}
-                                onChange={e => {
-                                    setBranchFilter(e.target.value);
-                                    setOffset(0);
-                                }}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    outline: 'none',
-                                    fontSize: '12px',
-                                    fontWeight: branchFilter !== 'all' ? 600 : 500,
-                                    color: branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
-                                    cursor: 'pointer',
-                                    padding: '0 4px 0 0'
-                                }}
-                                aria-label="Filter courses by branch"
-                            >
-                                <option value="all">All Branches</option>
-                                <option value="academy_wide">Global Courses (Academy-wide only)</option>
-                                {branches.map(b => (
-                                    <option key={b.branchId} value={b.branchId}>
-                                        {b.name} Branch
-                                    </option>
-                                ))}
-                            </select>
-                            {branchFilter !== 'all' && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setBranchFilter('all');
-                                        setOffset(0);
-                                    }}
+                        {/* Branch filter - only visible to multi-branch users who are not restricted to a single branch */}
+                        {!branchScoped && branches.length > 1 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cs-text-secondary)', whiteSpace: 'nowrap' }}>
+                                    To view courses by branch, please select a branch:
+                                </span>
+                                <div
                                     style={{
-                                        background: 'rgba(108, 99, 255, 0.12)',
-                                        border: 'none',
-                                        borderRadius: '50%',
-                                        width: '16px',
-                                        height: '16px',
-                                        cursor: 'pointer',
-                                        padding: 0,
                                         display: 'inline-flex',
                                         alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: 'var(--cs-primary)',
-                                        marginLeft: '2px',
-                                        flexShrink: 0
+                                        gap: '6px',
+                                        background: 'var(--cs-surface-2)',
+                                        border: `1px solid ${branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
+                                        borderRadius: '10px',
+                                        padding: '0 10px',
+                                        height: '34px',
+                                        boxSizing: 'border-box',
+                                        transition: 'all 0.15s ease',
+                                        boxShadow: branchFilter !== 'all' ? '0 0 0 2px rgba(108, 99, 255, 0.12)' : 'none'
                                     }}
-                                    title="Reset filter to All Branches"
-                                    aria-label="Reset filter to All Branches"
+                                    title="Filter by Branch"
                                 >
-                                    <X size={10} />
-                                </button>
-                            )}
-                        </div>
+                                    <Building2 size={13} color={branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} style={{ flexShrink: 0 }} />
+                                    <select
+                                        value={branchFilter}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            setBranchFilter(val);
+                                            setOffset(0);
+                                        }}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            outline: 'none',
+                                            fontSize: '12px',
+                                            fontWeight: branchFilter !== 'all' ? 600 : 500,
+                                            color: branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
+                                            cursor: 'pointer',
+                                            padding: '0 4px 0 0'
+                                        }}
+                                        aria-label="Filter courses by branch"
+                                    >
+                                        <option value="all">All Branches</option>
+                                        {branches.map(b => (
+                                            <option key={b.branchId} value={b.branchId}>
+                                                {b.name} Branch
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {branchFilter !== 'all' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setBranchFilter('all');
+                                                setOffset(0);
+                                            }}
+                                            style={{
+                                                background: 'rgba(108, 99, 255, 0.12)',
+                                                border: 'none',
+                                                borderRadius: '50%',
+                                                width: '16px',
+                                                height: '16px',
+                                                cursor: 'pointer',
+                                                padding: 0,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: 'var(--cs-primary)',
+                                                marginLeft: '2px',
+                                                flexShrink: 0
+                                            }}
+                                            title="Reset filter to All Branches"
+                                            aria-label="Reset filter to All Branches"
+                                        >
+                                            <X size={10} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
@@ -991,7 +1014,7 @@ export default function CoursesPage() {
                                             </button>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                 <Link
-                                                    href={`/dashboard/batches?courseId=${c.courseId}&courseTitle=${encodeURIComponent(c.title)}`}
+                                                    href={`/dashboard/batches?courseId=${c.courseId}&courseTitle=${encodeURIComponent(c.title)}${c.branchId ? `&branchId=${c.branchId}` : ''}`}
                                                     style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -1172,7 +1195,7 @@ export default function CoursesPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--cs-border)' }}>
                                     <button type="button" className="btn-secondary" onClick={() => setViewingBatchesCourse(null)}>Close</button>
                                     <Link
-                                        href={`/dashboard/batches?courseId=${viewingBatchesCourse.courseId}&courseTitle=${encodeURIComponent(viewingBatchesCourse.title)}`}
+                                        href={`/dashboard/batches?courseId=${viewingBatchesCourse.courseId}&courseTitle=${encodeURIComponent(viewingBatchesCourse.title)}${viewingBatchesCourse.branchId ? `&branchId=${viewingBatchesCourse.branchId}` : ''}`}
                                         className="btn-primary"
                                         style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                                         onClick={() => setViewingBatchesCourse(null)}
@@ -1247,20 +1270,29 @@ export default function CoursesPage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                             <div>
                                 <label className="cs-label">Branch</label>
-                                <select
-                                    className="cs-input"
-                                    value={form.branchId || 'all'}
-                                    onChange={e => setForm({ ...form, branchId: e.target.value === 'all' ? '' : e.target.value })}
-                                >
-                                    <option value="all">— All Branches (Academy-wide) —</option>
-                                    {branches.map(b => (
-                                        <option key={b.branchId} value={b.branchId}>
-                                            {b.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                {branchScoped ? (
+                                    <input
+                                        className="cs-input"
+                                        disabled
+                                        value={`${branches.find(b => b.branchId === userBranchId)?.name || 'Your'} Branch`}
+                                        style={{ background: 'var(--cs-surface-2)', cursor: 'not-allowed' }}
+                                    />
+                                ) : (
+                                    <select
+                                        className="cs-input"
+                                        value={form.branchId || 'all'}
+                                        onChange={e => setForm({ ...form, branchId: e.target.value === 'all' ? '' : e.target.value })}
+                                    >
+                                        <option value="all">— All Branches —</option>
+                                        {branches.map(b => (
+                                            <option key={b.branchId} value={b.branchId}>
+                                                {b.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
                                 <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
-                                    Select the branch offering this course, or leave as All Branches
+                                    {branchScoped ? 'Course will be created for your assigned branch' : 'Select the branch offering this course, or leave as All Branches'}
                                 </div>
                             </div>
                             <div>
@@ -1583,20 +1615,29 @@ export default function CoursesPage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                             <div>
                                 <label className="cs-label">Branch</label>
-                                <select
-                                    className="cs-input"
-                                    value={editForm.branchId || 'all'}
-                                    onChange={e => setEditForm({ ...editForm, branchId: e.target.value === 'all' ? '' : e.target.value })}
-                                >
-                                    <option value="all">— All Branches (Academy-wide) —</option>
-                                    {branches.map(b => (
-                                        <option key={b.branchId} value={b.branchId}>
-                                            {b.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                {branchScoped ? (
+                                    <input
+                                        className="cs-input"
+                                        disabled
+                                        value={`${branches.find(b => b.branchId === userBranchId)?.name || 'Your'} Branch`}
+                                        style={{ background: 'var(--cs-surface-2)', cursor: 'not-allowed' }}
+                                    />
+                                ) : (
+                                    <select
+                                        className="cs-input"
+                                        value={editForm.branchId || 'all'}
+                                        onChange={e => setEditForm({ ...editForm, branchId: e.target.value === 'all' ? '' : e.target.value })}
+                                    >
+                                        <option value="all">— All Branches —</option>
+                                        {branches.map(b => (
+                                            <option key={b.branchId} value={b.branchId}>
+                                                {b.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
                                 <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '3px' }}>
-                                    Select the branch offering this course, or leave as All Branches
+                                    {branchScoped ? 'Course belongs to your assigned branch' : 'Select the branch offering this course, or leave as All Branches'}
                                 </div>
                             </div>
                             <div>

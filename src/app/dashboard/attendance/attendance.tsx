@@ -193,9 +193,10 @@ export default function AttendancePage() {
     const { workspace, currency } = useWorkspace();
     const canMark = can(session, 'attendance.write');
     const today = getTodayIso();
+    const branchScoped = !!session?.session.branchId;
 
     // Hierarchical Filter States: Branch -> Course -> Batch
-    const [selectedBranchId, setSelectedBranchId] = useState<string>(() => session?.selectedBranchId || session?.session?.branchId || 'all');
+    const [selectedBranchId, setSelectedBranchId] = useState<string>(() => session?.session?.branchId || session?.selectedBranchId || 'all');
     const [selectedCourseId, setSelectedCourseId] = useState<string>('all');
     const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 

@@ -5,14 +5,33 @@ import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import CountryPhoneInput, { COUNTRIES, type CountryOption, validatePhoneNumber } from '@/components/CountryPhoneInput';
-import { api, useApi, initials } from '@/lib/api';
+import { api, useApi, initials, formatMoney } from '@/lib/api';
 import { can, selectBranch, useSession } from '@/lib/session';
 import {
     Building2, MapPin, Phone, Users, BookOpen, Pencil, Check,
     ExternalLink, ArrowRight, Calendar, UserCheck, CheckCircle2, X,
-    Trash2, AlertTriangle
+    Trash2, AlertTriangle, GraduationCap
 } from 'lucide-react';
 import { useWorkspace, type Branch } from '@/lib/workspace';
+import BranchManagerDropdown, { type StaffDropdownItem } from '@/components/BranchManagerDropdown';
+
+interface CourseItem {
+    courseId: string;
+    title: string;
+    code: string;
+    category: string;
+    level: string | null;
+    branchId: string | null;
+    branchName: string | null;
+    tuitionAmount: number;
+    billingPeriod: string;
+    durationMonths: number | null;
+    startDate: string | null;
+    isActive: boolean;
+    subjects: Array<{ name: string; subjectId: string }>;
+    batchCount: number;
+    studentCount: number;
+}
 
 interface BatchItem {
     batchId: string;
@@ -29,10 +48,11 @@ interface BatchItem {
 
 export default function BranchesPage() {
     const router = useRouter();
-    const { workspace, reload } = useWorkspace();
+    const { workspace, reload, currency } = useWorkspace();
     const session = useSession();
-    const { data: staffList } = useApi<Array<{ userId: string; fullName: string; role: string }>>('/staff?branchId=all');
-    const { data: allBatches } = useApi<BatchItem[]>('/batches');
+    const { data: staffList } = useApi<StaffDropdownItem[]>('/staff?branchId=all');
+    const { data: allBatches } = useApi<BatchItem[]>('/batches?branchId=all');
+    const { data: allCourses } = useApi<CourseItem[]>('/courses?branchId=all');
     const limits = workspace?.entitlements.branches;
     const canManage = can(session, 'branches.write');
 
@@ -169,9 +189,11 @@ export default function BranchesPage() {
     const openEdit = (b: Branch) => {
         const matchCountry = COUNTRIES.find(c => b.phone && b.phone.startsWith(c.dialCode)) || COUNTRIES[0];
         const rawDigits = b.phone ? b.phone.replace(matchCountry.dialCode, '').trim() : '';
-        const headMember = staffList?.find(s => s.fullName.toLowerCase() === (b.headName || '').toLowerCase());
+        const assignedManager = staffList?.find(s => s.role === 'BranchManager' && s.branchId === b.branchId);
+        const currentManagerName = assignedManager?.fullName || b.headName || '';
+        const headMember = staffList?.find(s => (assignedManager && s.userId === assignedManager.userId) || s.fullName.toLowerCase() === currentManagerName.toLowerCase());
         const hasMatchingStaff = !!headMember;
-        const isCustom = !hasMatchingStaff && !!b.headName;
+        const isCustom = !hasMatchingStaff && !!currentManagerName;
 
         setEditHeadMode(isCustom ? 'custom' : (staffList && staffList.length > 0 ? 'select' : 'custom'));
         setEditForm({
@@ -180,8 +202,8 @@ export default function BranchesPage() {
             code: b.code,
             address: b.address ?? '',
             phone: rawDigits,
-            headUserId: headMember?.userId ?? '',
-            headName: b.headName ?? '',
+            headUserId: headMember?.userId ?? assignedManager?.userId ?? '',
+            headName: currentManagerName,
             isPrimary: b.isPrimary,
             isActive: b.isActive,
         });
@@ -250,6 +272,22 @@ export default function BranchesPage() {
         ) ?? [])
         : [];
 
+    // Filter courses for managing branch
+    const managingBranchCourses = managingBranch
+        ? (allCourses?.filter(c =>
+            c.branchId === managingBranch.branchId ||
+            (!c.branchId && (c.branchName === 'All Branches' || !c.branchName))
+        ) ?? [])
+        : [];
+
+    // Filter courses for editing branch
+    const editingBranchCourses = editingBranch
+        ? (allCourses?.filter(c =>
+            c.branchId === editingBranch.branchId ||
+            (!c.branchId && (c.branchName === 'All Branches' || !c.branchName))
+        ) ?? [])
+        : [];
+
     return (
         <>
             <Topbar
@@ -294,6 +332,12 @@ export default function BranchesPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '22px' }}>
                         {workspace.branches.map(b => {
                             const isCurrentScope = session?.selectedBranchId === b.branchId;
+                            const assignedManager = staffList?.find(s => s.role === 'BranchManager' && s.branchId === b.branchId);
+                            const managerName = assignedManager?.fullName || b.headName || null;
+                            const branchCourses = allCourses?.filter(c =>
+                                c.branchId === b.branchId ||
+                                (!c.branchId && (c.branchName === 'All Branches' || !c.branchName))
+                            ) ?? [];
 
                             return (
                                 <div
@@ -427,45 +471,55 @@ export default function BranchesPage() {
                                         {/* Metrics & Head Ribbon */}
                                         <div style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '1fr 1fr 1.25fr',
+                                            gridTemplateColumns: 'repeat(3, 1fr) 1.35fr',
                                             background: '#ffffff',
                                             border: '1px solid var(--cs-border)',
                                             borderRadius: '12px',
-                                            padding: '10px',
-                                            gap: '8px',
+                                            padding: '10px 8px',
+                                            gap: '6px',
                                             marginBottom: '16px'
                                         }}>
                                             {/* Stat 1: Students */}
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--cs-border)' }}>
-                                                <div style={{ fontSize: '17px', fontWeight: 800, color: '#6C63FF', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                                                <div style={{ fontSize: '16px', fontWeight: 800, color: '#6C63FF', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                                                     {b.studentCount}
                                                 </div>
-                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                                <div style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
                                                     <Users size={11} /> Students
                                                 </div>
                                             </div>
 
                                             {/* Stat 2: Batches */}
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--cs-border)' }}>
-                                                <div style={{ fontSize: '17px', fontWeight: 800, color: '#10B981', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                                                <div style={{ fontSize: '16px', fontWeight: 800, color: '#10B981', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                                                     {b.batchCount}
                                                 </div>
-                                                <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                                <div style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
                                                     <BookOpen size={11} /> Batches
                                                 </div>
                                             </div>
 
-                                            {/* Stat 3: Branch Head Persona */}
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '4px', minWidth: 0 }}>
+                                            {/* Stat 3: Courses */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--cs-border)' }}>
+                                                <div style={{ fontSize: '16px', fontWeight: 800, color: '#6366F1', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                                                    {branchCourses.length}
+                                                </div>
+                                                <div style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                                    <GraduationCap size={11} /> Courses
+                                                </div>
+                                            </div>
+
+                                            {/* Stat 4: Branch Manager Persona */}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', paddingLeft: '4px', minWidth: 0 }}>
                                                 <div className="avatar-placeholder" style={{ width: 26, height: 26, fontSize: '10.5px', flexShrink: 0 }}>
-                                                    {initials(b.headName || '—')}
+                                                    {initials(managerName || '—')}
                                                 </div>
                                                 <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                                                    <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--cs-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {b.headName || 'Unassigned'}
+                                                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--cs-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {managerName || 'Unassigned'}
                                                     </div>
-                                                    <div style={{ fontSize: '10px', color: 'var(--cs-text-muted)' }}>
-                                                        Branch Head
+                                                    <div style={{ fontSize: '9.5px', color: 'var(--cs-text-muted)' }}>
+                                                        Branch Manager
                                                     </div>
                                                 </div>
                                             </div>
@@ -668,6 +722,148 @@ export default function BranchesPage() {
                             </div>
                         </div>
 
+                        {/* Courses Included in this Branch */}
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
+                                        Courses Offered at this Branch
+                                    </div>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        background: 'rgba(108, 99, 255, 0.12)',
+                                        color: 'var(--cs-primary)',
+                                        border: '1px solid rgba(108, 99, 255, 0.25)'
+                                    }}>
+                                        {managingBranchCourses.length} {managingBranchCourses.length === 1 ? 'Course' : 'Courses'}
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => {
+                                        setManagingBranch(null);
+                                        router.push(`/dashboard/courses?branchId=${managingBranch.branchId}`);
+                                    }}
+                                    style={{ fontSize: '12px', color: 'var(--cs-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    View in Catalogue <ArrowRight size={12} />
+                                </button>
+                            </div>
+
+                            <div style={{
+                                background: 'var(--cs-surface-2)',
+                                border: '1px solid var(--cs-border)',
+                                borderRadius: '8px',
+                                maxHeight: '200px',
+                                overflowY: 'auto'
+                            }}>
+                                {managingBranchCourses.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--cs-text-muted)', fontSize: '13px' }}>
+                                        No courses assigned to this branch yet.
+                                    </div>
+                                ) : (
+                                    managingBranchCourses.map(course => (
+                                        <div
+                                            key={course.courseId}
+                                            style={{
+                                                padding: '10px 14px',
+                                                borderBottom: '1px solid var(--cs-border)',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
+                                                    <code style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 700,
+                                                        background: 'rgba(108, 99, 255, 0.1)',
+                                                        color: 'var(--cs-primary)',
+                                                        padding: '1px 6px',
+                                                        borderRadius: '4px'
+                                                    }}>
+                                                        {course.code}
+                                                    </code>
+                                                    <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--cs-text-primary)' }}>
+                                                        {course.title}
+                                                    </span>
+                                                    {course.category && (
+                                                        <span style={{
+                                                            fontSize: '11px',
+                                                            color: 'var(--cs-text-secondary)',
+                                                            background: 'var(--cs-surface)',
+                                                            border: '1px solid var(--cs-border)',
+                                                            borderRadius: '4px',
+                                                            padding: '1px 6px'
+                                                        }}>
+                                                            {course.category}
+                                                        </span>
+                                                    )}
+                                                    {course.level && (
+                                                        <span style={{
+                                                            fontSize: '11px',
+                                                            color: '#4B5563',
+                                                            background: '#F3F4F6',
+                                                            borderRadius: '4px',
+                                                            padding: '1px 6px'
+                                                        }}>
+                                                            {course.level}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--cs-text-primary)' }}>
+                                                        {formatMoney(course.tuitionAmount, currency || 'INR')}
+                                                        <span style={{ fontSize: '10.5px', fontWeight: 500, color: 'var(--cs-text-muted)' }}>
+                                                            /{course.billingPeriod === 'monthly' ? 'mo' : course.billingPeriod}
+                                                        </span>
+                                                    </span>
+                                                    <span className={`badge ${course.isActive ? 'badge-success' : 'badge-secondary'}`} style={{ fontSize: '10px' }}>
+                                                        {course.isActive ? 'Active' : 'Draft'}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Subjects list & duration */}
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px', fontSize: '11px', color: 'var(--cs-text-secondary)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {course.durationMonths && <span>{course.durationMonths} Months</span>}
+                                                    {course.startDate && <span>• Starts {course.startDate}</span>}
+                                                </div>
+
+                                                {course.subjects && course.subjects.length > 0 && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                                        <span style={{ fontSize: '10.5px', color: 'var(--cs-text-muted)', fontWeight: 600 }}>Subjects:</span>
+                                                        {course.subjects.map((subj, idx) => (
+                                                            <span
+                                                                key={idx}
+                                                                style={{
+                                                                    fontSize: '10px',
+                                                                    padding: '1px 5px',
+                                                                    background: 'var(--cs-surface)',
+                                                                    border: '1px solid var(--cs-border)',
+                                                                    borderRadius: '3px',
+                                                                    color: 'var(--cs-text-primary)'
+                                                                }}
+                                                            >
+                                                                {typeof subj === 'string' ? subj : subj.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
                         {/* Batches running in this Branch */}
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -678,7 +874,6 @@ export default function BranchesPage() {
                                     type="button"
                                     className="btn-ghost"
                                     onClick={() => {
-                                        selectBranch(managingBranch.branchId);
                                         setManagingBranch(null);
                                         router.push(`/dashboard/batches?branchId=${managingBranch.branchId}`);
                                     }}
@@ -739,40 +934,49 @@ export default function BranchesPage() {
                             <div style={{ fontSize: '12px', textTransform: 'uppercase', fontWeight: 700, color: 'var(--cs-text-muted)', marginBottom: '8px' }}>
                                 Branch Quick Management
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
                                 <button
                                     type="button"
                                     className="btn-secondary"
                                     onClick={() => {
-                                        selectBranch(managingBranch.branchId);
                                         setManagingBranch(null);
-                                        router.push('/dashboard/batches');
+                                        router.push(`/dashboard/courses?branchId=${managingBranch.branchId}`);
+                                    }}
+                                    style={{ padding: '12px 10px', flexDirection: 'column', gap: '6px', height: 'auto', textAlign: 'center' }}
+                                >
+                                    <GraduationCap size={18} color="#6366F1" />
+                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>Courses ({managingBranchCourses.length})</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => {
+                                        setManagingBranch(null);
+                                        router.push(`/dashboard/batches?branchId=${managingBranch.branchId}`);
                                     }}
                                     style={{ padding: '12px 10px', flexDirection: 'column', gap: '6px', height: 'auto', textAlign: 'center' }}
                                 >
                                     <BookOpen size={18} color="var(--cs-primary)" />
-                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>Manage Batches</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>Batches ({branchBatches.length})</span>
                                 </button>
                                 <button
                                     type="button"
                                     className="btn-secondary"
                                     onClick={() => {
-                                        selectBranch(managingBranch.branchId);
                                         setManagingBranch(null);
-                                        router.push('/dashboard/students');
+                                        router.push(`/dashboard/students?branchId=${managingBranch.branchId}`);
                                     }}
                                     style={{ padding: '12px 10px', flexDirection: 'column', gap: '6px', height: 'auto', textAlign: 'center' }}
                                 >
                                     <Users size={18} color="#10B981" />
-                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>Manage Students</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 600 }}>Students</span>
                                 </button>
                                 <button
                                     type="button"
                                     className="btn-secondary"
                                     onClick={() => {
-                                        selectBranch(managingBranch.branchId);
                                         setManagingBranch(null);
-                                        router.push('/dashboard/attendance');
+                                        router.push(`/dashboard/attendance?branchId=${managingBranch.branchId}`);
                                     }}
                                     style={{ padding: '12px 10px', flexDirection: 'column', gap: '6px', height: 'auto', textAlign: 'center' }}
                                 >
@@ -870,7 +1074,7 @@ export default function BranchesPage() {
 
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                <label className="cs-label" style={{ marginBottom: 0 }}>Branch Head</label>
+                                <label className="cs-label" style={{ marginBottom: 0 }}>Branch Manager</label>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -895,53 +1099,15 @@ export default function BranchesPage() {
                                 </button>
                             </div>
 
-                            {addHeadMode === 'custom' ? (
-                                <>
-                                    <input
-                                        type="text"
-                                        list="add-branch-head-staff"
-                                        className="cs-input"
-                                        value={form.headName}
-                                        onChange={e => {
-                                            const val = e.target.value;
-                                            const matched = staffList?.find(s => s.fullName.toLowerCase() === val.trim().toLowerCase());
-                                            setForm({ ...form, headName: val, headUserId: matched?.userId || '' });
-                                        }}
-                                        placeholder="Enter Branch Head name (e.g. Dr. Rajesh Sharma)"
-                                        autoFocus
-                                    />
-                                    <datalist id="add-branch-head-staff">
-                                        {staffList?.map(s => (
-                                            <option key={s.userId} value={s.fullName}>{s.role}</option>
-                                        ))}
-                                    </datalist>
-                                </>
-                            ) : (
-                                <select
-                                    className="cs-input"
-                                    value={form.headUserId}
-                                    onChange={e => {
-                                        if (e.target.value === '__custom__') {
-                                            setAddHeadMode('custom');
-                                            return;
-                                        }
-                                        const selected = staffList?.find(s => s.userId === e.target.value);
-                                        setForm({
-                                            ...form,
-                                            headUserId: e.target.value,
-                                            headName: selected?.fullName || ''
-                                        });
-                                    }}
-                                >
-                                    <option value="">No Head Assigned</option>
-                                    {staffList?.map(s => (
-                                        <option key={s.userId} value={s.userId}>
-                                            {s.fullName} ({s.role})
-                                        </option>
-                                    ))}
-                                    <option value="__custom__">+ Enter Custom Name...</option>
-                                </select>
-                            )}
+                            <BranchManagerDropdown
+                                selectedUserId={form.headUserId}
+                                customName={form.headName}
+                                isCustomMode={addHeadMode === 'custom'}
+                                onChange={(userId, name) => setForm({ ...form, headUserId: userId, headName: name })}
+                                onToggleCustomMode={isCustom => setAddHeadMode(isCustom ? 'custom' : 'select')}
+                                staffList={staffList}
+                                placeholder="No Manager Assigned"
+                            />
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '4px' }}>
@@ -1061,7 +1227,7 @@ export default function BranchesPage() {
 
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                <label className="cs-label" style={{ marginBottom: 0 }}>Branch Head</label>
+                                <label className="cs-label" style={{ marginBottom: 0 }}>Branch Manager</label>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1086,52 +1252,56 @@ export default function BranchesPage() {
                                 </button>
                             </div>
 
-                            {editHeadMode === 'custom' ? (
-                                <>
-                                    <input
-                                        type="text"
-                                        list="edit-branch-head-staff"
-                                        className="cs-input"
-                                        value={editForm.headName}
-                                        onChange={e => {
-                                            const val = e.target.value;
-                                            const matched = staffList?.find(s => s.fullName.toLowerCase() === val.trim().toLowerCase());
-                                            setEditForm({ ...editForm, headName: val, headUserId: matched?.userId || '' });
-                                        }}
-                                        placeholder="Enter Branch Head name (e.g. Dr. Rajesh Sharma)"
-                                        autoFocus
-                                    />
-                                    <datalist id="edit-branch-head-staff">
-                                        {staffList?.map(s => (
-                                            <option key={s.userId} value={s.fullName}>{s.role}</option>
-                                        ))}
-                                    </datalist>
-                                </>
-                            ) : (
-                                <select
-                                    className="cs-input"
-                                    value={editForm.headUserId}
-                                    onChange={e => {
-                                        if (e.target.value === '__custom__') {
-                                            setEditHeadMode('custom');
-                                            return;
-                                        }
-                                        const selected = staffList?.find(s => s.userId === e.target.value);
-                                        setEditForm({
-                                            ...editForm,
-                                            headUserId: e.target.value,
-                                            headName: selected?.fullName || ''
-                                        });
+                            <BranchManagerDropdown
+                                selectedUserId={editForm.headUserId}
+                                customName={editForm.headName}
+                                isCustomMode={editHeadMode === 'custom'}
+                                onChange={(userId, name) => setEditForm({ ...editForm, headUserId: userId, headName: name })}
+                                onToggleCustomMode={isCustom => setEditHeadMode(isCustom ? 'custom' : 'select')}
+                                staffList={staffList}
+                                currentBranchId={editForm.branchId}
+                                placeholder="No Manager Assigned"
+                            />
+                        </div>
+
+                        {/* Courses Assigned to this Branch */}
+                        <div style={{ background: 'var(--cs-surface-2)', border: '1px solid var(--cs-border)', borderRadius: '8px', padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: editingBranchCourses.length > 0 ? '6px' : 0 }}>
+                                <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--cs-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                    Courses in this Branch ({editingBranchCourses.length})
+                                </span>
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => {
+                                        setEditingBranch(null);
+                                        router.push(`/dashboard/courses?branchId=${editingBranch.branchId}`);
                                     }}
+                                    style={{ fontSize: '11px', color: 'var(--cs-primary)', padding: '2px 6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                                 >
-                                    <option value="">No Head Assigned</option>
-                                    {staffList?.map(s => (
-                                        <option key={s.userId} value={s.userId}>
-                                            {s.fullName} ({s.role})
-                                        </option>
+                                    Manage Courses <ExternalLink size={10} />
+                                </button>
+                            </div>
+                            {editingBranchCourses.length === 0 ? (
+                                <div style={{ fontSize: '12px', color: 'var(--cs-text-muted)', marginTop: '4px' }}>No courses assigned to this branch yet.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {editingBranchCourses.map(c => (
+                                        <span key={c.courseId} style={{
+                                            fontSize: '11.5px',
+                                            padding: '3px 8px',
+                                            borderRadius: '6px',
+                                            background: '#ffffff',
+                                            border: '1px solid var(--cs-border)',
+                                            color: 'var(--cs-text-primary)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}>
+                                            <strong style={{ color: 'var(--cs-primary)' }}>{c.code}</strong> {c.title}
+                                        </span>
                                     ))}
-                                    <option value="__custom__">+ Enter Custom Name...</option>
-                                </select>
+                                </div>
                             )}
                         </div>
 

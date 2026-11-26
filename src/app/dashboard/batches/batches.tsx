@@ -1,11 +1,11 @@
 'use client';
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Topbar from '@/components/Topbar';
 import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
-import { MapPin, ArrowLeft, X, Filter, Calendar as CalendarIcon, Plus, Trash2, Pencil, Search, Clock, BookOpen } from 'lucide-react';
+import { MapPin, ArrowLeft, X, Filter, Calendar as CalendarIcon, Plus, Trash2, Pencil, Search, Clock, BookOpen, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
 import { can, useSession, selectBranch } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
@@ -93,17 +93,37 @@ const emptyBatchForm: {
 function BatchesContent() {
     const router = useRouter();
     const session = useSession();
+    const branchScoped = !!session?.session.branchId;
     const { workspace } = useWorkspace();
     const searchParams = useSearchParams();
     const courseIdParam = searchParams.get('courseId');
     const courseTitleParam = searchParams.get('courseTitle') || searchParams.get('course');
+    const branchParam = searchParams.get('branchId');
 
     const [activeTab, setActiveTab] = useState('batches');
-    const { data: batches, error, reload } = useApi<Batch[]>('/batches');
-    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; branchId?: string | null; branchName?: string }>>('/courses');
+    const { data: batches, error, reload } = useApi<Batch[]>('/batches?branchId=all');
+    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; branchId?: string | null; branchName?: string }>>('/courses?branchId=all');
     const { data: staffList } = useApi<Array<{ userId: string; fullName: string; role: string }>>('/staff');
     const [selectedCourse, setSelectedCourse] = useState<string>('all');
+    const [branchFilter, setBranchFilter] = useState<string>(() => {
+        if (branchParam && branchParam !== 'all') return branchParam;
+        return session?.session.branchId || 'all';
+    });
     const [search, setSearch] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [branchFilter, selectedCourse, search]);
+
+    useEffect(() => {
+        if (branchParam && branchParam !== 'all') {
+            setBranchFilter(branchParam);
+        } else if (!branchParam) {
+            setBranchFilter(session?.session.branchId || 'all');
+        }
+    }, [branchParam, session?.session.branchId]);
 
     // Add Batch modal state
     const [showAddBatch, setShowAddBatch] = useState(false);
@@ -113,12 +133,57 @@ function BatchesContent() {
 
     const canManage = can(session, 'courses.write') || can(session, 'academics.read');
 
-    // Unique courses from batches
-    const courseOptions = Array.from(
-        new Map(
-            batches?.map(b => [b.courseId || b.courseTitle, { id: b.courseId || b.courseTitle, title: b.courseTitle }]) || []
-        ).values()
-    );
+    // Batches belonging to the selected branch filter (or all batches)
+    const branchBatches = useMemo(() => {
+        if (!batches) return [];
+        if (branchFilter === 'all') return batches;
+        return batches.filter(b =>
+            (b.branchId && b.branchId === branchFilter) ||
+            (b.branchName && workspace?.branches?.find(br => br.branchId === branchFilter)?.name.toLowerCase() === b.branchName.toLowerCase())
+        );
+    }, [batches, branchFilter, workspace?.branches]);
+
+    // Unique courses filtered according to the selected branch
+    const courseOptions = useMemo(() => {
+        const map = new Map<string, { id: string; title: string }>();
+
+        if (branchFilter === 'all') {
+            // Include all courses from batches
+            (batches ?? []).forEach(b => {
+                const id = b.courseId || b.courseTitle;
+                if (!map.has(id)) {
+                    map.set(id, { id, title: b.courseTitle });
+                }
+            });
+            // Also include courses from catalogue
+            (courses ?? []).forEach(c => {
+                if (!map.has(c.courseId)) {
+                    map.set(c.courseId, { id: c.courseId, title: c.title });
+                }
+            });
+        } else {
+            // For a specific branch:
+            // 1. Add courses that have batches in this branch
+            branchBatches.forEach(b => {
+                const id = b.courseId || b.courseTitle;
+                if (!map.has(id)) {
+                    map.set(id, { id, title: b.courseTitle });
+                }
+            });
+
+            // 2. Add courses specifically catalogued for this branch
+            const currentBranch = workspace?.branches?.find(br => br.branchId === branchFilter);
+            (courses ?? []).forEach(c => {
+                const matchesBranch = (c.branchId && c.branchId === branchFilter) ||
+                    (currentBranch && c.branchName && c.branchName.toLowerCase() === currentBranch.name.toLowerCase());
+                if (matchesBranch && !map.has(c.courseId)) {
+                    map.set(c.courseId, { id: c.courseId, title: c.title });
+                }
+            });
+        }
+
+        return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+    }, [batches, courses, branchFilter, branchBatches, workspace?.branches]);
 
     useEffect(() => {
         if (courseIdParam) {
@@ -133,13 +198,62 @@ function BatchesContent() {
         }
     }, [courseIdParam, courseTitleParam, batches]);
 
+    // Automatically reset selected course if it doesn't belong to the active branch filter
+    useEffect(() => {
+        if (selectedCourse === 'all') return;
+        if (!batches && !courses) return;
+        if (courseOptions.length === 0) return;
+
+        const isMatch = courseOptions.some(
+            c => c.id === selectedCourse || c.title.toLowerCase() === selectedCourse.toLowerCase()
+        );
+        if (!isMatch) {
+            setSelectedCourse('all');
+            const params = new URLSearchParams();
+            if (branchFilter !== 'all') params.set('branchId', branchFilter);
+            const qs = params.toString();
+            router.replace(qs ? `/dashboard/batches?${qs}` : '/dashboard/batches');
+        }
+    }, [selectedCourse, courseOptions, branchFilter, batches, courses, router]);
+
+    const handleBranchChange = (newBranch: string) => {
+        setBranchFilter(newBranch);
+
+        // Check if current course is valid for new branch
+        let validCourse = selectedCourse;
+        if (newBranch !== 'all' && selectedCourse !== 'all') {
+            const currentBranchObj = workspace?.branches?.find(br => br.branchId === newBranch);
+            const isValidInBatches = batches?.some(b => {
+                const matchesBranch = (b.branchId && b.branchId === newBranch) ||
+                    (currentBranchObj && b.branchName && b.branchName.toLowerCase() === currentBranchObj.name.toLowerCase());
+                return matchesBranch && ((b.courseId && b.courseId === selectedCourse) || b.courseTitle.toLowerCase() === selectedCourse.toLowerCase());
+            });
+            const isValidInCourses = courses?.some(c => {
+                const matchesBranch = (c.branchId && c.branchId === newBranch) ||
+                    (currentBranchObj && c.branchName && c.branchName.toLowerCase() === currentBranchObj.name.toLowerCase());
+                return matchesBranch && (c.courseId === selectedCourse || c.title.toLowerCase() === selectedCourse.toLowerCase());
+            });
+
+            if (!isValidInBatches && !isValidInCourses) {
+                validCourse = 'all';
+                setSelectedCourse('all');
+            }
+        }
+
+        const params = new URLSearchParams();
+        if (newBranch !== 'all') params.set('branchId', newBranch);
+        if (validCourse !== 'all') params.set('courseId', validCourse);
+        const qs = params.toString();
+        router.push(qs ? `/dashboard/batches?${qs}` : '/dashboard/batches');
+    };
+
     const handleCourseChange = (newCourse: string) => {
         setSelectedCourse(newCourse);
-        if (newCourse === 'all') {
-            router.push('/dashboard/batches');
-        } else {
-            router.push(`/dashboard/batches?courseId=${encodeURIComponent(newCourse)}`);
-        }
+        const params = new URLSearchParams();
+        if (branchFilter !== 'all') params.set('branchId', branchFilter);
+        if (newCourse !== 'all') params.set('courseId', newCourse);
+        const qs = params.toString();
+        router.push(qs ? `/dashboard/batches?${qs}` : '/dashboard/batches');
     };
 
     // Branch the page is limited to: the account's own, or the branch view selected at the top
@@ -155,9 +269,10 @@ function BatchesContent() {
     const branchMismatch = Boolean(courseBranchId && batchForm.branchId && batchForm.branchId !== courseBranchId);
 
     const openAddBatch = () => {
-        const inView = (courses ?? []).filter(c => !viewBranchId || !c.branchId || c.branchId === viewBranchId);
+        const effectiveBranchId = (branchFilter !== 'all' ? branchFilter : null) || viewBranchId;
+        const inView = (courses ?? []).filter(c => !effectiveBranchId || !c.branchId || c.branchId === effectiveBranchId);
         const defaultCourse = selectedCourse !== 'all' ? selectedCourse : (inView[0]?.courseId ?? '');
-        const defaultBranch = branchOf(defaultCourse) || viewBranchId || workspace?.branches?.[0]?.branchId || '';
+        const defaultBranch = branchOf(defaultCourse) || effectiveBranchId || workspace?.branches?.[0]?.branchId || '';
         setBatchForm({
             ...emptyBatchForm,
             batchId: undefined,
@@ -244,6 +359,11 @@ function BatchesContent() {
     };
 
     const filteredBatches = batches?.filter(b => {
+        if (branchFilter !== 'all') {
+            const matchesBranch = (b.branchId && b.branchId === branchFilter) ||
+                (b.branchName && workspace?.branches.find(br => br.branchId === branchFilter)?.name.toLowerCase() === b.branchName.toLowerCase());
+            if (!matchesBranch) return false;
+        }
         if (selectedCourse !== 'all') {
             const matchesCourse = (b.courseId && b.courseId === selectedCourse) ||
                 b.courseTitle.toLowerCase() === selectedCourse.toLowerCase();
@@ -260,6 +380,25 @@ function BatchesContent() {
         );
     }) ?? [];
 
+    const totalBatches = filteredBatches.length;
+    const totalPages = Math.max(1, Math.ceil(totalBatches / pageSize));
+    const safePage = Math.min(Math.max(1, currentPage), totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const endIndex = Math.min(safePage * pageSize, totalBatches);
+    const paginatedBatches = filteredBatches.slice(startIndex, startIndex + pageSize);
+
+    const getVisiblePages = (curr: number, total: number): (number | string)[] => {
+        if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+        const pages: (number | string)[] = [1];
+        if (curr > 3) pages.push('...');
+        const start = Math.max(2, curr - 1);
+        const end = Math.min(total - 1, curr + 1);
+        for (let i = start; i <= end; i++) pages.push(i);
+        if (curr < total - 2) pages.push('...');
+        pages.push(total);
+        return pages;
+    };
+
     const activeCourseObj = courseOptions.find(c => c.id === selectedCourse || c.title.toLowerCase() === selectedCourse.toLowerCase());
     const activeCourseTitle = activeCourseObj?.title || courseTitleParam || (selectedCourse !== 'all' ? selectedCourse : null);
 
@@ -274,6 +413,48 @@ function BatchesContent() {
                     {!session?.session.branchId && <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }} onClick={() => selectBranch(null)}>Show all branches</button>}
                 </div>
             )}
+            {/* Filter banner if filtered by branch */}
+            {branchFilter !== 'all' && selectedCourse === 'all' && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 18px',
+                    background: 'rgba(108, 99, 255, 0.08)',
+                    border: '1px solid rgba(108, 99, 255, 0.25)',
+                    borderRadius: '10px',
+                    marginBottom: '16px',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', flexWrap: 'wrap' }}>
+                        <Building2 size={15} color="var(--cs-primary)" />
+                        <span style={{ color: 'var(--cs-text-secondary)' }}>Showing batches for branch:</span>
+                        <span style={{ fontWeight: 700, color: 'var(--cs-primary)', fontSize: '14px' }}>
+                            {workspace?.branches.find(b => b.branchId === branchFilter)?.name || 'Selected'} Branch
+                        </span>
+                        <span className="badge badge-primary">{filteredBatches.length} {filteredBatches.length === 1 ? 'batch' : 'batches'}</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            handleBranchChange('all');
+                        }}
+                        className="btn-secondary"
+                        style={{
+                            fontSize: '12px',
+                            padding: '4px 10px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <X size={12} /> Show All Branches
+                    </button>
+                </div>
+            )}
+
             {/* Filter banner if filtered by course */}
             {selectedCourse !== 'all' && (
                 <div style={{
@@ -293,6 +474,11 @@ function BatchesContent() {
                         <span style={{ fontWeight: 700, color: 'var(--cs-primary)', fontSize: '14px' }}>
                             {activeCourseTitle}
                         </span>
+                        {branchFilter !== 'all' && (
+                            <span style={{ color: 'var(--cs-text-muted)', fontSize: '12.5px', fontWeight: 500 }}>
+                                • {workspace?.branches.find(b => b.branchId === branchFilter)?.name} Branch
+                            </span>
+                        )}
                         <span className="badge badge-primary">{filteredBatches.length} {filteredBatches.length === 1 ? 'batch' : 'batches'}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -437,6 +623,67 @@ function BatchesContent() {
                         )}
                     </div>
 
+                    {/* Branch Filter Dropdown */}
+                    {!branchScoped && (workspace?.branches?.length ?? 0) > 0 && (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'var(--cs-surface-2)',
+                            border: `1px solid ${branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-border)'}`,
+                            borderRadius: '10px',
+                            padding: '0 12px',
+                            height: '38px',
+                            boxShadow: branchFilter !== 'all' ? '0 0 0 2px rgba(108, 99, 255, 0.12)' : 'none'
+                        }}>
+                            <Building2 size={13} color={branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-muted)'} style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: '12px', color: 'var(--cs-text-muted)', fontWeight: 600 }}>Branch:</span>
+                            <select
+                                value={branchFilter}
+                                onChange={e => handleBranchChange(e.target.value)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    outline: 'none',
+                                    fontSize: '12.5px',
+                                    fontWeight: 600,
+                                    color: branchFilter !== 'all' ? 'var(--cs-primary)' : 'var(--cs-text-primary)',
+                                    cursor: 'pointer'
+                                }}
+                                aria-label="Filter batches by branch"
+                            >
+                                <option value="all">All Branches</option>
+                                {workspace?.branches.map(b => (
+                                    <option key={b.branchId} value={b.branchId}>{b.name} Branch</option>
+                                ))}
+                            </select>
+                            {branchFilter !== 'all' && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleBranchChange('all')}
+                                    style={{
+                                        background: 'rgba(108, 99, 255, 0.12)',
+                                        border: 'none',
+                                        borderRadius: '50%',
+                                        width: '16px',
+                                        height: '16px',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'var(--cs-primary)',
+                                        marginLeft: '2px',
+                                        flexShrink: 0
+                                    }}
+                                    title="Reset filter to All Branches"
+                                >
+                                    ✕
+                                </button>
+                            )}
+                        </div>
+                    )}
+
                     {/* Course Filter Dropdown */}
                     <div style={{
                         display: 'flex',
@@ -463,7 +710,7 @@ function BatchesContent() {
                                 cursor: 'pointer'
                             }}
                         >
-                            <option value="all">All Courses ({batches?.length ?? 0} batches)</option>
+                            <option value="all">All Courses ({branchBatches.length} {branchBatches.length === 1 ? 'batch' : 'batches'})</option>
                             {courseOptions.map(c => (
                                 <option key={c.id} value={c.id}>{c.title}</option>
                             ))}
@@ -538,7 +785,7 @@ function BatchesContent() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredBatches.map(b => {
+                                    paginatedBatches.map(b => {
                                         const fillPct = b.capacity > 0 ? Math.round((b.enrolledCount / b.capacity) * 100) : 0;
                                         const isHigh = fillPct >= 90;
                                         const isMed = fillPct >= 75;
@@ -774,6 +1021,126 @@ function BatchesContent() {
                             </tbody>
                         </table>
                     </div>
+                    {totalBatches > 0 && (
+                        <div style={{
+                            padding: '12px 20px',
+                            borderTop: '1px solid var(--cs-border)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '12px',
+                            background: 'var(--cs-surface-1)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '12.5px', color: 'var(--cs-text-secondary)', fontWeight: 500 }}>
+                                    Showing <strong style={{ color: 'var(--cs-text-primary)' }}>{totalBatches === 0 ? 0 : startIndex + 1}–{endIndex}</strong> of{' '}
+                                    <strong style={{ color: 'var(--cs-text-primary)' }}>{totalBatches}</strong> {totalBatches === 1 ? 'batch' : 'batches'}
+                                </span>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--cs-text-muted)' }}>
+                                    <span>Rows per page:</span>
+                                    <select
+                                        className="cs-input"
+                                        style={{ padding: '3px 8px', fontSize: '12px', width: 'auto', height: '30px', cursor: 'pointer' }}
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            setPageSize(Number(e.target.value));
+                                            setCurrentPage(1);
+                                        }}
+                                        aria-label="Batches per page"
+                                    >
+                                        {[5, 10, 20, 50].map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        border: '1px solid var(--cs-border)',
+                                        borderRadius: '8px',
+                                        cursor: safePage <= 1 ? 'not-allowed' : 'pointer',
+                                        opacity: safePage <= 1 ? 0.4 : 1,
+                                        background: 'var(--cs-surface-2)',
+                                        color: 'var(--cs-text-primary)',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                    disabled={safePage <= 1}
+                                    onClick={() => setCurrentPage(Math.max(1, safePage - 1))}
+                                >
+                                    <ChevronLeft size={14} /> Prev
+                                </button>
+
+                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    {getVisiblePages(safePage, totalPages).map((p, idx) => {
+                                        if (p === '...') {
+                                            return <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: 'var(--cs-text-muted)', fontSize: '12px' }}>...</span>;
+                                        }
+                                        const pageNum = Number(p);
+                                        const isCurrent = pageNum === safePage;
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                type="button"
+                                                onClick={() => setCurrentPage(pageNum)}
+                                                style={{
+                                                    minWidth: '32px',
+                                                    height: '32px',
+                                                    padding: '0 8px',
+                                                    fontSize: '12.5px',
+                                                    fontWeight: isCurrent ? 700 : 500,
+                                                    borderRadius: '8px',
+                                                    border: isCurrent ? '1px solid var(--cs-primary)' : '1px solid var(--cs-border)',
+                                                    background: isCurrent ? 'var(--cs-primary)' : 'var(--cs-surface-2)',
+                                                    color: isCurrent ? '#ffffff' : 'var(--cs-text-primary)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease',
+                                                    boxShadow: isCurrent ? '0 2px 6px rgba(108, 99, 255, 0.25)' : 'none'
+                                                }}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        border: '1px solid var(--cs-border)',
+                                        borderRadius: '8px',
+                                        cursor: safePage >= totalPages ? 'not-allowed' : 'pointer',
+                                        opacity: safePage >= totalPages ? 0.4 : 1,
+                                        background: 'var(--cs-surface-2)',
+                                        color: 'var(--cs-text-primary)',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                    disabled={safePage >= totalPages}
+                                    onClick={() => setCurrentPage(Math.min(totalPages, safePage + 1))}
+                                >
+                                    Next <ChevronRight size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px', width: '100%' }}>
@@ -895,6 +1262,8 @@ function BatchesContent() {
                                 <select
                                     className="cs-input"
                                     required
+                                    disabled={branchScoped}
+                                    style={branchScoped ? { background: 'var(--cs-surface-2)', cursor: 'not-allowed' } : {}}
                                     value={batchForm.branchId}
                                     onChange={e => setBatchForm({ ...batchForm, branchId: e.target.value })}
                                 >
