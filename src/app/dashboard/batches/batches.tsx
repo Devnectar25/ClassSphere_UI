@@ -7,7 +7,7 @@ import PageState from '@/components/PageState';
 import Modal from '@/components/Modal';
 import { MapPin, ArrowLeft, X, Filter, Calendar as CalendarIcon, Plus, Trash2, Pencil, Search, Clock, BookOpen } from 'lucide-react';
 import { api, useApi, initials } from '@/lib/api';
-import { can, useSession } from '@/lib/session';
+import { can, useSession, selectBranch } from '@/lib/session';
 import { useWorkspace } from '@/lib/workspace';
 
 interface Schedule {
@@ -100,7 +100,7 @@ function BatchesContent() {
 
     const [activeTab, setActiveTab] = useState('batches');
     const { data: batches, error, reload } = useApi<Batch[]>('/batches');
-    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string }>>('/courses');
+    const { data: courses } = useApi<Array<{ courseId: string; title: string; code: string; branchId?: string | null; branchName?: string }>>('/courses');
     const { data: staffList } = useApi<Array<{ userId: string; fullName: string; role: string }>>('/staff');
     const [selectedCourse, setSelectedCourse] = useState<string>('all');
     const [search, setSearch] = useState('');
@@ -142,9 +142,22 @@ function BatchesContent() {
         }
     };
 
+    // Branch the page is limited to: the account's own, or the branch view selected at the top
+    const viewBranchId = session?.session.branchId ?? session?.selectedBranchId ?? null;
+    const viewBranch = viewBranchId ? workspace?.branches.find(b => b.branchId === viewBranchId) : undefined;
+    const branchOf = (courseId: string) => courses?.find(c => c.courseId === courseId)?.branchId ?? null;
+    const courseChoices = (courses ?? []).filter(c => !viewBranchId || !c.branchId || c.branchId === viewBranchId || c.courseId === batchForm.courseId);
+    // A course of one branch has its batches there; the stored branch of an older batch stays visible
+    const courseBranchId = branchOf(batchForm.courseId);
+    const editedBatch = batchForm.batchId ? batches?.find(b => b.batchId === batchForm.batchId) : undefined;
+    const branchChoices = (workspace?.branches ?? []).filter(b => !courseBranchId || b.branchId === courseBranchId
+        || (editedBatch?.branchId === b.branchId && editedBatch?.courseId === batchForm.courseId));
+    const branchMismatch = Boolean(courseBranchId && batchForm.branchId && batchForm.branchId !== courseBranchId);
+
     const openAddBatch = () => {
-        const defaultCourse = selectedCourse !== 'all' ? selectedCourse : (courses?.[0]?.courseId ?? '');
-        const defaultBranch = session?.selectedBranchId || workspace?.branches?.[0]?.branchId || '';
+        const inView = (courses ?? []).filter(c => !viewBranchId || !c.branchId || c.branchId === viewBranchId);
+        const defaultCourse = selectedCourse !== 'all' ? selectedCourse : (inView[0]?.courseId ?? '');
+        const defaultBranch = branchOf(defaultCourse) || viewBranchId || workspace?.branches?.[0]?.branchId || '';
         setBatchForm({
             ...emptyBatchForm,
             batchId: undefined,
@@ -255,6 +268,12 @@ function BatchesContent() {
 
     return (
         <div className="page-body" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+            {viewBranch && batches?.length === 0 && (
+                <div role="status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>
+                    <span><strong>{viewBranch.name}</strong> has no batches yet, so its timetable is empty. {session?.session.branchId ? '' : 'You are viewing this branch only.'}</span>
+                    {!session?.session.branchId && <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '12px' }} onClick={() => selectBranch(null)}>Show all branches</button>}
+                </div>
+            )}
             {/* Filter banner if filtered by course */}
             {selectedCourse !== 'all' && (
                 <div style={{
@@ -802,7 +821,7 @@ function BatchesContent() {
                                                 e.currentTarget.style.background = 'var(--cs-surface-2)';
                                                 e.currentTarget.style.transform = 'none';
                                             }}
-                                            title={`Click to edit ${s.batch.name} schedule`}
+                                            title={`Click to edit ${s.batch.courseTitle} – ${s.batch.name} schedule`}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                                                 <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--cs-text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -823,6 +842,10 @@ function BatchesContent() {
                                             </div>
                                             <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--cs-text-secondary)', marginTop: '4px' }}>
                                                 {s.batch.name}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cs-primary)', marginTop: '4px', display: 'flex', alignItems: 'flex-start', gap: '4px', overflowWrap: 'anywhere' }}>
+                                                <BookOpen size={11} style={{ flexShrink: 0, marginTop: '2px' }} />
+                                                <span>{s.batch.courseTitle}</span>
                                             </div>
                                             <div style={{ fontSize: '11px', color: 'var(--cs-text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                 <MapPin size={10} color="var(--cs-primary)" />
@@ -859,10 +882,10 @@ function BatchesContent() {
                                     className="cs-input"
                                     required
                                     value={batchForm.courseId}
-                                    onChange={e => setBatchForm({ ...batchForm, courseId: e.target.value })}
+                                    onChange={e => setBatchForm({ ...batchForm, courseId: e.target.value, branchId: branchOf(e.target.value) ?? (batchForm.branchId || viewBranchId || '') })}
                                 >
                                     <option value="">— Select Course —</option>
-                                    {courses?.map(c => (
+                                    {courseChoices.map(c => (
                                         <option key={c.courseId} value={c.courseId}>{c.title} ({c.code})</option>
                                     ))}
                                 </select>
@@ -875,10 +898,15 @@ function BatchesContent() {
                                     value={batchForm.branchId}
                                     onChange={e => setBatchForm({ ...batchForm, branchId: e.target.value })}
                                 >
-                                    {workspace?.branches.map(b => (
+                                    {branchChoices.map(b => (
                                         <option key={b.branchId} value={b.branchId}>{b.name}</option>
                                     ))}
                                 </select>
+                                {courseBranchId && (
+                                    <div style={{ fontSize: '11px', marginTop: '3px', color: branchMismatch ? '#B45309' : 'var(--cs-text-muted)' }}>
+                                        {branchMismatch ? `This course belongs to ${courses?.find(c => c.courseId === batchForm.courseId)?.branchName}. Select that branch to move the batch there.` : 'Branch of the selected course.'}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

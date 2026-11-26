@@ -31,19 +31,21 @@ export default function BranchesPage() {
     const router = useRouter();
     const { workspace, reload } = useWorkspace();
     const session = useSession();
-    const { data: staffList } = useApi<Array<{ userId: string; fullName: string; role: string }>>('/staff');
+    const { data: staffList } = useApi<Array<{ userId: string; fullName: string; role: string }>>('/staff?branchId=all');
     const { data: allBatches } = useApi<BatchItem[]>('/batches');
     const limits = workspace?.entitlements.branches;
     const canManage = can(session, 'branches.write');
 
     // Add branch state
     const [adding, setAdding] = useState(false);
+    const [addHeadMode, setAddHeadMode] = useState<'select' | 'custom'>('select');
     const [form, setForm] = useState({
         name: '',
         code: '',
         address: '',
         phone: '',
         headUserId: '',
+        headName: '',
         isPrimary: false,
         isActive: true,
     });
@@ -60,9 +62,11 @@ export default function BranchesPage() {
             address: '',
             phone: '',
             headUserId: '',
+            headName: '',
             isPrimary: false,
             isActive: true,
         });
+        setAddHeadMode(staffList && staffList.length > 0 ? 'select' : 'custom');
         setPhoneCountry(COUNTRIES[0]);
         setPhoneError('');
         setPhoneTouched(false);
@@ -71,6 +75,7 @@ export default function BranchesPage() {
 
     // Edit branch state
     const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+    const [editHeadMode, setEditHeadMode] = useState<'select' | 'custom'>('select');
     const [editForm, setEditForm] = useState({
         branchId: '',
         name: '',
@@ -78,6 +83,7 @@ export default function BranchesPage() {
         address: '',
         phone: '',
         headUserId: '',
+        headName: '',
         isPrimary: false,
         isActive: true,
     });
@@ -143,6 +149,7 @@ export default function BranchesPage() {
                     address: form.address.trim() || null,
                     phone: finalPhone,
                     headUserId: form.headUserId || null,
+                    headName: form.headName.trim() || null,
                     isPrimary: form.isPrimary,
                     isActive: form.isActive,
                 }),
@@ -163,7 +170,10 @@ export default function BranchesPage() {
         const matchCountry = COUNTRIES.find(c => b.phone && b.phone.startsWith(c.dialCode)) || COUNTRIES[0];
         const rawDigits = b.phone ? b.phone.replace(matchCountry.dialCode, '').trim() : '';
         const headMember = staffList?.find(s => s.fullName.toLowerCase() === (b.headName || '').toLowerCase());
+        const hasMatchingStaff = !!headMember;
+        const isCustom = !hasMatchingStaff && !!b.headName;
 
+        setEditHeadMode(isCustom ? 'custom' : (staffList && staffList.length > 0 ? 'select' : 'custom'));
         setEditForm({
             branchId: b.branchId,
             name: b.name,
@@ -171,6 +181,7 @@ export default function BranchesPage() {
             address: b.address ?? '',
             phone: rawDigits,
             headUserId: headMember?.userId ?? '',
+            headName: b.headName ?? '',
             isPrimary: b.isPrimary,
             isActive: b.isActive,
         });
@@ -207,6 +218,7 @@ export default function BranchesPage() {
                     address: editForm.address.trim() || null,
                     phone: finalPhone,
                     headUserId: editForm.headUserId || null,
+                    headName: editForm.headName.trim() || null,
                     isPrimary: editForm.isPrimary,
                     isActive: editForm.isActive,
                 }),
@@ -857,19 +869,79 @@ export default function BranchesPage() {
                         </div>
 
                         <div>
-                            <label className="cs-label">Branch Head</label>
-                            <select
-                                className="cs-input"
-                                value={form.headUserId}
-                                onChange={e => setForm({ ...form, headUserId: e.target.value })}
-                            >
-                                <option value="">No Head Assigned</option>
-                                {staffList?.map(s => (
-                                    <option key={s.userId} value={s.userId}>
-                                        {s.fullName} ({s.role})
-                                    </option>
-                                ))}
-                            </select>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                <label className="cs-label" style={{ marginBottom: 0 }}>Branch Head</label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const nextMode = addHeadMode === 'select' ? 'custom' : 'select';
+                                        setAddHeadMode(nextMode);
+                                        if (nextMode === 'custom' && form.headUserId) {
+                                            const sel = staffList?.find(s => s.userId === form.headUserId);
+                                            if (sel && !form.headName) setForm(f => ({ ...f, headName: sel.fullName }));
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--cs-primary)',
+                                        fontSize: '11.5px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: '2px 4px',
+                                    }}
+                                >
+                                    {addHeadMode === 'custom' ? '← Choose from Staff List' : '+ Enter Name Directly'}
+                                </button>
+                            </div>
+
+                            {addHeadMode === 'custom' ? (
+                                <>
+                                    <input
+                                        type="text"
+                                        list="add-branch-head-staff"
+                                        className="cs-input"
+                                        value={form.headName}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            const matched = staffList?.find(s => s.fullName.toLowerCase() === val.trim().toLowerCase());
+                                            setForm({ ...form, headName: val, headUserId: matched?.userId || '' });
+                                        }}
+                                        placeholder="Enter Branch Head name (e.g. Dr. Rajesh Sharma)"
+                                        autoFocus
+                                    />
+                                    <datalist id="add-branch-head-staff">
+                                        {staffList?.map(s => (
+                                            <option key={s.userId} value={s.fullName}>{s.role}</option>
+                                        ))}
+                                    </datalist>
+                                </>
+                            ) : (
+                                <select
+                                    className="cs-input"
+                                    value={form.headUserId}
+                                    onChange={e => {
+                                        if (e.target.value === '__custom__') {
+                                            setAddHeadMode('custom');
+                                            return;
+                                        }
+                                        const selected = staffList?.find(s => s.userId === e.target.value);
+                                        setForm({
+                                            ...form,
+                                            headUserId: e.target.value,
+                                            headName: selected?.fullName || ''
+                                        });
+                                    }}
+                                >
+                                    <option value="">No Head Assigned</option>
+                                    {staffList?.map(s => (
+                                        <option key={s.userId} value={s.userId}>
+                                            {s.fullName} ({s.role})
+                                        </option>
+                                    ))}
+                                    <option value="__custom__">+ Enter Custom Name...</option>
+                                </select>
+                            )}
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '4px' }}>
@@ -988,19 +1060,79 @@ export default function BranchesPage() {
                         </div>
 
                         <div>
-                            <label className="cs-label">Branch Head</label>
-                            <select
-                                className="cs-input"
-                                value={editForm.headUserId}
-                                onChange={e => setEditForm({ ...editForm, headUserId: e.target.value })}
-                            >
-                                <option value="">No Head Assigned</option>
-                                {staffList?.map(s => (
-                                    <option key={s.userId} value={s.userId}>
-                                        {s.fullName} ({s.role})
-                                    </option>
-                                ))}
-                            </select>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                <label className="cs-label" style={{ marginBottom: 0 }}>Branch Head</label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const nextMode = editHeadMode === 'select' ? 'custom' : 'select';
+                                        setEditHeadMode(nextMode);
+                                        if (nextMode === 'custom' && editForm.headUserId) {
+                                            const sel = staffList?.find(s => s.userId === editForm.headUserId);
+                                            if (sel && !editForm.headName) setEditForm(f => ({ ...f, headName: sel.fullName }));
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--cs-primary)',
+                                        fontSize: '11.5px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: '2px 4px',
+                                    }}
+                                >
+                                    {editHeadMode === 'custom' ? '← Choose from Staff List' : '+ Enter Name Directly'}
+                                </button>
+                            </div>
+
+                            {editHeadMode === 'custom' ? (
+                                <>
+                                    <input
+                                        type="text"
+                                        list="edit-branch-head-staff"
+                                        className="cs-input"
+                                        value={editForm.headName}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            const matched = staffList?.find(s => s.fullName.toLowerCase() === val.trim().toLowerCase());
+                                            setEditForm({ ...editForm, headName: val, headUserId: matched?.userId || '' });
+                                        }}
+                                        placeholder="Enter Branch Head name (e.g. Dr. Rajesh Sharma)"
+                                        autoFocus
+                                    />
+                                    <datalist id="edit-branch-head-staff">
+                                        {staffList?.map(s => (
+                                            <option key={s.userId} value={s.fullName}>{s.role}</option>
+                                        ))}
+                                    </datalist>
+                                </>
+                            ) : (
+                                <select
+                                    className="cs-input"
+                                    value={editForm.headUserId}
+                                    onChange={e => {
+                                        if (e.target.value === '__custom__') {
+                                            setEditHeadMode('custom');
+                                            return;
+                                        }
+                                        const selected = staffList?.find(s => s.userId === e.target.value);
+                                        setEditForm({
+                                            ...editForm,
+                                            headUserId: e.target.value,
+                                            headName: selected?.fullName || ''
+                                        });
+                                    }}
+                                >
+                                    <option value="">No Head Assigned</option>
+                                    {staffList?.map(s => (
+                                        <option key={s.userId} value={s.userId}>
+                                            {s.fullName} ({s.role})
+                                        </option>
+                                    ))}
+                                    <option value="__custom__">+ Enter Custom Name...</option>
+                                </select>
+                            )}
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '4px' }}>

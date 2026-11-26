@@ -26,6 +26,7 @@ interface StaffMember {
     branchName: string | null;
     batches: string | null;
     assignments?: StaffAssignments;
+    assignedTo?: string[];
     isActive: boolean;
     lastLoginAt: string | null;
 }
@@ -926,13 +927,13 @@ export default function StaffPage() {
                                                     <td style={{ fontSize: '13px', color: 'var(--cs-text-secondary)' }}>{s.branchName ?? 'All Branches'}</td>
                                                     <td>
                                                         {s.role !== 'Staff' ? <BadgeList value={s.batches} className="badge-secondary" /> : (() => {
-                                                            const a = s.assignments ?? NO_ASSIGNMENTS;
-                                                            const none = a.courseIds.length === 0 && a.batchIds.length === 0;
+                                                            const items = s.assignedTo ?? [];
                                                             return (
                                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
-                                                                    <span className={`badge ${none && s.branchName ? 'badge-warning' : 'badge-secondary'}`}>
-                                                                        {none ? (s.branchName ? 'None assigned' : 'All courses') : `${a.courseIds.length} course${a.courseIds.length === 1 ? '' : 's'} · ${a.batchIds.length > 0 ? `${a.batchIds.length} batch${a.batchIds.length === 1 ? '' : 'es'}` : 'all batches'}`}
-                                                                    </span>
+                                                                    {items.length === 0
+                                                                        ? <span className={`badge ${s.branchName ? 'badge-warning' : 'badge-secondary'}`}>{s.branchName ? 'None assigned' : 'All courses'}</span>
+                                                                        : items.slice(0, 4).map(item => <span key={item} className="badge badge-secondary" title={item}>{item}</span>)}
+                                                                    {items.length > 4 && <span style={{ fontSize: '11px', color: 'var(--cs-text-muted)' }} title={items.slice(4).join(', ')}>+ {items.length - 4} more</span>}
                                                                     {canManage && <button type="button" className="btn-secondary" style={{ padding: '3px 10px', fontSize: '11.5px', height: 'auto' }} onClick={() => setAccessOf(s)}>Assign courses &amp; batches</button>}
                                                                 </div>
                                                             );
@@ -1591,7 +1592,7 @@ export default function StaffPage() {
                     title="Add Academy User"
                     onClose={() => { setAdding(false); setPhoneError(''); setPhoneTouched(false); }}
                     maxWidth="580px"
-                    style={{ overflow: 'visible' }}
+                    style={form.role === 'Staff' ? undefined : { overflow: 'visible' }}
                 >
                     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
